@@ -1,0 +1,25 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - revive
+    - gocritic
+    - misspell
+  settings:
+    revive:
+      rules:
+        - name: exported
+          arguments: [{checkPrivateReceivers: true}]
+    gosec:
+      excludes:
+        - G204  # subprocess is inherent in sysops — reviewed manually via allowlist
