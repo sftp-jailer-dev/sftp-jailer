@@ -1,0 +1,6 @@
+{
+  "nftables": [
+    {"metainfo": {"version": "1.0.9"}},
+    {"table": {"family": "inet", "name": "filter"}}
+  ]
+}

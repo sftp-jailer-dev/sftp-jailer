@@ -1,0 +1,8 @@
+{
+  "nftables": [
+    {"metainfo": {"version": "1.0.9"}},
+    {"table": {"family": "ip", "name": "filter"}},
+    {"chain": {"family": "ip", "table": "filter", "name": "DOCKER"}},
+    {"chain": {"family": "ip", "table": "filter", "name": "DOCKER-USER"}}
+  ]
+}

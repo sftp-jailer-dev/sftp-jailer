@@ -1,0 +1,3 @@
+port 22
+permitrootlogin yes
+subsystem sftp /usr/lib/openssh/sftp-server

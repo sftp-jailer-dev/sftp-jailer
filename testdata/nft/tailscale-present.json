@@ -1,0 +1,8 @@
+{
+  "nftables": [
+    {"metainfo": {"version": "1.0.9"}},
+    {"table": {"family": "inet", "name": "ts-filter"}},
+    {"chain": {"family": "inet", "table": "ts-filter", "name": "ts-input"}},
+    {"chain": {"family": "inet", "table": "ts-filter", "name": "ts-forward"}}
+  ]
+}

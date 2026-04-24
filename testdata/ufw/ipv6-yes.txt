@@ -1,0 +1,3 @@
+# /etc/default/ufw
+IPV4=yes
+IPV6=yes

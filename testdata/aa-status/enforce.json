@@ -1,0 +1,10 @@
+{
+  "version": "3",
+  "profiles": {
+    "/usr/sbin/sshd": "enforce",
+    "man_filter": "enforce"
+  },
+  "processes": {
+    "/usr/sbin/sshd": [{"pid": "1234", "profile": "/usr/sbin/sshd", "mode": "enforce"}]
+  }
+}

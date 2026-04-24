@@ -1,0 +1,7 @@
+port 22
+addressfamily any
+listenaddress [::]:22
+protocol 2
+permitrootlogin no
+passwordauthentication yes
+subsystem sftp internal-sftp -f AUTHPRIV -l INFO
