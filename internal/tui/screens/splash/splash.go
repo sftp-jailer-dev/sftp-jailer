@@ -120,13 +120,13 @@ func pickVariant() string {
 	}
 }
 
-// Init returns the 1-second tick for non-modal splashes, nil for the About
+// Init returns the 2-second tick for non-modal splashes, nil for the About
 // modal variant.
 func (m *Model) Init() tea.Cmd {
 	if m.modal {
 		return nil
 	}
-	return tea.Tick(1*time.Second, func(time.Time) tea.Msg { return tickMsg{} })
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
 // Update handles the tick (auto-dismiss) and keypresses. On dismissal the

@@ -14,7 +14,7 @@ import (
 func TestSplash_New_Init_returns_tick(t *testing.T) {
 	m := splash.New("v1.0", "https://example.com")
 	cmd := m.Init()
-	require.NotNil(t, cmd, "non-modal splash must arm its 1s tick via Init")
+	require.NotNil(t, cmd, "non-modal splash must arm its 2s tick via Init")
 }
 
 func TestSplash_NewModal_Init_returns_nil(t *testing.T) {
