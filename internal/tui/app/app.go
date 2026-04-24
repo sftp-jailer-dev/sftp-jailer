@@ -37,9 +37,6 @@ func RegisterPlaceholderResolver(r PlaceholderResolver) {
 	placeholderResolvers = append(placeholderResolvers, r)
 }
 
-// resetPlaceholderResolvers is a test-only helper; exported via _test.go.
-func resetPlaceholderResolvers() { placeholderResolvers = nil }
-
 // App is the root Bubble Tea model.
 type App struct {
 	stack      []nav.Screen

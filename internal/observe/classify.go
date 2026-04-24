@@ -6,6 +6,7 @@ import "regexp"
 // tiers are specified in REQUIREMENTS.md LOG-05.
 type Tier string
 
+// Tier values per REQUIREMENTS.md LOG-05.
 const (
 	TierSuccess   Tier = "success"
 	TierTargeted  Tier = "targeted"

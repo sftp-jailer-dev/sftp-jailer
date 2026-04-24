@@ -104,7 +104,7 @@ func doctorCmd() *cobra.Command {
 				enc.SetIndent("", "  ")
 				return enc.Encode(rep)
 			}
-			fmt.Fprint(cmd.OutOrStdout(), doctor.RenderText(rep))
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), doctor.RenderText(rep))
 			return nil
 		},
 	}
@@ -124,7 +124,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("write recovery script: %w", err)
 	}
-	defer os.Remove(recoveryPath)
+	defer func() { _ = os.Remove(recoveryPath) }()
 
 	fmt.Fprintf(os.Stderr,
 		"sftp-jailer: if the terminal is wedged after a crash, run: %s\n",

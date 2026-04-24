@@ -18,8 +18,11 @@ linters:
   settings:
     revive:
       rules:
+        # exported rule arguments are flag strings, not key/value maps.
+        # See https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md#exported
+        # Private receivers (e.g. interface stub types) are excluded — godocs
+        # belong on the interface, not the unexported implementation.
         - name: exported
-          arguments: [{checkPrivateReceivers: true}]
     gosec:
       excludes:
         - G204  # subprocess is inherent in sysops — reviewed manually via allowlist

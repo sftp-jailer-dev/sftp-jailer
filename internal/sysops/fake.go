@@ -85,11 +85,13 @@ func (f *Fake) record(method string, args ...string) {
 	f.Calls = append(f.Calls, FakeCall{Method: method, Args: a})
 }
 
+// Geteuid implements [SystemOps.Geteuid].
 func (f *Fake) Geteuid() int {
 	f.record("Geteuid")
 	return f.EUID
 }
 
+// ReadFile implements [SystemOps.ReadFile].
 func (f *Fake) ReadFile(_ context.Context, path string) ([]byte, error) {
 	f.record("ReadFile", path)
 	b, ok := f.Files[path]
@@ -99,6 +101,7 @@ func (f *Fake) ReadFile(_ context.Context, path string) ([]byte, error) {
 	return b, nil
 }
 
+// ReadDir implements [SystemOps.ReadDir].
 func (f *Fake) ReadDir(_ context.Context, path string) ([]fs.DirEntry, error) {
 	f.record("ReadDir", path)
 	d, ok := f.DirEntries[path]
@@ -108,6 +111,7 @@ func (f *Fake) ReadDir(_ context.Context, path string) ([]fs.DirEntry, error) {
 	return d, nil
 }
 
+// Stat implements [SystemOps.Stat].
 func (f *Fake) Stat(_ context.Context, path string) (FileInfo, error) {
 	f.record("Stat", path)
 	fi, ok := f.FileStats[path]
@@ -117,6 +121,7 @@ func (f *Fake) Stat(_ context.Context, path string) (FileInfo, error) {
 	return fi, nil
 }
 
+// Lstat implements [SystemOps.Lstat].
 func (f *Fake) Lstat(_ context.Context, path string) (FileInfo, error) {
 	f.record("Lstat", path)
 	fi, ok := f.FileStats[path]
@@ -126,6 +131,7 @@ func (f *Fake) Lstat(_ context.Context, path string) (FileInfo, error) {
 	return fi, nil
 }
 
+// Glob implements [SystemOps.Glob].
 func (f *Fake) Glob(_ context.Context, pattern string) ([]string, error) {
 	f.record("Glob", pattern)
 	m, ok := f.GlobResults[pattern]
@@ -168,6 +174,7 @@ func (f *Fake) Exec(_ context.Context, name string, args ...string) (ExecResult,
 	return ExecResult{}, fmt.Errorf("sysops.Fake: no scripted response for %q", key)
 }
 
+// SshdDumpConfig implements [SystemOps.SshdDumpConfig].
 func (f *Fake) SshdDumpConfig(_ context.Context) (map[string][]string, error) {
 	f.record("SshdDumpConfig")
 	if f.SshdConfig == nil {

@@ -238,7 +238,7 @@ func TestWriteRecoveryScript_creates_executable_script(t *testing.T) {
 	pid := 99990 + (int(time.Now().UnixNano()) % 10)
 	path, err := tuitest.WriteRecoveryScript(pid)
 	require.NoError(t, err)
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 
 	info, err := os.Stat(path)
 	require.NoError(t, err)
@@ -246,7 +246,7 @@ func TestWriteRecoveryScript_creates_executable_script(t *testing.T) {
 	require.Equal(t, os.FileMode(0o700), info.Mode().Perm()&0o700,
 		"user-rwx bits must all be set regardless of umask, got %v", info.Mode().Perm())
 
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // G304: test-only, path is the file we just wrote
 	require.NoError(t, err)
 	require.Contains(t, string(b), "stty sane")
 	// The script stores escape sequences as shell-escaped literals (`\033`

@@ -21,7 +21,7 @@ import (
 
 func loadFixture(t *testing.T, name string) observe.SshdEvent {
 	t.Helper()
-	b, err := os.ReadFile("testdata/journalctl/" + name)
+	b, err := os.ReadFile("testdata/journalctl/" + name) //nolint:gosec // G304: test-only, fixture path is committed testdata
 	require.NoError(t, err)
 	e, err := observe.Parse(b)
 	require.NoError(t, err)

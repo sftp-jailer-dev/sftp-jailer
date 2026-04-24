@@ -32,11 +32,13 @@ func WriteRecoveryScript(pid int) (path string, err error) {
 stty sane 2>/dev/null || true
 printf '\033[?1049l\033[?25h\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?2004l' > /dev/tty
 `
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+	// gosec G306/G302: 0o700 is intentional — the script must be executable.
+	// It contains no user data; only static terminal-reset escapes.
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // G306: script must be exec
 		return "", err
 	}
 	// os.WriteFile observes umask; re-chmod to guarantee user-rwx bits.
-	if err := os.Chmod(path, 0o700); err != nil {
+	if err := os.Chmod(path, 0o700); err != nil { //nolint:gosec // G302: script must be exec
 		return "", err
 	}
 	return path, nil

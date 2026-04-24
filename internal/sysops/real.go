@@ -47,18 +47,25 @@ func NewReal() SystemOps {
 	return r
 }
 
+// Geteuid implements [SystemOps.Geteuid].
 func (r *Real) Geteuid() int { return os.Geteuid() }
 
+// ReadFile implements [SystemOps.ReadFile]. Synchronous; ctx is accepted for
+// interface symmetry with slow-I/O methods.
+//
+// gosec G304: caller-supplied path is the documented SystemOps contract;
+// only this package may shell out or touch /etc, so path validation is the
+// caller's responsibility.
 func (r *Real) ReadFile(_ context.Context, path string) ([]byte, error) {
-	// os.ReadFile is synchronous and cheap; ctx is accepted for interface
-	// symmetry with slow-I/O methods.
-	return os.ReadFile(path)
+	return os.ReadFile(path) //nolint:gosec // G304: deliberate — sysops contract
 }
 
+// ReadDir implements [SystemOps.ReadDir].
 func (r *Real) ReadDir(_ context.Context, path string) ([]fs.DirEntry, error) {
 	return os.ReadDir(path)
 }
 
+// Stat implements [SystemOps.Stat] (follows symlinks).
 func (r *Real) Stat(_ context.Context, path string) (FileInfo, error) {
 	var st unix.Stat_t
 	if err := unix.Stat(path, &st); err != nil {
@@ -74,6 +81,7 @@ func (r *Real) Stat(_ context.Context, path string) (FileInfo, error) {
 	}, nil
 }
 
+// Lstat implements [SystemOps.Lstat] (does not follow symlinks).
 func (r *Real) Lstat(_ context.Context, path string) (FileInfo, error) {
 	var st unix.Stat_t
 	if err := unix.Lstat(path, &st); err != nil {
@@ -89,6 +97,7 @@ func (r *Real) Lstat(_ context.Context, path string) (FileInfo, error) {
 	}, nil
 }
 
+// Glob implements [SystemOps.Glob].
 func (r *Real) Glob(_ context.Context, pattern string) ([]string, error) {
 	return filepath.Glob(pattern)
 }
