@@ -169,7 +169,7 @@
 | Ubuntu 24.04 `ufw` 0.36.2 | nftables backend | Default on 24.04 is nftables-backed ufw. Comments survive `ufw reload`. Verify in Phase 0 with `ufw --version` and `nft list ruleset` after adding a commented rule. |
 ## Project-specific design commitments that come out of this stack
 - **Write sshd changes to `/etc/ssh/sshd_config.d/50-sftp-jailer.conf`, not to the main file.** Uses Ubuntu 24.04's drop-in convention; keeps the tool's footprint isolable; halves the parser's burden (only need to parse enough of the main file to confirm `Include sshd_config.d/*.conf` is present).
-- **All subprocess invocations go through a single `internal/sysexec` package** with: absolute-path lookup cached at startup, context timeouts mandatory, no `sh -c`, typed stdin handoff, structured error wrapping that includes the invoked argv for audit.
+- **All subprocess invocations go through a single `internal/sysops` package** with: absolute-path lookup cached at startup, context timeouts mandatory, no `sh -c`, typed stdin handoff, structured error wrapping that includes the invoked argv for audit.
 - **Firewall rule comment format:** `sftpj:user=<username>` (as PROJECT.md specifies). Define and commit a parser+serializer in one file, with fuzz tests — this is the load-bearing contract for the user↔IP mapping.
 - **SQL schema migrations via embedded `//go:embed` + `modernc.org/sqlite`:** no external migration tool needed; track `PRAGMA user_version` and apply numbered .sql files from the binary.
 - **Bubble Tea model structure:** one root model per screen (user list, log viewer, lockdown proposal, user detail); navigate between screens via a `tea.Cmd` returning the next model. Avoid a monolithic mega-model.
