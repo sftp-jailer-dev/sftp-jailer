@@ -11,7 +11,7 @@ fi
 
 SRC="sftp-jailer-logo.png"
 OUT="internal/tui/screens/splash/embedded"
-SIZE="40x20"
+SIZE="70x30"
 mkdir -p "$OUT"
 
 if ! [[ -f "$SRC" ]]; then
@@ -19,17 +19,21 @@ if ! [[ -f "$SRC" ]]; then
     exit 1
 fi
 
+# vhalf+space gives 2x vertical detail per cell (fg=top half, bg=bottom half),
+# which is needed to render the wordmark legibly. block+border + --fg-only
+# collapsed each cell to one color and produced an unreadable blur.
+
 # Truecolor (24-bit) — modern terminals
-chafa --colors full  --size "$SIZE" --format symbols --symbols block+border --fg-only "$SRC" > "$OUT/logo-truecolor.ans"
+chafa --colors full --size "$SIZE" --format symbols --symbols vhalf+space "$SRC" > "$OUT/logo-truecolor.ans"
 
 # 256-color (240 in chafa terminology — lower 16 are unreliable)
-chafa --colors 240   --size "$SIZE" --format symbols --symbols block+border --fg-only "$SRC" > "$OUT/logo-256.ans"
+chafa --colors 240  --size "$SIZE" --format symbols --symbols vhalf+space "$SRC" > "$OUT/logo-256.ans"
 
 # 16-color (safe floor for TERM=linux, old xterm)
-chafa --colors 16    --size "$SIZE" --format symbols --symbols block+border --fg-only "$SRC" > "$OUT/logo-16.ans"
+chafa --colors 16   --size "$SIZE" --format symbols --symbols vhalf+space "$SRC" > "$OUT/logo-16.ans"
 
 # Plain ASCII — no escape sequences at all
-chafa --colors none  --size "$SIZE" --format symbols --symbols ascii                     "$SRC" > "$OUT/logo-ascii.txt"
+chafa --colors none --size "$SIZE" --format symbols --symbols ascii        "$SRC" > "$OUT/logo-ascii.txt"
 
 for f in logo-truecolor.ans logo-256.ans logo-16.ans logo-ascii.txt; do
     if ! [[ -s "$OUT/$f" ]]; then
