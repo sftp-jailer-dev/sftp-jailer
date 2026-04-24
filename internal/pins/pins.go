@@ -18,9 +18,6 @@ import (
 	_ "charm.land/bubbletea/v2"
 	_ "charm.land/lipgloss/v2"
 
-	// CLI subcommand framework (Task 3 wires this into cmd/sftp-jailer).
-	_ "github.com/spf13/cobra"
-
 	// Fuzzy-search (plan 02 — `/` slash-search on list screens).
 	_ "github.com/sahilm/fuzzy"
 
