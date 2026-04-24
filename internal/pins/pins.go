@@ -10,6 +10,10 @@
 // final binary — the Go compiler discards unused imported packages.
 // Delete entries from this file only when the corresponding real import
 // has landed in production source.
+//
+// Shrinkage log:
+//   - 01-05 (this plan): removed `_ "modernc.org/sqlite"` — internal/store
+//     now imports it directly as the database/sql driver.
 package pins
 
 import (
@@ -20,7 +24,4 @@ import (
 
 	// Fuzzy-search (plan 02 — `/` slash-search on list screens).
 	_ "github.com/sahilm/fuzzy"
-
-	// Observation DB driver (plan 05+).
-	_ "modernc.org/sqlite"
 )
