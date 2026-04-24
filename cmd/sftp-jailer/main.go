@@ -1,14 +1,22 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/app"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	doctorscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/doctor"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/home"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/splash"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/wire"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/version"
@@ -71,15 +79,37 @@ func versionCmd() *cobra.Command {
 	}
 }
 
+// doctorCmd runs the six read-only diagnostic detectors and prints a
+// human-readable report (default) or the JSON-serialized model.DoctorReport
+// (when --json is passed). The SAFE-01 gate on rootCmd runs before this
+// handler, so we can assume euid=0 here.
 func doctorCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOut bool
+	c := &cobra.Command{
 		Use:   "doctor",
 		Short: "Read-only diagnostic of the box's SFTP posture",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("doctor subcommand not yet wired — see plan 04")
+			// T-04-05: bound the detector chain at 30 s so a hung sshd -T
+			// (or any other system call) cannot block indefinitely.
+			ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+			defer cancel()
+
+			svc := doctor.New(sysops.NewReal())
+			rep, err := svc.Run(ctx)
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(rep)
+			}
+			fmt.Fprint(cmd.OutOrStdout(), doctor.RenderText(rep))
 			return nil
 		},
 	}
+	c.Flags().BoolVar(&jsonOut, "json", false, "emit JSON instead of the text report")
+	return c
 }
 
 // runTUI constructs the single Bubble Tea program for the session (pitfall
@@ -102,6 +132,16 @@ func runTUI(cmd *cobra.Command, args []string) error {
 
 	// Register the splash.HomePlaceholder -> home.New resolver (C4 seam).
 	wire.Register()
+
+	// C2 wiring (plan 01-04): build the SystemOps handle + doctor service
+	// once here and inject a factory closure into the home screen. Home's
+	// `d` binding will construct a fresh doctor screen per push; the service
+	// itself is reused across pushes.
+	ops := sysops.NewReal()
+	doctorSvc := doctor.New(ops)
+	home.SetDoctorFactory(func() nav.Screen {
+		return doctorscreen.New(doctorSvc)
+	})
 
 	// Construct the App with the splash as the initial screen. The splash
 	// will auto-dismiss after 1s and ReplaceMsg itself with a home screen
