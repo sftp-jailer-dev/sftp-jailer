@@ -1,8 +1,4 @@
 package pins
 
-// Blank-imports of test-only dependencies to keep them in go.mod until
-// real test files in plans 02/04 pull them in naturally.
-
-import (
-	_ "github.com/charmbracelet/x/exp/teatest/v2"
-)
+// Empty — teatest is now used by internal/tui/app/app_test.go as of plan
+// 01-02. Kept as a placeholder so the pattern is visible for future plans.

@@ -12,16 +12,9 @@
 // has landed in production source.
 //
 // Shrinkage log:
-//   - 01-05 (this plan): removed `_ "modernc.org/sqlite"` — internal/store
-//     now imports it directly as the database/sql driver.
+//   - 01-05: removed `_ "modernc.org/sqlite"` — internal/store imports it.
+//   - 01-02: removed the four TUI pin-keepers — internal/tui/* now imports
+//     bubbletea/v2, bubbles/v2, lipgloss/v2, and sahilm/fuzzy directly.
+//     This file is now empty; kept in place as documentation of the
+//     pattern so future plans know where to park future pre-import pins.
 package pins
-
-import (
-	// TUI framework (plan 02).
-	_ "charm.land/bubbles/v2"
-	_ "charm.land/bubbletea/v2"
-	_ "charm.land/lipgloss/v2"
-
-	// Fuzzy-search (plan 02 — `/` slash-search on list screens).
-	_ "github.com/sahilm/fuzzy"
-)
