@@ -1,0 +1,31 @@
+# Requires goreleaser >= v2.15.4
+# goreleaser v2 configuration — Phase 1 stub.
+# Full .deb + nfpm + release config lands in Phase 5.
+# Local dev: `goreleaser build --snapshot --clean` uses this to produce a
+# CGO-free binary matching the Makefile's output.
+
+version: 2
+
+project_name: sftp-jailer
+
+builds:
+  - id: sftp-jailer
+    main: ./cmd/sftp-jailer
+    binary: sftp-jailer
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.buildVersion={{.Version}}
+      - -X main.buildProjectURL=https://sftp-jailer.com
+
+# NOTE: `archives`, `nfpms`, `release`, and `changelog` sections intentionally
+# absent. Phase 5 will add them. `goreleaser check` against this file
+# succeeds because the absent sections are optional.

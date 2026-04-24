@@ -22,7 +22,7 @@ lint:
 
 vuln:
 	go install golang.org/x/vuln/cmd/govulncheck@latest
-	govulncheck ./...
+	$$(go env GOPATH)/bin/govulncheck ./...
 
 logo:
 	bash scripts/render-logo.sh
