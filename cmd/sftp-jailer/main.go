@@ -4,8 +4,13 @@ import (
 	"fmt"
 	"os"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/app"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/splash"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/wire"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/version"
 )
 
@@ -77,7 +82,43 @@ func doctorCmd() *cobra.Command {
 	}
 }
 
+// runTUI constructs the single Bubble Tea program for the session (pitfall
+// E1: exactly one program instance) and runs it until the user quits. Before
+// the program starts, a recovery script is written to /tmp and its path
+// printed to stderr (pitfall E2) so if the terminal is wedged by a SIGKILL
+// or OOM, the admin sees the recovery invocation in scrollback.
 func runTUI(cmd *cobra.Command, args []string) error {
-	fmt.Println("TUI not yet wired — see plan 02")
+	// Pitfall E2: recovery script for unclean exits. Path printed to stderr
+	// BEFORE program.Run() so it's in scrollback even on a SIGKILL.
+	recoveryPath, err := tui.WriteRecoveryScript(os.Getpid())
+	if err != nil {
+		return fmt.Errorf("write recovery script: %w", err)
+	}
+	defer os.Remove(recoveryPath)
+
+	fmt.Fprintf(os.Stderr,
+		"sftp-jailer: if the terminal is wedged after a crash, run: %s\n",
+		recoveryPath)
+
+	// Register the splash.HomePlaceholder -> home.New resolver (C4 seam).
+	wire.Register()
+
+	// Construct the App with the splash as the initial screen. The splash
+	// will auto-dismiss after 1s and ReplaceMsg itself with a home screen
+	// via the wire resolver.
+	a := app.New(version.Version, version.ProjectURL,
+		splash.New(version.Version, version.ProjectURL),
+	)
+
+	// Exactly ONE program constructor per process (pitfall E1).
+	// Bubble Tea v2 notes:
+	//   - tea.WithAltScreen is not a ProgramOption in v2; alt-screen is set
+	//     via v.AltScreen = true in the root View() (see internal/tui/app).
+	//   - Panic catching is default in v2; there is no WithCatchPanics.
+	//     To disable it use tea.WithoutCatchPanics() — we want the default.
+	p := tea.NewProgram(a)
+	if _, err := p.Run(); err != nil {
+		return err
+	}
 	return nil
 }
