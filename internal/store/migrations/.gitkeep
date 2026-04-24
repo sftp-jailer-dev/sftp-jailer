@@ -1,0 +1,8 @@
+# Phase 2 populates this directory with numbered migration files:
+#   001_init.sql               — observations, observation_runs, noise_counters
+#   002_add_indexes.sql        — OBS-05 retention/compaction support
+#   003_user_ips.sql (phase 4) — FW-08 belt-and-suspenders user↔IP mirror
+#
+# Phase 1 ships the directory with only this .gitkeep so the //go:embed
+# migrations directive compiles (an empty directory on disk with no
+# tracked files is invisible to git and breaks the build).
