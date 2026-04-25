@@ -87,6 +87,69 @@ func TestClassify_unmatched_garbage(t *testing.T) {
 	require.Equal(t, observe.TierUnmatched, c.Tier)
 }
 
+// TestClassify_pubkey_fail_invalid_user_is_noise: PUBLIC_KEY_AUTH_FAIL fixture
+// covers the explicit `Failed publickey for invalid user …` shape. Per the D2
+// regex priority order, this MUST classify as noise (the invalid-user variant
+// wins over the generic-failed variant).
+func TestClassify_pubkey_fail_invalid_user_is_noise(t *testing.T) {
+	e := loadFixture(t, "pubkey-fail.json")
+	c := observe.Classify(e)
+	require.Equal(t, observe.TierNoise, c.Tier,
+		"pubkey-fail-invalid-user shape MUST be noise (D2 priority discipline)")
+	require.Equal(t, "xyz", c.User)
+	require.Equal(t, "198.51.100.1", c.SourceIP)
+	require.Equal(t, "auth_pubkey_fail_invalid", c.EventType)
+}
+
+// TestClassify_pubkey_fail_valid_user_is_targeted: same line shape with a
+// (possibly-)valid user must classify as targeted (Phase 1 structural-only
+// distinction; Phase 2+ may layer external lookups for finer routing).
+func TestClassify_pubkey_fail_valid_user_is_targeted(t *testing.T) {
+	c := observe.Classify(observe.SshdEvent{
+		Raw: "Failed publickey for alice from 198.51.100.1 port 51234 ssh2",
+	})
+	require.Equal(t, observe.TierTargeted, c.Tier,
+		"pubkey-fail for a valid (single-word) user MUST be targeted")
+	require.Equal(t, "alice", c.User)
+	require.Equal(t, "198.51.100.1", c.SourceIP)
+	require.Equal(t, "auth_pubkey_fail", c.EventType)
+}
+
+// TestClassify_sftp_transfer_recorded_as_success: SFTP_TRANSFER fixture covers
+// the `subsystem request for sftp by user …` shape. Successful subsystem
+// negotiation is itself a success-tier event (the user authenticated AND
+// requested sftp).
+func TestClassify_sftp_transfer_recorded_as_success(t *testing.T) {
+	e := loadFixture(t, "sftp-transfer.json")
+	c := observe.Classify(e)
+	require.Equal(t, observe.TierSuccess, c.Tier)
+	require.Equal(t, "alice", c.User)
+	require.Equal(t, "sftp_subsystem", c.EventType)
+}
+
+// TestClassify_event_types_for_existing_fixtures: pin EventType strings for
+// the Phase 1 fixtures so future regex changes don't silently drift the
+// observation row event_type column.
+func TestClassify_event_types_for_existing_fixtures(t *testing.T) {
+	cases := []struct {
+		fixture   string
+		wantType  string
+		wantTier  observe.Tier
+	}{
+		{"success.json", "auth_pubkey_ok", observe.TierSuccess},
+		{"invalid-user.json", "auth_pwd_fail_invalid", observe.TierNoise},
+		{"wrong-password.json", "auth_pwd_fail", observe.TierTargeted},
+		{"unmatched.json", "unmatched", observe.TierUnmatched},
+	}
+	for _, tc := range cases {
+		t.Run(tc.fixture, func(t *testing.T) {
+			c := observe.Classify(loadFixture(t, tc.fixture))
+			require.Equal(t, tc.wantTier, c.Tier)
+			require.Equal(t, tc.wantType, c.EventType)
+		})
+	}
+}
+
 // Parser tests — pure json.Unmarshal + string→int coercion, no exec.
 
 func TestParse_journalctl_line(t *testing.T) {
