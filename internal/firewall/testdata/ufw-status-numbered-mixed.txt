@@ -1,0 +1,10 @@
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22                         ALLOW IN    Anywhere                   # SSH default
+[ 2] 22 (v6)                    ALLOW IN    Anywhere (v6)              # SSH default
+[ 3] 22/tcp                     ALLOW IN    203.0.113.7                # sftpj:v=1:user=alice
+[ 4] 22/tcp                     ALLOW IN    198.51.100.42              # sftpj:v=1:user=bob
+[ 5] 22/tcp (v6)                ALLOW IN    2001:db8::1                # sftpj:v=1:user=carol
+[ 6] 22/tcp                     ALLOW IN    192.0.2.99                 # sftpj:v=2:user=dave

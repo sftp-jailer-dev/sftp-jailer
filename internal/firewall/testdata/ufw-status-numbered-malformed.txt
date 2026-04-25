@@ -1,0 +1,7 @@
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    203.0.113.7                # sftpj:v=1:user=alice
+[broken-line-no-id]                                                    # sftpj:v=1:user=corrupt
+[ 3] 22/tcp                     ALLOW IN    198.51.100.42              # sftpj:v=1:user=bob
