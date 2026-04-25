@@ -1,0 +1,16 @@
+[Unit]
+Description=Weekly trigger for the sftp-jailer observer
+Documentation=man:sftp-jailer(8)
+
+[Timer]
+# Weekly at midnight Sunday — the first day of the ISO week.
+OnCalendar=weekly
+# Catch up if the box was off when the timer would have fired.
+Persistent=true
+# Avoid every sftp-jailer instance on the planet hitting journalctl at
+# exactly midnight Sunday. Stagger by up to 1h.
+RandomizedDelaySec=1h
+Unit=sftp-jailer-observer.service
+
+[Install]
+WantedBy=timers.target

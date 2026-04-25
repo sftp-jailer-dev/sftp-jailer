@@ -1,0 +1,24 @@
+[Unit]
+Description=sftp-jailer observation pipeline (sshd journal → SQLite)
+Documentation=man:sftp-jailer(8)
+# Wait for journald and the network so journalctl + (future) IP-resolution work.
+After=systemd-journald.service network.target
+# We don't *require* network, but if it's late we don't want to block.
+Wants=systemd-journald.service
+
+[Service]
+Type=oneshot
+# Runs as root in v1 (per CLAUDE.md / state decision). v1.1 adds a dedicated
+# _sftp-jailer-observer user (OBS-v2-02).
+User=root
+ExecStart=/usr/bin/sftp-jailer observe-run
+# Send stdout (the JSON progress lines) and stderr to journald, tagged with
+# the unit name so admins can `journalctl -u sftp-jailer-observer.service`.
+StandardOutput=journal
+StandardError=journal
+# A typical run is seconds; cap at 10 min so a hung journalctl can't pin
+# the timer.
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target
