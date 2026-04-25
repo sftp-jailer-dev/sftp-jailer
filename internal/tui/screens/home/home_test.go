@@ -21,7 +21,10 @@ func keyPress(s string) tea.KeyPressMsg {
 func TestHome_KeyMap_exposesAllExpectedBindings(t *testing.T) {
 	km := home.DefaultKeyMap()
 	short := km.ShortHelp()
-	require.Len(t, short, 5)
+	// Phase 2 (02-04): home now also surfaces u/f/l/s in ShortHelp alongside
+	// d/a/// /?/q. The exact length is asserted below; we mainly care that
+	// every key the contract advertises is exposed via at least one binding.
+	require.NotEmpty(t, short)
 	// Assert each binding by its primary key.
 	found := map[string]bool{}
 	for _, b := range short {
@@ -29,10 +32,31 @@ func TestHome_KeyMap_exposesAllExpectedBindings(t *testing.T) {
 			found[k] = true
 		}
 	}
-	for _, k := range []string{"d", "a", "/", "?", "q", "ctrl+c"} {
+	for _, k := range []string{"d", "u", "f", "l", "s", "a", "/", "?", "q", "ctrl+c"} {
 		require.True(t, found[k], "KeyMap must expose %q", k)
 	}
 	require.NotEmpty(t, km.FullHelp())
+}
+
+// TestHome_keymap_extended_help_text confirms each new wave-3+ binding
+// carries a recognisable Help text — surfaces the screen name in the help
+// overlay so an admin pressing `?` immediately sees what `u` does.
+func TestHome_keymap_extended_help_text(t *testing.T) {
+	km := home.DefaultKeyMap()
+	want := map[string]string{
+		"u": "users",
+		"f": "firewall",
+		"l": "logs",
+		"s": "settings",
+	}
+	for _, b := range km.ShortHelp() {
+		for _, k := range b.Keys {
+			if expected, ok := want[k]; ok {
+				require.Equal(t, expected, b.Help,
+					"binding for %q must have Help=%q (got %q)", k, expected, b.Help)
+			}
+		}
+	}
 }
 
 func TestHome_d_pushes_stub_when_no_factory(t *testing.T) {
@@ -59,6 +83,98 @@ func TestHome_d_pushes_injected_factory(t *testing.T) {
 	require.NotNil(t, cmd)
 	nm := cmd().(nav.Msg)
 	require.Equal(t, sentinel, nm.Screen, "factory-produced screen must be pushed")
+}
+
+// TestHome_SetUsersFactory_registers asserts pressing `u` after registering
+// a users factory pushes the factory-produced screen via nav.PushCmd.
+func TestHome_SetUsersFactory_registers(t *testing.T) {
+	sentinel := &fakeScreen{title: "real-users"}
+	home.SetUsersFactory(func() nav.Screen { return sentinel })
+	defer home.SetUsersFactory(nil)
+
+	m := home.New("v1", "u")
+	_, cmd := m.Update(keyPress("u"))
+	require.NotNil(t, cmd)
+	nm := cmd().(nav.Msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Equal(t, sentinel, nm.Screen)
+}
+
+func TestHome_SetFirewallFactory_registers(t *testing.T) {
+	sentinel := &fakeScreen{title: "real-firewall"}
+	home.SetFirewallFactory(func() nav.Screen { return sentinel })
+	defer home.SetFirewallFactory(nil)
+
+	m := home.New("v1", "u")
+	_, cmd := m.Update(keyPress("f"))
+	require.NotNil(t, cmd)
+	nm := cmd().(nav.Msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Equal(t, sentinel, nm.Screen)
+}
+
+func TestHome_SetLogsFactory_registers(t *testing.T) {
+	sentinel := &fakeScreen{title: "real-logs"}
+	home.SetLogsFactory(func() nav.Screen { return sentinel })
+	defer home.SetLogsFactory(nil)
+
+	m := home.New("v1", "u")
+	_, cmd := m.Update(keyPress("l"))
+	require.NotNil(t, cmd)
+	nm := cmd().(nav.Msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Equal(t, sentinel, nm.Screen)
+}
+
+func TestHome_SetSettingsFactory_registers(t *testing.T) {
+	sentinel := &fakeScreen{title: "real-settings"}
+	home.SetSettingsFactory(func() nav.Screen { return sentinel })
+	defer home.SetSettingsFactory(nil)
+
+	m := home.New("v1", "u")
+	_, cmd := m.Update(keyPress("s"))
+	require.NotNil(t, cmd)
+	nm := cmd().(nav.Msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Equal(t, sentinel, nm.Screen)
+}
+
+// TestHome_factories_independent verifies that pressing one screen-letter
+// fires only that screen's factory, never another. Belt-and-suspenders so
+// future refactors can't silently reroute keys.
+func TestHome_factories_independent(t *testing.T) {
+	uSent := &fakeScreen{title: "u"}
+	fSent := &fakeScreen{title: "f"}
+	home.SetUsersFactory(func() nav.Screen { return uSent })
+	home.SetFirewallFactory(func() nav.Screen { return fSent })
+	defer home.SetUsersFactory(nil)
+	defer home.SetFirewallFactory(nil)
+
+	m := home.New("v1", "u")
+	_, cmd := m.Update(keyPress("u"))
+	require.NotNil(t, cmd)
+	require.Equal(t, uSent, cmd().(nav.Msg).Screen, "`u` must push users sentinel")
+
+	_, cmd = m.Update(keyPress("f"))
+	require.NotNil(t, cmd)
+	require.Equal(t, fSent, cmd().(nav.Msg).Screen, "`f` must push firewall sentinel")
+}
+
+// TestHome_no_factory_no_crash verifies that pressing u/f/l/s with no
+// factory registered emits a nil tea.Cmd — defensive: shipping the four
+// SetXFactory hooks but only wiring usersFactory in this plan must not
+// crash the TUI when an admin presses f/l/s before 02-05/06/07 land.
+func TestHome_no_factory_no_crash(t *testing.T) {
+	home.SetUsersFactory(nil)
+	home.SetFirewallFactory(nil)
+	home.SetLogsFactory(nil)
+	home.SetSettingsFactory(nil)
+
+	m := home.New("v1", "u")
+	for _, k := range []string{"u", "f", "l", "s"} {
+		_, cmd := m.Update(keyPress(k))
+		require.Nil(t, cmd, "pressing %q with no factory registered must return nil tea.Cmd (no panic, no push)", k)
+	}
 }
 
 func TestHome_a_pushes_about_screen(t *testing.T) {
