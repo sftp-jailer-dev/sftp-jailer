@@ -1,0 +1,8 @@
+# Drop-in for sftp-jailer
+Subsystem sftp internal-sftp -f AUTHPRIV -l INFO
+
+Match Group sftp-jailer
+  ChrootDirectory /srv/sftp/%u
+  ForceCommand internal-sftp
+  AllowTcpForwarding no
+  X11Forwarding no

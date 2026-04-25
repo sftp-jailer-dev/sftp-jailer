@@ -1,0 +1,5 @@
+# Drop-in without any Match Group sftp* block
+Subsystem sftp internal-sftp -f AUTHPRIV -l INFO
+
+PasswordAuthentication no
+PubkeyAuthentication yes

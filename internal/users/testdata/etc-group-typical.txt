@@ -1,0 +1,7 @@
+root:x:0:
+sys:x:3:
+adm:x:4:syslog,jasper
+sftp-jailer:x:1100:alice,bob
+sftponly:x:1101:carol
+other:x:1200:dave
+sshusers:x:1300:alice
