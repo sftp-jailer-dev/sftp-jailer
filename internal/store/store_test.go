@@ -297,7 +297,7 @@ func tableColumns(t *testing.T, db interface {
 	t.Helper()
 	rows, err := db.Query("PRAGMA table_info(" + table + ")")
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := map[string]bool{}
 	for rows.Next() {
 		var cid int

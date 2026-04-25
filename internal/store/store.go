@@ -119,7 +119,7 @@ func PeekUserVersion(ctx context.Context, path string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("store.PeekUserVersion open: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	var v int
 	if err := db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
