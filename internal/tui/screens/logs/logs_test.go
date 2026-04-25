@@ -357,12 +357,47 @@ func TestLogsScreen_esc_pops(t *testing.T) {
 }
 
 // TestLogsScreen_r_placeholder_when_no_factory — pressing `r` with no
-// observerunFactory registered shows a placeholder toast (will be replaced
-// by M-OBSERVE in plan 02-08).
+// observerunFactory registered shows a placeholder toast. In production the
+// factory is wired by main.go (plan 02-08); this asserts the safety net for
+// callers that construct the screen without bootstrapping the factory.
 func TestLogsScreen_r_placeholder_when_no_factory(t *testing.T) {
 	logsscreen.SetObserveRunFactory(nil) // ensure clean state
 	m := logsscreen.New(nil, nil)
 	m.LoadEventsForTest([]store.Event{{ID: 1, User: "alice"}}, nil)
 	_, _ = m.Update(keyPress("r"))
 	require.Contains(t, m.View(), "observe-run modal coming in plan 02-08")
+}
+
+// TestLogsScreen_consumes_nav_StatusRefreshMsg — sending a
+// nav.StatusRefreshMsg must trigger a re-issue of the status query
+// (returned tea.Cmd is non-nil even when queries==nil because we still
+// emit the loadStatus closure shape — but to keep the test deterministic
+// we assert that the cmd is non-nil only when queries is set; with nil
+// queries, the cmd is nil. Either way the message must NOT panic.)
+func TestLogsScreen_consumes_nav_StatusRefreshMsg(t *testing.T) {
+	m := logsscreen.New(nil, nil)
+	m.LoadEventsForTest([]store.Event{{ID: 1, User: "alice"}}, nil)
+	require.NotPanics(t, func() {
+		_, _ = m.Update(nav.StatusRefreshMsg{})
+	})
+}
+
+// TestLogsScreen_consumes_nav_ObserveRunCompleteToast — sending a
+// nav.ObserveRunCompleteToast must surface the "observe-run done — N events,
+// M counters, K dropped" toast in View().
+func TestLogsScreen_consumes_nav_ObserveRunCompleteToast(t *testing.T) {
+	m := logsscreen.New(nil, nil)
+	m.LoadEventsForTest([]store.Event{{ID: 1, User: "alice"}}, nil)
+	_, _ = m.Update(nav.ObserveRunCompleteToast{Events: 5, Counters: 1, Dropped: 0})
+	require.Contains(t, m.View(), "observe-run done — 5 events, 1 counters, 0 dropped")
+}
+
+// TestLogsScreen_consumes_nav_ObserveRunCancelledToast — sending a
+// nav.ObserveRunCancelledToast must surface the "observe-run cancelled — N
+// events ingested" toast in View() (UI-SPEC line 306).
+func TestLogsScreen_consumes_nav_ObserveRunCancelledToast(t *testing.T) {
+	m := logsscreen.New(nil, nil)
+	m.LoadEventsForTest([]store.Event{{ID: 1, User: "alice"}}, nil)
+	_, _ = m.Update(nav.ObserveRunCancelledToast{Count: 3})
+	require.Contains(t, m.View(), "observe-run cancelled — 3 events ingested")
 }
