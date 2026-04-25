@@ -5,6 +5,7 @@
 package usersscreen_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -151,12 +152,14 @@ func TestUsersScreen_sort_reverse_toggles_arrow(t *testing.T) {
 	require.Contains(t, m.View(), "↑", "after `S`, direction toggles to ↑")
 }
 
-// TestUsersScreen_copy_emits_SetClipboard — pressing `c` on a loaded row
-// returns a non-nil tea.Cmd; invoking it produces a tea.BatchMsg containing
-// at minimum the SetClipboard command. We assert by introspecting the
-// returned message — for SetClipboard specifically Bubble Tea v2 returns
-// a tea.SetClipboardMsg as the underlying tea.Msg.
-func TestUsersScreen_copy_emits_SetClipboard(t *testing.T) {
+// TestUsersScreen_copy_emits_clipboard_cmd — pressing `c` on a loaded row
+// returns a non-nil tea.Cmd; invoking it produces a tea.BatchMsg whose
+// concatenated message string contains the expected TSV row content. We
+// cannot assert on the exact internal SetClipboardMsg type (it is
+// unexported in bubbletea v2), so we walk the batch and stringify each
+// produced message — the OSC52 setClipboardMsg is `type setClipboardMsg
+// string`, so its fmt.Sprintf form contains the row text.
+func TestUsersScreen_copy_emits_clipboard_cmd(t *testing.T) {
 	m := usersscreen.New(nil)
 	m.LoadRowsForTest([]users.Row{{
 		Username: "alice", UID: 1001, ChrootPath: "/srv/sftp/alice",
@@ -165,25 +168,27 @@ func TestUsersScreen_copy_emits_SetClipboard(t *testing.T) {
 	_, cmd := m.Update(keyPress("c"))
 	require.NotNil(t, cmd, "`c` on a loaded row must emit a tea.Cmd")
 	msg := cmd()
-	// tea.Batch → tea.BatchMsg, which is a slice of tea.Cmd. Walk it and
-	// look for any sub-cmd that produces a SetClipboardMsg.
 	batch, ok := msg.(tea.BatchMsg)
 	require.True(t, ok, "expected tea.BatchMsg, got %T", msg)
-	foundClipboard := false
+	found := false
 	for _, sub := range batch {
 		if sub == nil {
 			continue
 		}
-		if _, isClip := sub().(tea.SetClipboardMsg); isClip {
-			foundClipboard = true
+		s := fmt.Sprintf("%v", sub())
+		if strings.Contains(s, "alice") && strings.Contains(s, "1001") {
+			found = true
 			break
 		}
 	}
-	require.True(t, foundClipboard, "batch must include a SetClipboardMsg command")
+	require.True(t, found, "batch must include a sub-cmd whose message stringifies to the TSV row content")
+
+	// Toast must announce the OSC 52 copy per UI-SPEC line 301.
+	require.Contains(t, m.View(), "copied user row via OSC 52")
 }
 
 // TestUsersScreen_copy_no_op_when_no_rows — `c` with no rows must not panic
-// and must not emit a SetClipboard.
+// and must not emit a clipboard write.
 func TestUsersScreen_copy_no_op_when_no_rows(t *testing.T) {
 	m := usersscreen.New(nil)
 	m.LoadRowsForTest(nil, nil)
@@ -191,15 +196,16 @@ func TestUsersScreen_copy_no_op_when_no_rows(t *testing.T) {
 	if cmd == nil {
 		return // acceptable: nothing to copy → no cmd
 	}
-	// If a cmd is returned it must NOT be a clipboard cmd.
+	// If a cmd is returned, no sub-message must contain a row payload.
 	msg := cmd()
 	if batch, ok := msg.(tea.BatchMsg); ok {
 		for _, sub := range batch {
 			if sub == nil {
 				continue
 			}
-			_, isClip := sub().(tea.SetClipboardMsg)
-			require.False(t, isClip, "no rows → no clipboard write")
+			s := fmt.Sprintf("%v", sub())
+			require.False(t, strings.Contains(s, "/srv/sftp/"),
+				"no rows → no clipboard write should ever carry a row payload; got %q", s)
 		}
 	}
 }

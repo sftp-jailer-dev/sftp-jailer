@@ -25,6 +25,29 @@ func NewSearch() Search {
 	return Search{ti: ti}
 }
 
+// Activate focuses the underlying textinput and flips Active=true. Returns
+// the focus tea.Cmd for the cursor blink (callers must thread it through
+// their Update return). Use this from screen `/` handlers instead of
+// poking `s.Active = true` directly — without Focus() the textinput
+// silently swallows keystrokes (see internal/tui/screens/users for the
+// canonical caller).
+func (s Search) Activate() (Search, tea.Cmd) {
+	s.Active = true
+	cmd := s.ti.Focus()
+	return s, cmd
+}
+
+// Deactivate blurs and clears. Returned for the (Search, tea.Cmd) value-
+// pattern; the cmd is always nil today but the signature mirrors Activate
+// so future cursor-stop animations don't break callers.
+func (s Search) Deactivate() (Search, tea.Cmd) {
+	s.Active = false
+	s.ti.SetValue("")
+	s.ti.Blur()
+	s.Matches = nil
+	return s, nil
+}
+
 // Update processes key / blur messages. When Active, esc dismisses; any
 // other key forwards to the underlying textinput. When inactive it's a
 // no-op.

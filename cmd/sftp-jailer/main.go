@@ -19,6 +19,7 @@ import (
 	doctorscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/doctor"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/home"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/splash"
+	usersscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/wire"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/version"
@@ -172,10 +173,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 
 	// Per-screen enrichers / services. usersEnum is shared across pushes
 	// (the Enumerator is stateless beyond its handles) so we build it once.
-	// usersEnum is consumed by the usersscreen factory wired in this plan's
-	// Task 2 commit (which adds the import + the home.SetUsersFactory call).
 	usersEnum := users.New(ops, queries)
-	_ = usersEnum // silence unused until Task 2 wires usersscreen.New(usersEnum)
 
 	// C2 wiring (plan 01-04): doctor service.
 	doctorSvc := doctor.New(ops)
@@ -183,7 +181,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// Factory injections — sorted alphabetically by screen name so future
 	// wave plans can insert their own line without merge conflict noise.
 	home.SetDoctorFactory(func() nav.Screen { return doctorscreen.New(doctorSvc) })
-	// home.SetUsersFactory    wired by plan 02-04 Task 2 (this plan).
+	home.SetUsersFactory(func() nav.Screen { return usersscreen.New(usersEnum) })
 	// home.SetFirewallFactory wired by plan 02-05 (firewall.Enumerate consumer).
 	// home.SetLogsFactory     wired by plan 02-06 (queries + sysops live-tail consumer).
 	// home.SetSettingsFactory wired by plan 02-07 (config.Load/Save consumer).
