@@ -17,9 +17,11 @@ import (
 )
 
 // loadFixture reads testdata/<name> and returns it as scripted Exec stdout.
+// gosec G304: name is a fixture filename hardcoded by the calling test —
+// not user input. Test code only.
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	b, err := os.ReadFile("testdata/" + name)
+	b, err := os.ReadFile("testdata/" + name) //nolint:gosec // G304: hardcoded fixture filename
 	require.NoError(t, err, "fixture %s", name)
 	return b
 }

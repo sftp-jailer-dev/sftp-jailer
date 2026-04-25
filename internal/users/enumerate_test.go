@@ -33,9 +33,11 @@ func (e fakeDirEntry) Type() fs.FileMode          { return 0 }
 func (e fakeDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
 
 // loadFixture reads testdata/<name>.
+// gosec G304: name is a fixture filename hardcoded by the calling test —
+// not user input. Test code only.
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", name))
+	b, err := os.ReadFile(filepath.Join("testdata", name)) //nolint:gosec // G304: hardcoded fixture filename
 	require.NoError(t, err, "fixture %s", name)
 	return b
 }
