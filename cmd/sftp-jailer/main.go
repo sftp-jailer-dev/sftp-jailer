@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/store"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/app"
@@ -19,6 +20,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/home"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/splash"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/wire"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/version"
 )
 
@@ -113,11 +115,24 @@ func doctorCmd() *cobra.Command {
 	return c
 }
 
+// observationsDBPath is the canonical on-disk SQLite path for the
+// observation pipeline (OBS-* / D-08). Variable (not const) so tests and
+// future work can override; production callers always read it as-is.
+var observationsDBPath = "/var/lib/sftp-jailer/observations.db"
+
 // runTUI constructs the single Bubble Tea program for the session (pitfall
 // E1: exactly one program instance) and runs it until the user quits. Before
 // the program starts, a recovery script is written to /tmp and its path
 // printed to stderr (pitfall E2) so if the terminal is wedged by a SIGKILL
 // or OOM, the admin sees the recovery invocation in scrollback.
+//
+// Bootstrap ownership (plan 02-04): this function constructs the full
+// production graph that wave-3+ feature plans extend by adding ONE
+// `home.SetXFactory(...)` line each — they do NOT modify the bootstrap.
+//   - 02-05 adds home.SetFirewallFactory(...)
+//   - 02-06 adds home.SetLogsFactory(...)    (also captures `p` for goroutine Send)
+//   - 02-07 adds home.SetSettingsFactory(...)
+//   - 02-08 wires logsscreen.SetObserveRunFactory(...) (different shape)
 func runTUI(cmd *cobra.Command, args []string) error {
 	// Pitfall E2: recovery script for unclean exits. Path printed to stderr
 	// BEFORE program.Run() so it's in scrollback even on a SIGKILL.
@@ -134,18 +149,47 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// Register the splash.HomePlaceholder -> home.New resolver (C4 seam).
 	wire.Register()
 
-	// C2 wiring (plan 01-04): build the SystemOps handle + doctor service
-	// once here and inject a factory closure into the home screen. Home's
-	// `d` binding will construct a fresh doctor screen per push; the service
-	// itself is reused across pushes.
+	// --- Production bootstrap (plan 02-04) -------------------------------
+	// SystemOps is the single seam for /etc reads + subprocess execution
+	// (enforced by scripts/check-no-exec-outside-sysops.sh). All downstream
+	// data-layer constructors take this handle.
 	ops := sysops.NewReal()
+
+	// Open the observation DB (read pool + single-conn writer split). The
+	// DB file may not yet exist on a fresh install; sqlite auto-creates it
+	// and Migrate brings the schema up to ExpectedSchemaVersion. A nonzero
+	// open error is fatal — without the DB the users / logs / firewall
+	// screens cannot enrich rows from observations.
+	st, err := store.Open(observationsDBPath)
+	if err != nil {
+		return fmt.Errorf("runTUI store.Open(%s): %w", observationsDBPath, err)
+	}
+	defer func() { _ = st.Close() }()
+	if err := st.Migrate(cmd.Context()); err != nil {
+		return fmt.Errorf("runTUI store.Migrate: %w", err)
+	}
+	queries := store.NewQueries(st)
+
+	// Per-screen enrichers / services. usersEnum is shared across pushes
+	// (the Enumerator is stateless beyond its handles) so we build it once.
+	// usersEnum is consumed by the usersscreen factory wired in this plan's
+	// Task 2 commit (which adds the import + the home.SetUsersFactory call).
+	usersEnum := users.New(ops, queries)
+	_ = usersEnum // silence unused until Task 2 wires usersscreen.New(usersEnum)
+
+	// C2 wiring (plan 01-04): doctor service.
 	doctorSvc := doctor.New(ops)
-	home.SetDoctorFactory(func() nav.Screen {
-		return doctorscreen.New(doctorSvc)
-	})
+
+	// Factory injections — sorted alphabetically by screen name so future
+	// wave plans can insert their own line without merge conflict noise.
+	home.SetDoctorFactory(func() nav.Screen { return doctorscreen.New(doctorSvc) })
+	// home.SetUsersFactory    wired by plan 02-04 Task 2 (this plan).
+	// home.SetFirewallFactory wired by plan 02-05 (firewall.Enumerate consumer).
+	// home.SetLogsFactory     wired by plan 02-06 (queries + sysops live-tail consumer).
+	// home.SetSettingsFactory wired by plan 02-07 (config.Load/Save consumer).
 
 	// Construct the App with the splash as the initial screen. The splash
-	// will auto-dismiss after 1s and ReplaceMsg itself with a home screen
+	// will auto-dismiss after 2s and ReplaceMsg itself with a home screen
 	// via the wire resolver.
 	a := app.New(version.Version, version.ProjectURL,
 		splash.New(version.Version, version.ProjectURL),

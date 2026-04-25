@@ -6,3 +6,6 @@ dist/
 coverage.out
 coverage.html
 .DS_Store
+# Local-build artifacts dropped at the repo root by `go build ./cmd/sftp-jailer`
+# during plan execution. Real release artifacts go to dist/ via goreleaser.
+/sftp-jailer

@@ -24,4 +24,9 @@ var (
 	Critical = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444")).Bold(true)
 	// Dim — faint style used for subtle labels (e.g. "— help —").
 	Dim = lipgloss.NewStyle().Faint(true)
+	// Info — cyan token added in Phase 2 plan 02-04. Used by S-USERS for
+	// D-12 INFO pseudo-rows (orphan / missing-match / missing-chroot
+	// breadcrumbs) and by S-LOGS (02-06) for the `noise` log tier. See
+	// UI-SPEC §Color row "info (NEW)".
+	Info = lipgloss.NewStyle().Foreground(lipgloss.Color("#06b6d4"))
 )
