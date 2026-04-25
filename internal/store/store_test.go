@@ -61,19 +61,23 @@ func TestReader_pool_sized(t *testing.T) {
 	require.Equal(t, 8, rStats.MaxOpenConnections)
 }
 
-func TestMigrate_empty_is_noop(t *testing.T) {
+// TestMigrate_advances_to_expected_version replaces the Phase-1
+// "empty migrations" no-op test. With Phase 2's 001+002 migrations
+// landed, a fresh DB MUST advance to ExpectedSchemaVersion (2) on Migrate.
+// The detailed table+index assertions live in
+// TestMigrate_applies_001_init_and_002_indexes.
+func TestMigrate_advances_to_expected_version(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 	s, err := store.Open(path)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
 
-	err = s.Migrate(context.Background())
-	require.NoError(t, err)
+	require.NoError(t, s.Migrate(context.Background()))
 
 	var v int
-	err = s.R.QueryRow("PRAGMA user_version").Scan(&v)
-	require.NoError(t, err)
-	require.Equal(t, 0, v, "empty migrations dir must leave user_version at 0")
+	require.NoError(t, s.R.QueryRow("PRAGMA user_version").Scan(&v))
+	require.Equal(t, store.ExpectedSchemaVersion, v,
+		"Migrate must advance fresh DB to ExpectedSchemaVersion")
 }
 
 func TestClose_closes_both(t *testing.T) {
