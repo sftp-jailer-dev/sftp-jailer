@@ -34,10 +34,16 @@ printf '\033[?1049l\033[?25h\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?20
 `
 	// gosec G306/G302: 0o700 is intentional — the script must be executable.
 	// It contains no user data; only static terminal-reset escapes.
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // G306: script must be exec
+	//
+	// The sftpj-allow-raw-write tag below carves this call out of the
+	// scripts/check-no-raw-config-write.sh guard — target is a transient
+	// PID-namespaced /tmp file (pitfall E2 recovery script), nothing to do
+	// with the /etc/sftp-jailer/config.yaml seam.
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // sftpj-allow-raw-write G306: script must be exec
 		return "", err
 	}
-	// os.WriteFile observes umask; re-chmod to guarantee user-rwx bits.
+	// Recovery script must be user-rwx so the admin can run it directly. The
+	// re-chmod compensates for umask stripping the bits during WriteFile.
 	if err := os.Chmod(path, 0o700); err != nil { //nolint:gosec // G302: script must be exec
 		return "", err
 	}

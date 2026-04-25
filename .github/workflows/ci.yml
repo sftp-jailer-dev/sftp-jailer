@@ -68,6 +68,8 @@ jobs:
         run: bash scripts/check-single-tea-program.sh
       - name: All seven direct deps pinned to exact versions
         run: bash scripts/check-go-mod-pins.sh
+      - name: Architecture invariant — no raw config writes outside internal/sysops + internal/config
+        run: bash scripts/check-no-raw-config-write.sh
       - name: Real.defaultTimeout policy check (10s)
         # Policy invariant: real.go carries the 10-second default timeout
         # for un-deadlined contexts. If this line is removed, CI fails.
