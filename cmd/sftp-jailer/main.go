@@ -65,6 +65,7 @@ func rootCmd() *cobra.Command {
 	}
 	root.AddCommand(versionCmd())
 	root.AddCommand(doctorCmd())
+	root.AddCommand(observeRunCmd()) // Phase 2 plan 02-02
 	return root
 }
 
