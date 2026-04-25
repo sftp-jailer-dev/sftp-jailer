@@ -20,6 +20,7 @@ import (
 	firewallscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/home"
 	logsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/logs"
+	observerunscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/observerun"
 	settingsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/settings"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/splash"
 	usersscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/users"
@@ -133,6 +134,11 @@ var observationsDBPath = "/var/lib/sftp-jailer/observations.db"
 // sync.
 var configFilePath = "/etc/sftp-jailer/config.yaml"
 
+// observerCursorPath is the canonical journalctl cursor file consumed by
+// observe-run. Mirrors the default of cmd/sftp-jailer/observe.go's
+// --cursor flag. Variable (not const) for test-overrides.
+var observerCursorPath = "/var/lib/sftp-jailer/observer.cursor"
+
 // runTUI constructs the single Bubble Tea program for the session (pitfall
 // E1: exactly one program instance) and runs it until the user quits. Before
 // the program starts, a recovery script is written to /tmp and its path
@@ -212,6 +218,24 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	//   - Panic catching is default in v2; there is no WithCatchPanics.
 	//     To disable it use tea.WithoutCatchPanics() — we want the default.
 	p := tea.NewProgram(a)
+
+	// M-OBSERVE wiring (plan 02-08): the observerun modal needs the
+	// *tea.Program reference for the goroutine-Send pattern (RESEARCH
+	// Pattern 4). Captured here AFTER the program is constructed above
+	// and BEFORE p.Run. This is structurally different from the
+	// home.SetXFactory wiring above because the dependency graph is
+	// asymmetric — only M-OBSERVE needs to push events back into the
+	// program from a goroutine.
+	observeRunOpts := sysops.ObserveRunSubprocessOpts{
+		// SelfPath empty → ObserveRunStream resolves os.Executable() at runtime.
+		CursorFile: observerCursorPath,
+		DBPath:     observationsDBPath,
+		ConfigPath: configFilePath,
+	}
+	logsscreen.SetObserveRunFactory(func() nav.Screen {
+		return observerunscreen.New(p, ops, observeRunOpts)
+	})
+
 	if _, err := p.Run(); err != nil {
 		return err
 	}

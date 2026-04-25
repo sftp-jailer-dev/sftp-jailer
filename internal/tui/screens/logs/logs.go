@@ -38,6 +38,12 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
 )
 
+// Cross-package message types are imported from internal/tui/nav (see
+// nav/msgs.go). The local statusRefreshMsg placeholder that 02-06 shipped
+// has been promoted to nav.StatusRefreshMsg; the corresponding toasts
+// (nav.ObserveRunCompleteToast / nav.ObserveRunCancelledToast) are
+// emitted by M-OBSERVE and consumed in this screen's Update.
+
 // Layout / status thresholds.
 const (
 	// SplitBreakpoint is the terminal-width cutoff for split-pane vs
@@ -109,12 +115,6 @@ type statusLoadedMsg struct {
 
 type liveTailFinishedMsg struct{ err error }
 
-// statusRefreshMsg is the local refresh-trigger when M-OBSERVE closes.
-// In plan 02-08 this will be promoted to nav.StatusRefreshMsg for
-// cross-package routing; today the type is unexported because no other
-// package needs to send it.
-type statusRefreshMsg struct{}
-
 // Model is the S-LOGS Bubble Tea v2 model.
 type Model struct {
 	queries *store.Queries
@@ -180,7 +180,7 @@ func (m *Model) loadEvents() tea.Cmd {
 }
 
 // loadStatus returns a tea.Cmd that calls StatusRow. Re-issued on
-// statusRefreshMsg (M-OBSERVE close, plan 02-08).
+// nav.StatusRefreshMsg (M-OBSERVE close, plan 02-08).
 func (m *Model) loadStatus() tea.Cmd {
 	q := m.queries
 	if q == nil {
@@ -266,8 +266,21 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		}
 		return m, nil
 
-	case statusRefreshMsg:
+	case nav.StatusRefreshMsg:
 		return m, m.loadStatus()
+
+	case nav.ObserveRunCompleteToast:
+		var flashCmd tea.Cmd
+		m.toast, flashCmd = m.toast.Flash(fmt.Sprintf(
+			"observe-run done — %d events, %d counters, %d dropped",
+			msg.Events, msg.Counters, msg.Dropped))
+		return m, tea.Batch(flashCmd, m.loadStatus())
+
+	case nav.ObserveRunCancelledToast:
+		var flashCmd tea.Cmd
+		m.toast, flashCmd = m.toast.Flash(fmt.Sprintf(
+			"observe-run cancelled — %d events ingested", msg.Count))
+		return m, tea.Batch(flashCmd, m.loadStatus())
 
 	case liveTailFinishedMsg:
 		// Resume; nothing to update. Errors from the subprocess (e.g.
