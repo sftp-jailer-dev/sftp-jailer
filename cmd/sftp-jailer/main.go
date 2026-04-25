@@ -19,6 +19,7 @@ import (
 	doctorscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/doctor"
 	firewallscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/home"
+	logsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/logs"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/splash"
 	usersscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/wire"
@@ -183,8 +184,8 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// wave plans can insert their own line without merge conflict noise.
 	home.SetDoctorFactory(func() nav.Screen { return doctorscreen.New(doctorSvc) })
 	home.SetFirewallFactory(func() nav.Screen { return firewallscreen.New(ops) })
+	home.SetLogsFactory(func() nav.Screen { return logsscreen.New(queries, ops) })
 	home.SetUsersFactory(func() nav.Screen { return usersscreen.New(usersEnum) })
-	// home.SetLogsFactory     wired by plan 02-06 (queries + sysops live-tail consumer).
 	// home.SetSettingsFactory wired by plan 02-07 (config.Load/Save consumer).
 
 	// Construct the App with the splash as the initial screen. The splash
