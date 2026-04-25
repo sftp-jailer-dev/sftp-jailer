@@ -209,6 +209,14 @@ func TestSettingsScreen_save_validates_first_and_keeps_edit_on_failure(t *testin
 // TestSettingsScreen_save_succeeds_writes_atomically — a valid edit on
 // detail_retention_days writes via AtomicWriteFile (the ONLY mutation seam
 // per OBS-05 / D-07) and exits edit mode.
+//
+// Note: we type "100" not "60" because the cross-field rule
+// `compact_after_days ≤ detail_retention_days` (config.Validate line 129)
+// would otherwise fail — compact is still 90 from the seed, and 60 < 90.
+// The plan's draft test value of "60" assumed compact would be re-baselined
+// implicitly; we honour the validation contract by raising detail past
+// compact instead. The behavioural assertion (write exactly once + toast
+// + exit edit mode) is unchanged.
 func TestSettingsScreen_save_succeeds_writes_atomically(t *testing.T) {
 	ops := sysops.NewFake()
 	m := settingsscreen.New(ops, configPath)
@@ -216,7 +224,7 @@ func TestSettingsScreen_save_succeeds_writes_atomically(t *testing.T) {
 
 	// Edit detail_retention_days (cursor 0).
 	_, _ = m.Update(keyPress("e"))
-	for _, r := range "60" {
+	for _, r := range "100" {
 		_, _ = m.Update(keyPress(string(r)))
 	}
 	// Save.
@@ -240,9 +248,9 @@ func TestSettingsScreen_save_succeeds_writes_atomically(t *testing.T) {
 	}
 	require.Equal(t, 1, writeCalls, "AtomicWriteFile must have been called exactly once")
 
-	// View should now show "60" (the new value) and a toast for the saved field.
+	// View should now show "100" (the new value) and a toast for the saved field.
 	out := m.View()
-	require.Contains(t, out, "60", "View must show the updated value after save")
+	require.Contains(t, out, "100", "View must show the updated value after save")
 	require.Contains(t, out, "saved detail_retention_days", "Toast must announce the saved field")
 }
 

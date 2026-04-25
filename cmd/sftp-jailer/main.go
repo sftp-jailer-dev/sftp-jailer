@@ -20,6 +20,7 @@ import (
 	firewallscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/home"
 	logsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/logs"
+	settingsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/settings"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/splash"
 	usersscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/wire"
@@ -123,6 +124,15 @@ func doctorCmd() *cobra.Command {
 // future work can override; production callers always read it as-is.
 var observationsDBPath = "/var/lib/sftp-jailer/observations.db"
 
+// configFilePath is the canonical on-disk YAML path for sftp-jailer's own
+// settings (D-07 / OBS-05). The S-SETTINGS screen reads + atomically
+// rewrites this file; observe-run reads it via config.Load. Variable (not
+// const) for symmetry with observationsDBPath — tests can override if a
+// future test seam needs it. Same path is also hardcoded in
+// cmd/sftp-jailer/observe.go's --config flag default; both must stay in
+// sync.
+var configFilePath = "/etc/sftp-jailer/config.yaml"
+
 // runTUI constructs the single Bubble Tea program for the session (pitfall
 // E1: exactly one program instance) and runs it until the user quits. Before
 // the program starts, a recovery script is written to /tmp and its path
@@ -185,8 +195,8 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	home.SetDoctorFactory(func() nav.Screen { return doctorscreen.New(doctorSvc) })
 	home.SetFirewallFactory(func() nav.Screen { return firewallscreen.New(ops) })
 	home.SetLogsFactory(func() nav.Screen { return logsscreen.New(queries, ops) })
+	home.SetSettingsFactory(func() nav.Screen { return settingsscreen.New(ops, configFilePath) })
 	home.SetUsersFactory(func() nav.Screen { return usersscreen.New(usersEnum) })
-	// home.SetSettingsFactory wired by plan 02-07 (config.Load/Save consumer).
 
 	// Construct the App with the splash as the initial screen. The splash
 	// will auto-dismiss after 2s and ReplaceMsg itself with a home screen
