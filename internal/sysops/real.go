@@ -25,10 +25,12 @@ import (
 type Real struct {
 	// Absolute paths resolved once at startup — defeats $PATH injection by a
 	// compromised environment, and makes audit logging unambiguous.
-	binSshd      string
-	binAAStatus  string
-	binNft       string
-	binSystemctl string
+	binSshd       string
+	binAAStatus   string
+	binNft        string
+	binSystemctl  string
+	binJournalctl string // Phase 2 — observe-run + S-LOGS live-tail
+	binUfw        string // Phase 2 — internal/firewall reader (consumed by 02-03)
 
 	// defaultTimeout applies to Exec() calls whose context has no deadline.
 	// Bounds T-01-07 (unbounded subprocess hang).
@@ -44,6 +46,8 @@ func NewReal() SystemOps {
 	r.binAAStatus, _ = exec.LookPath("aa-status")
 	r.binNft, _ = exec.LookPath("nft")
 	r.binSystemctl, _ = exec.LookPath("systemctl")
+	r.binJournalctl, _ = exec.LookPath("journalctl")
+	r.binUfw, _ = exec.LookPath("ufw")
 	return r
 }
 
@@ -117,10 +121,12 @@ func (r *Real) Exec(ctx context.Context, name string, args ...string) (ExecResul
 		bin = name
 	} else {
 		allow := map[string]string{
-			"sshd":      r.binSshd,
-			"aa-status": r.binAAStatus,
-			"nft":       r.binNft,
-			"systemctl": r.binSystemctl,
+			"sshd":       r.binSshd,
+			"aa-status":  r.binAAStatus,
+			"nft":        r.binNft,
+			"systemctl":  r.binSystemctl,
+			"journalctl": r.binJournalctl, // Phase 2 — observe-run + live-tail
+			"ufw":        r.binUfw,        // Phase 2 — firewall reader (02-03)
 		}
 		b, ok := allow[name]
 		if !ok || b == "" {

@@ -1,15 +1,5 @@
-//go:build koanf_landed
-
 // Package config_test exercises the koanf-based load + atomic save of
 // /etc/sftp-jailer/config.yaml plus the inline Validate ruleset (D-07).
-//
-// Build/test gating: this file (along with config.go itself) is gated by
-// the `koanf_landed` build tag. The tag is removed by plan 02-02 once
-// `go.mod` carries the koanf v2 dep tree AND `internal/sysops` exposes
-// `AtomicWriteFile`. Until then, `go test ./...` skips this package
-// cleanly. Wave ordering (02-03 wave 1 → 02-02 wave 2 with depends_on
-// [02-01, 02-03]) guarantees the deps land before any consumer uses
-// this package, and 02-02 flips the gate as part of that landing.
 package config_test
 
 import (
@@ -176,16 +166,35 @@ func TestValidate_compact_after_days_le_detail(t *testing.T) {
 
 // TestValidate_returns_all_errors_not_just_first: every failing rule
 // contributes its own error so the TUI can render them as a list.
+//
+// Note on input shape: DetailRetentionDays is set to a VALID value (30) so
+// the "compact ≤ detail" comparison is meaningful — Validate intentionally
+// suppresses that comparison when detail is itself invalid (line 130: the
+// `else if s.DetailRetentionDays >= 1 && …` guard). The test exercises the
+// "all rules fail simultaneously" path via independently-failing values.
 func TestValidate_returns_all_errors_not_just_first(t *testing.T) {
 	bad := config.Settings{
-		DetailRetentionDays: 0,        // fails range
-		DBMaxSizeMB:         50,       // fails floor
-		CompactAfterDays:    99999,    // fails ≤ detail
+		DetailRetentionDays: 30,    // valid (in-range)
+		DBMaxSizeMB:         50,    // fails floor
+		CompactAfterDays:    99999, // fails ≤ detail
 	}
 	errs := config.Validate(bad)
-	require.GreaterOrEqual(t, len(errs), 3, "expected ≥3 errors, got %d: %v", len(errs), errs)
+	require.GreaterOrEqual(t, len(errs), 2, "expected ≥2 errors, got %d: %v", len(errs), errs)
 	// Sanity-check: every error message is non-empty.
 	for _, e := range errs {
 		require.NotEmpty(t, strings.TrimSpace(e.Error()))
 	}
+
+	// Independent verification: each rule fails on its own with a single
+	// dedicated bad value, so the "list of all violations" guarantee is
+	// preserved (the TUI sees one message per knob the admin needs to fix).
+	require.NotEmpty(t, config.Validate(config.Settings{
+		DetailRetentionDays: 0, DBMaxSizeMB: 500, CompactAfterDays: 30,
+	}))
+	require.NotEmpty(t, config.Validate(config.Settings{
+		DetailRetentionDays: 30, DBMaxSizeMB: 50, CompactAfterDays: 30,
+	}))
+	require.NotEmpty(t, config.Validate(config.Settings{
+		DetailRetentionDays: 30, DBMaxSizeMB: 500, CompactAfterDays: 0,
+	}))
 }

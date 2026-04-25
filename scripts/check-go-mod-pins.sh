@@ -2,6 +2,12 @@
 # Enforces the exact pinned versions for every direct dep declared in go.mod.
 # If any pin drifts, CI fails and the developer must update this script
 # deliberately alongside go.mod.
+#
+# Phase 2 (plan 02-02) bumped the count from 7 → 11 with the koanf v2 family
+# (consumed by internal/config) plus go-humanize (consumed by
+# internal/observe.Runner for RunSummary.DurationHuman). The koanf
+# providers/structs sub-provider is unversioned-latest in its README and
+# pins via go.sum; we anchor only the four primary entries here.
 set -euo pipefail
 
 declare -a REQUIRED=(
@@ -12,6 +18,10 @@ declare -a REQUIRED=(
     'github.com/sahilm/fuzzy v0.1.1'
     'golang.org/x/sys v0.43.0'
     'modernc.org/sqlite v1.49.1'
+    'github.com/dustin/go-humanize v1.0.1'
+    'github.com/knadh/koanf/v2 v2.3.4'
+    'github.com/knadh/koanf/parsers/yaml'
+    'github.com/knadh/koanf/providers/rawbytes'
 )
 
 fail=0
@@ -25,4 +35,4 @@ done
 if [[ "$fail" == "1" ]]; then
     exit 1
 fi
-echo "OK: all 7 direct-dep pins match (bubbletea/bubbles/lipgloss/cobra/fuzzy/x-sys/sqlite)"
+echo "OK: all 11 direct-dep pins match (bubbletea/bubbles/lipgloss/cobra/fuzzy/x-sys/sqlite + humanize + koanf/v2 + koanf/parsers/yaml + koanf/providers/rawbytes)"

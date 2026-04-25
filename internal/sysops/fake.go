@@ -1,9 +1,13 @@
 package sysops
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
 )
@@ -50,6 +54,37 @@ type Fake struct {
 	// names; values are a slice of space-joined argument strings.
 	SshdConfig map[string][]string
 
+	// Phase 2 additions — scripted-response mirrors of the new sysops methods.
+
+	// AtomicWriteError, if non-nil, is returned from AtomicWriteFile before
+	// any state mutation. Used to simulate write failures.
+	AtomicWriteError error
+
+	// JournalctlStdout maps unit string → canned stdout bytes returned from
+	// JournalctlStream. Each call returns a fresh ReadCloser over the bytes
+	// (i.e. consumable independently across calls).
+	JournalctlStdout map[string][]byte
+
+	// JournalctlStreamError, if non-nil, is returned from JournalctlStream
+	// before any state mutation.
+	JournalctlStreamError error
+
+	// ObserveRunStdout: canned stdout for ObserveRunStream. Each call returns
+	// a fresh ReadCloser over the same bytes.
+	ObserveRunStdout []byte
+
+	// ObserveRunStreamError, if non-nil, is returned from ObserveRunStream
+	// before any state mutation.
+	ObserveRunStreamError error
+
+	// LockHeld toggles AcquireRunLock between "succeeds + flips to held" and
+	// "returns ErrLockHeld." Tests mutate this to script the lockfile state.
+	LockHeld bool
+
+	// LockError, if non-nil, takes precedence over LockHeld in AcquireRunLock.
+	// Used to simulate flock(2) failures.
+	LockError error
+
 	// Calls is a recording of every method invocation in call order, with
 	// args serialized to the argv Args field.
 	Calls []FakeCall
@@ -73,6 +108,7 @@ func NewFake() *Fake {
 		ExecResponses:         map[string]ExecResult{},
 		ExecResponsesByPrefix: map[string]ExecResult{},
 		SshdConfig:            map[string][]string{},
+		JournalctlStdout:      map[string][]byte{},
 	}
 }
 
@@ -186,4 +222,78 @@ func (f *Fake) SshdDumpConfig(_ context.Context) (map[string][]string, error) {
 		out[k] = append([]string(nil), v...)
 	}
 	return out, nil
+}
+
+// AtomicWriteFile implements [SystemOps.AtomicWriteFile]. Records the call
+// and persists data into f.Files[path] so subsequent ReadFile round-trips
+// return the same bytes.
+func (f *Fake) AtomicWriteFile(_ context.Context, path string, data []byte, mode fs.FileMode) error {
+	f.record("AtomicWriteFile", path, fmt.Sprintf("len=%d", len(data)), fmt.Sprintf("mode=%o", mode))
+	if f.AtomicWriteError != nil {
+		return f.AtomicWriteError
+	}
+	// Defensive copy so callers can mutate `data` afterwards without
+	// affecting our scripted state.
+	cp := make([]byte, len(data))
+	copy(cp, data)
+	f.mu.Lock()
+	if f.Files == nil {
+		f.Files = map[string][]byte{}
+	}
+	f.Files[path] = cp
+	f.mu.Unlock()
+	return nil
+}
+
+// JournalctlStream implements [SystemOps.JournalctlStream]. Returns a fresh
+// io.NopCloser over the canned bytes for opts.Unit; the *os.Process return
+// is always nil for the Fake (the runner does not call proc.Wait when proc
+// is nil — see internal/observe/runner.go).
+func (f *Fake) JournalctlStream(_ context.Context, opts JournalctlStreamOpts) (*os.Process, io.ReadCloser, error) {
+	f.record("JournalctlStream", opts.CursorFile, opts.Unit, opts.Since)
+	if f.JournalctlStreamError != nil {
+		return nil, nil, f.JournalctlStreamError
+	}
+	canned := f.JournalctlStdout[opts.Unit] // empty map / missing key → nil → empty stream
+	return nil, io.NopCloser(bytes.NewReader(canned)), nil
+}
+
+// JournalctlFollowCmd implements [SystemOps.JournalctlFollowCmd]. Returns a
+// no-op *exec.Cmd whose program name is the literal "journalctl" and whose
+// args mirror Real. The returned Cmd is never Run by the unit tests — the
+// production caller (live-tail screen, plan 02-06) hands it to tea.ExecProcess.
+func (f *Fake) JournalctlFollowCmd(unit string) *exec.Cmd {
+	f.record("JournalctlFollowCmd", unit)
+	return exec.Command("journalctl", "-u", unit, "-f", "--no-pager") //nolint:gosec // G204: typed wrapper, fixed argv shape
+}
+
+// ObserveRunStream implements [SystemOps.ObserveRunStream]. Returns a fresh
+// io.NopCloser over the scripted ObserveRunStdout bytes.
+func (f *Fake) ObserveRunStream(_ context.Context, opts ObserveRunSubprocessOpts) (*os.Process, io.ReadCloser, error) {
+	f.record("ObserveRunStream", opts.SelfPath, opts.CursorFile, opts.DBPath, opts.ConfigPath)
+	if f.ObserveRunStreamError != nil {
+		return nil, nil, f.ObserveRunStreamError
+	}
+	return nil, io.NopCloser(bytes.NewReader(f.ObserveRunStdout)), nil
+}
+
+// AcquireRunLock implements [SystemOps.AcquireRunLock]. Returns ErrLockHeld
+// when LockHeld is true; otherwise flips LockHeld=true and returns a release
+// closure that flips it back. LockError takes precedence over LockHeld.
+func (f *Fake) AcquireRunLock(_ context.Context, path string) (release func(), err error) {
+	f.record("AcquireRunLock", path)
+	if f.LockError != nil {
+		return nil, f.LockError
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.LockHeld {
+		return nil, ErrLockHeld
+	}
+	f.LockHeld = true
+	return func() {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.LockHeld = false
+	}, nil
 }

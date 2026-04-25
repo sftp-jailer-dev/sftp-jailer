@@ -1,5 +1,3 @@
-//go:build koanf_landed
-
 // Package config loads and atomically saves /etc/sftp-jailer/config.yaml.
 //
 // This file is sftp-jailer's own config — the D-07 carve-out from the
@@ -21,19 +19,8 @@
 // Architectural invariants:
 //   - Reads via sysops.ReadFile (NOT koanf's providers/file which calls
 //     os.ReadFile directly — would bypass the seam).
-//   - Writes via sysops.AtomicWriteFile (lands in plan 02-02 wave 2; this
-//     plan ships the call site, 02-02 ships the method on SystemOps).
+//   - Writes via sysops.AtomicWriteFile (Phase 2 plan 02-02 D-07 carve-out).
 //   - This package never imports os or os/exec.
-//
-// Build/wave note: the koanf v2 dep tree (`koanf/v2 v2.3.4` + parsers/yaml +
-// providers/rawbytes + providers/structs) is added to go.mod by plan 02-02
-// (wave 2) per the wave-1 file-overlap discipline. The `koanf_landed`
-// build tag at the top of this file keeps it out of the compile graph
-// until 02-02 lands; 02-02's task list removes (or flips on) the build
-// tag once `go.mod` carries the koanf deps AND `internal/sysops` exposes
-// `AtomicWriteFile`. Wave ordering (02-03 wave 1 → 02-02 wave 2 with
-// depends_on [02-01, 02-03]) guarantees the deps land before any consumer
-// uses this package.
 package config
 
 import (
