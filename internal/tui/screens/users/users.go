@@ -277,7 +277,7 @@ func (m *Model) handleCopy() (nav.Screen, tea.Cmd) {
 	if m.cursor < 0 || m.cursor >= len(m.filtered) {
 		return m, nil
 	}
-	text := rowAsTSV(m.filtered[m.cursor])
+	text := rowAsTSV(m.filtered[m.cursor], m.cfg)
 	var flashCmd tea.Cmd
 	m.toast, flashCmd = m.toast.Flash("copied user row via OSC 52")
 	return m, tea.Batch(tea.SetClipboard(text), flashCmd)
@@ -287,12 +287,12 @@ func (m *Model) handleCopy() (nav.Screen, tea.Cmd) {
 // tab-separated for paste-friendliness in Excel / Numbers / Sheets.
 //
 // Last-login ns timestamp 0 is rendered as "never" rather than the unix
-// epoch — surfaced in the UI the same way (UI-SPEC line 380).
-func rowAsTSV(r users.Row) string {
-	pwdAge := "—"
-	if r.PasswordAgeDays >= 0 {
-		pwdAge = fmt.Sprintf("%dd", r.PasswordAgeDays)
-	}
+// epoch — surfaced in the UI the same way (UI-SPEC line 380). The
+// password-age column flows through users.FormatPasswordAge so the TSV
+// path matches the live render verbatim (single source of truth for the
+// "Nd (fresh|aging|stale)" / ∞ / — vocabulary).
+func rowAsTSV(r users.Row, cfg *config.Settings) string {
+	pwdAge := users.FormatPasswordAge(r.PasswordAgeDays, r.PasswordMaxDays, cfg.PasswordAgingDays, cfg.PasswordStaleDays)
 	lastLogin := "never"
 	if r.LastLoginNs > 0 {
 		lastLogin = humanize.Time(time.Unix(0, r.LastLoginNs))
@@ -412,24 +412,28 @@ func (m *Model) View() string {
 		b.WriteString("\n")
 	}
 
-	// Column header — Primary accent per UI-SPEC line 75.
+	// Column header — Primary accent per UI-SPEC line 75. The pwd-age
+	// column is 14 chars wide to fit the longest formatted value
+	// ("Nd (aging)" / "Nd (stale)" / "Nd (fresh)" / "∞" / "—").
 	b.WriteString(styles.Primary.Render(fmt.Sprintf(
-		"  %-12s %6s  %-30s %-8s %4s  %-12s %-16s %4s",
+		"  %-12s %6s  %-30s %-14s %4s  %-12s %-16s %4s",
 		"user", "uid", "chroot", "pwd age", "keys", "last login", "first seen", "IPs")))
 	b.WriteString("\n")
 
 	// Real rows — selected row prefixed with `▌` (cursor marker); others
 	// with two spaces. Avoids reverse-video so substring assertions in
 	// tests remain stable across terminal profiles.
+	//
+	// pwd-age column flows through users.FormatPasswordAge so the live
+	// render and the TSV/clipboard path share a single source of truth
+	// (the truth-tested format helper). Threshold values come from the
+	// injected *config.Settings.
 	for i, r := range m.filtered {
 		marker := "  "
 		if i == m.cursor {
 			marker = "▌ "
 		}
-		pwdAge := "—"
-		if r.PasswordAgeDays >= 0 {
-			pwdAge = fmt.Sprintf("%dd", r.PasswordAgeDays)
-		}
+		pwdAge := users.FormatPasswordAge(r.PasswordAgeDays, r.PasswordMaxDays, m.cfg.PasswordAgingDays, m.cfg.PasswordStaleDays)
 		lastLogin := "never"
 		if r.LastLoginNs > 0 {
 			lastLogin = humanize.Time(time.Unix(0, r.LastLoginNs))
@@ -439,7 +443,7 @@ func (m *Model) View() string {
 			firstSeen = "—"
 		}
 		row := fmt.Sprintf(
-			"%s%-12s %6d  %-30s %-8s %4d  %-12s %-16s %4d",
+			"%s%-12s %6d  %-30s %-14s %4d  %-12s %-16s %4d",
 			marker,
 			truncate(r.Username, 12),
 			r.UID,
@@ -456,6 +460,15 @@ func (m *Model) View() string {
 		b.WriteString(row)
 		b.WriteString("\n")
 	}
+
+	// Password-age legend (02-11 / SC #3 A+) — substituted with live
+	// thresholds so admins see the actual buckets the cfg drives. The
+	// muted style places it beneath the table without competing with
+	// the data rows for attention.
+	b.WriteString(styles.Dim.Render(fmt.Sprintf(
+		"pwd age: ∞ = no expiry policy · fresh < %dd · aging < %dd · stale ≥ %dd",
+		m.cfg.PasswordAgingDays, m.cfg.PasswordStaleDays, m.cfg.PasswordStaleDays)))
+	b.WriteString("\n")
 
 	// Footer — sort indicator on its own line, then short help.
 	arrow := "↓"

@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/store"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
@@ -193,6 +194,22 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// (the Enumerator is stateless beyond its handles) so we build it once.
 	usersEnum := users.New(ops, queries)
 
+	// Load the persisted config once at startup so the S-USERS screen's
+	// password-age legend + threshold buckets reflect what the admin set.
+	// A missing file yields config.Defaults() (180 / 365), so first launch
+	// renders sensible buckets without requiring the admin to write the
+	// file first. A genuine read/parse error is surfaced upstream — at
+	// that point the TUI can still launch with Defaults() to keep the
+	// degradation graceful.
+	usersCfg := config.Defaults()
+	if loaded, err := config.Load(cmd.Context(), ops, configFilePath); err == nil {
+		usersCfg = loaded
+	} else {
+		fmt.Fprintf(os.Stderr,
+			"sftp-jailer: warning: could not load %s (%v); falling back to defaults for the S-USERS legend\n",
+			configFilePath, err)
+	}
+
 	// C2 wiring (plan 01-04): doctor service.
 	doctorSvc := doctor.New(ops)
 
@@ -202,7 +219,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	home.SetFirewallFactory(func() nav.Screen { return firewallscreen.New(ops) })
 	home.SetLogsFactory(func() nav.Screen { return logsscreen.New(queries, ops) })
 	home.SetSettingsFactory(func() nav.Screen { return settingsscreen.New(ops, configFilePath) })
-	home.SetUsersFactory(func() nav.Screen { return usersscreen.New(usersEnum) })
+	home.SetUsersFactory(func() nav.Screen { return usersscreen.NewWithConfig(usersEnum, &usersCfg) })
 
 	// Construct the App with the splash as the initial screen. The splash
 	// will auto-dismiss after 2s and ReplaceMsg itself with a home screen
