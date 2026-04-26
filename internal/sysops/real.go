@@ -10,12 +10,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
+
+// errEmptyLastChange signals that /etc/shadow has the user line but field
+// 3 is empty (force-change-on-next-login). Caller should leave
+// PasswordAgeDays at -1.
+var errEmptyLastChange = errors.New("ReadShadow: empty last-change field")
 
 // Real is the production SystemOps implementation. It is the ONLY type in
 // the project that holds os/exec state or calls unix syscalls directly.
@@ -167,10 +173,62 @@ func (r *Real) Exec(ctx context.Context, name string, args ...string) (ExecResul
 	return res, err
 }
 
-// ReadShadow implements [SystemOps.ReadShadow] (stub for Task 2 — replaced
-// in Task 3 with the production parser).
-func (r *Real) ReadShadow(_ context.Context, _ string) (int, int, error) {
-	return 0, 0, fmt.Errorf("ReadShadow: not implemented")
+// ReadShadow implements [SystemOps.ReadShadow]. Reads /etc/shadow and
+// returns BOTH field 3 (last-password-change-day, days since 1970-01-01
+// UTC) AND field 5 (password-max-days; >= 99999 conventionally means
+// "no expiry policy"; an empty field is reported as 0) for the matching
+// user.
+//
+// /etc/shadow format (per shadow(5)):
+//
+//	user:hash:lstchg:min:max:warn:inactive:expire:reserved
+//
+// Returns fs.ErrNotExist if the user is not present in the file.
+// Returns the underlying ReadFile error for permission/missing-file paths.
+// An empty lstchg field (force-change-on-next-login) is reported as
+// (0, 0, errEmptyLastChange) — callers SHOULD treat this as "unknown" and
+// leave PasswordAgeDays / PasswordMaxDays at -1 (graceful degradation).
+//
+// gosec G304: deliberate — sysops contract; root-only access controlled
+// by ownership/mode (0640 root:shadow on Ubuntu 24.04).
+func (r *Real) ReadShadow(_ context.Context, username string) (int, int, error) {
+	raw, err := os.ReadFile("/etc/shadow") //nolint:gosec // G304: deliberate — sysops contract
+	if err != nil {
+		return 0, 0, fmt.Errorf("ReadShadow read /etc/shadow: %w", err)
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.SplitN(line, ":", 9)
+		if len(fields) < 5 {
+			// Malformed shadow line — skip rather than crash.
+			continue
+		}
+		if fields[0] != username {
+			continue
+		}
+		if fields[2] == "" {
+			return 0, 0, errEmptyLastChange
+		}
+		lstchg, perr := strconv.Atoi(fields[2])
+		if perr != nil {
+			return 0, 0, fmt.Errorf("ReadShadow parse field 3 for %q: %w", username, perr)
+		}
+		// Field 5 (max). Empty string is conventionally "not set" → 0; we
+		// surface 0 rather than an error so the caller can render ∞ via
+		// the FormatPasswordAge contract (max==0 → indefinite policy).
+		var maxDays int
+		if fields[4] != "" {
+			maxDays, perr = strconv.Atoi(fields[4])
+			if perr != nil {
+				return 0, 0, fmt.Errorf("ReadShadow parse field 5 for %q: %w", username, perr)
+			}
+		}
+		return lstchg, maxDays, nil
+	}
+	return 0, 0, fs.ErrNotExist
 }
 
 // SshdDumpConfig parses `sshd -T` output into a map[directive][]values.

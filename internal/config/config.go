@@ -56,11 +56,19 @@ type Settings struct {
 // Defaults returns the canonical default Settings. Used when the config
 // file does not exist (first install) or to overlay missing keys when the
 // admin has only set a subset.
+//
+// Password-age thresholds (02-11): aging at 180d, stale at 365d. These
+// are deliberately conservative — most enterprise password rotation
+// policies sit in the 90–365d range, so the defaults flag accounts that
+// have drifted past the typical mid-range mark without alarming on
+// recently-changed passwords.
 func Defaults() Settings {
 	return Settings{
 		DetailRetentionDays: 90,
 		DBMaxSizeMB:         500,
 		CompactAfterDays:    90,
+		PasswordAgingDays:   180,
+		PasswordStaleDays:   365,
 	}
 }
 
@@ -136,6 +144,15 @@ func Validate(s Settings) []error {
 	} else if s.DetailRetentionDays >= 1 && s.CompactAfterDays > s.DetailRetentionDays {
 		errs = append(errs, fmt.Errorf("compact_after_days must be ≤ detail_retention_days (got compact=%d, detail=%d)", s.CompactAfterDays, s.DetailRetentionDays))
 	}
+	// Password-age thresholds (02-11): strict ordering 0 < aging < stale.
+	// The S-USERS pwd-age column buckets are derived from this pair, so any
+	// non-strict ordering would collapse a bucket and confuse the legend.
+	if s.PasswordAgingDays < 1 {
+		errs = append(errs, fmt.Errorf("password_aging_days must be a positive integer (got %d)", s.PasswordAgingDays))
+	}
+	if s.PasswordStaleDays <= s.PasswordAgingDays {
+		errs = append(errs, fmt.Errorf("password_stale_days must be strictly greater than password_aging_days (got stale=%d, aging=%d)", s.PasswordStaleDays, s.PasswordAgingDays))
+	}
 	return errs
 }
 
@@ -152,6 +169,12 @@ func overlayDefaults(s, d Settings) Settings {
 	}
 	if s.CompactAfterDays == 0 {
 		s.CompactAfterDays = d.CompactAfterDays
+	}
+	if s.PasswordAgingDays == 0 {
+		s.PasswordAgingDays = d.PasswordAgingDays
+	}
+	if s.PasswordStaleDays == 0 {
+		s.PasswordStaleDays = d.PasswordStaleDays
 	}
 	return s
 }

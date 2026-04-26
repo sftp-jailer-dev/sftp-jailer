@@ -220,7 +220,13 @@ func TestSettingsScreen_save_validates_first_and_keeps_edit_on_failure(t *testin
 func TestSettingsScreen_save_succeeds_writes_atomically(t *testing.T) {
 	ops := sysops.NewFake()
 	m := settingsscreen.New(ops, configPath)
-	m.LoadSettingsForTest(config.Settings{DetailRetentionDays: 90, DBMaxSizeMB: 500, CompactAfterDays: 90})
+	// Build on Defaults() so password-age threshold validation (added 02-11)
+	// is satisfied; the original three knobs are then explicitly set.
+	loaded := config.Defaults()
+	loaded.DetailRetentionDays = 90
+	loaded.DBMaxSizeMB = 500
+	loaded.CompactAfterDays = 90
+	m.LoadSettingsForTest(loaded)
 
 	// Edit detail_retention_days (cursor 0).
 	_, _ = m.Update(keyPress("e"))

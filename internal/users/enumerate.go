@@ -21,12 +21,20 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sshdcfg"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/store"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 )
+
+// daysSinceEpoch returns the number of UTC days from 1970-01-01 to t.
+// Matches the semantics of /etc/shadow field 3 (last-password-change-day).
+// Used by enrichPasswordAge to compute age = today_days - last_change_days.
+func daysSinceEpoch(t time.Time) int {
+	return int(t.UTC().Unix() / 86400)
+}
 
 // InfoKind discriminates the three D-12 INFO pseudo-row variants.
 type InfoKind string
@@ -132,6 +140,7 @@ func (e *Enumerator) Enumerate(ctx context.Context) ([]Row, []InfoRow, error) {
 
 	e.enrichKeys(ctx, rows)
 	e.enrichLogins(ctx, rows)
+	e.enrichPasswordAge(ctx, rows)
 	e.enrichAllowlistCount(ctx, rows)
 
 	var infos []InfoRow
@@ -344,6 +353,36 @@ func (e *Enumerator) enrichLogins(ctx context.Context, rows []Row) {
 		if ts, ok := byUser[rows[i].Username]; ok {
 			rows[i].LastLoginNs = ts
 		}
+	}
+}
+
+// enrichPasswordAge fills rows[i].PasswordAgeDays AND PasswordMaxDays
+// from /etc/shadow's last-change-day (field 3) + max-days (field 5) via
+// sysops.ReadShadow. Mirrors the fail-silent contract of enrichKeys /
+// enrichLogins: any error (file unreadable, user missing, field empty,
+// parse failure) leaves both fields at their default (-1) so the
+// S-USERS column renders "—" via FormatPasswordAge.
+//
+// Reads /etc/shadow once per row — cheap on Linux page cache. If a future
+// profile shows this as a hotspot, batch the read once and look up rows
+// in a pre-computed map. Not worth the complexity at v1 row counts (≤200).
+//
+// Closes SC #3 password-age dimension (Phase 2 / Gap 2).
+func (e *Enumerator) enrichPasswordAge(ctx context.Context, rows []Row) {
+	today := daysSinceEpoch(time.Now())
+	for i := range rows {
+		lstchg, maxDays, err := e.ops.ReadShadow(ctx, rows[i].Username)
+		if err != nil {
+			continue // leaves PasswordAgeDays / PasswordMaxDays at -1
+		}
+		age := today - lstchg
+		if age < 0 {
+			// Future last-change-day implies clock skew or corrupt input;
+			// leave both fields at -1 so the column renders as unknown.
+			continue
+		}
+		rows[i].PasswordAgeDays = age
+		rows[i].PasswordMaxDays = maxDays
 	}
 }
 

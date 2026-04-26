@@ -68,11 +68,12 @@ func TestLoad_invalid_yaml_returns_error(t *testing.T) {
 // identical settings.
 func TestSave_writes_via_AtomicWriteFile(t *testing.T) {
 	f := sysops.NewFake()
-	want := config.Settings{
-		DetailRetentionDays: 60,
-		DBMaxSizeMB:         750,
-		CompactAfterDays:    60,
-	}
+	// Build on Defaults() so the new password-age threshold rules (added
+	// 02-11) are satisfied alongside the original three knobs.
+	want := config.Defaults()
+	want.DetailRetentionDays = 60
+	want.DBMaxSizeMB = 750
+	want.CompactAfterDays = 60
 	require.NoError(t, config.Save(context.Background(), f, settingsPath, want))
 
 	var awf []sysops.FakeCall
@@ -152,15 +153,27 @@ func TestValidate_db_max_size_mb_floor(t *testing.T) {
 }
 
 // TestValidate_compact_after_days_le_detail: compact_after_days must be ≤
-// detail_retention_days.
+// detail_retention_days. Builds on top of Defaults() so the new
+// password-age threshold rules (added 02-11) don't pollute the comparison.
 func TestValidate_compact_after_days_le_detail(t *testing.T) {
-	bad := config.Settings{DetailRetentionDays: 30, DBMaxSizeMB: 500, CompactAfterDays: 60}
+	base := config.Defaults()
+
+	bad := base
+	bad.DetailRetentionDays = 30
+	bad.DBMaxSizeMB = 500
+	bad.CompactAfterDays = 60
 	require.NotEmpty(t, config.Validate(bad))
 
-	good := config.Settings{DetailRetentionDays: 30, DBMaxSizeMB: 500, CompactAfterDays: 30}
+	good := base
+	good.DetailRetentionDays = 30
+	good.DBMaxSizeMB = 500
+	good.CompactAfterDays = 30
 	require.Empty(t, config.Validate(good))
 
-	good2 := config.Settings{DetailRetentionDays: 30, DBMaxSizeMB: 500, CompactAfterDays: 14}
+	good2 := base
+	good2.DetailRetentionDays = 30
+	good2.DBMaxSizeMB = 500
+	good2.CompactAfterDays = 14
 	require.Empty(t, config.Validate(good2))
 }
 
