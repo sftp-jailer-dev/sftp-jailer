@@ -248,13 +248,28 @@ func (r *Runner) Run(ctx context.Context, opts RunOpts, stdout io.Writer) error 
 	summary.EventsCompacted = compactedCount
 	summary.CountersAdded = addedCount
 
+	// 6.5. pruneDetail (OBS-05): DELETE detail rows older than DetailRetentionDays.
+	// Catches anything compact missed (e.g. an aborted prior compact run, or a
+	// runtime config change that shortened the retention window). Skipped when
+	// DetailRetentionDays <= 0 to preserve the legacy "leave it alone" semantics
+	// (parity with pruneToCap's capMB <= 0 zero-guard).
+	if opts.DetailRetentionDays > 0 {
+		detailBeforeNs := time.Now().Add(-time.Duration(opts.DetailRetentionDays) * 24 * time.Hour).UnixNano()
+		detailDropped, derr := pruneDetail(ctx, r.st.W, detailBeforeNs)
+		if derr != nil {
+			finalize("failure", derr.Error())
+			return fmt.Errorf("observe.Runner: pruneDetail: %w", derr)
+		}
+		summary.EventsDropped += detailDropped
+	}
+
 	// 7. Prune oldest noise_counters rows until DB size dips under MB cap.
 	pruned, err := pruneToCap(ctx, r.st.W, opts.DBMaxSizeMB)
 	if err != nil {
 		finalize("failure", err.Error())
 		return fmt.Errorf("observe.Runner: prune: %w", err)
 	}
-	summary.EventsDropped = pruned
+	summary.EventsDropped += pruned
 
 	// 8. WAL checkpoint TRUNCATE — release deleted pages back to disk.
 	if _, err := r.st.W.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
@@ -401,6 +416,35 @@ DO UPDATE SET count = noise_counters.count + excluded.count`
 	}
 	_ = errors.New(_BEGIN_IMMEDIATE_marker) // touch the marker so the linter doesn't drop it
 	return compactedCount, addedCount, nil
+}
+
+// pruneDetail DELETEs observation rows whose ts_unix_ns is older than
+// detailBeforeNs. Implements OBS-05 detail_retention_days. Single
+// parameterized DELETE — T-OBS-10 SQL-injection mitigation discipline
+// preserved. Returns the number of rows dropped.
+//
+// Caller wires this between compact() and pruneToCap():
+//   - compact FIRST: detail rows older than CompactAfterDays fold into
+//     noise_counters then get DELETEd. Most rows older than
+//     DetailRetentionDays are already gone (because validate enforces
+//     CompactAfterDays ≤ DetailRetentionDays).
+//   - pruneDetail SECOND: catches anything compact missed — defensive
+//     against a prior aborted compact run, OR a runtime config change
+//     that shortened DetailRetentionDays below CompactAfterDays
+//     temporarily (validate normally prevents this combination, but
+//     legacy configs from older binaries might).
+//   - pruneToCap LAST: size-based prune of noise_counters.
+//
+// SQLite's default DELETE is auto-committed — no explicit transaction
+// needed for a single DELETE statement (matches the pruneToCap pattern).
+func pruneDetail(ctx context.Context, w *sql.DB, detailBeforeNs int64) (int, error) {
+	res, err := w.ExecContext(ctx,
+		`DELETE FROM observations WHERE ts_unix_ns < ?`, detailBeforeNs)
+	if err != nil {
+		return 0, fmt.Errorf("pruneDetail delete: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 // pruneToCap deletes the oldest bucket_date noise_counters rows in small
