@@ -21,6 +21,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/keys"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/addkey"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/password"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/userdetail"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/txn"
@@ -100,7 +101,8 @@ func TestUserDetail_initial_loading_then_keysLoadedMsg_populates_table(t *testin
 
 // TestUserDetail_no_authorized_keys_file_renders_empty_state —
 // keysLoadedMsg{exists: false} → View shows "no authorized_keys file
-// yet" + "[a]" + the explicit "M-ADD-KEY ships in plan 03-08b" pointer.
+// yet" + the [a] add-key shortcut. Plan 03-08b dropped the "(note:
+// M-ADD-KEY ships in plan 03-08b)" qualifier when the surface landed.
 func TestUserDetail_no_authorized_keys_file_renders_empty_state(t *testing.T) {
 	t.Parallel()
 	m := userdetail.New(nil, testChrootRoot, testUsername)
@@ -109,47 +111,75 @@ func TestUserDetail_no_authorized_keys_file_renders_empty_state(t *testing.T) {
 	v := m.View()
 	require.Contains(t, v, "no authorized_keys file yet")
 	require.Contains(t, v, "[a]",
-		"empty state must mention the [a] add-key shortcut so admins know the path even before plan 03-08b lands")
-	require.Contains(t, v, "03-08b",
-		"empty state qualifier must explicitly point at plan 03-08b so admins know M-ADD-KEY is pending")
+		"empty state must mention the [a] add-key shortcut")
+	require.NotContains(t, v, "03-08b",
+		"plan 03-08b qualifier must be removed once M-ADD-KEY is wired")
+	require.NotContains(t, v, "M-ADD-KEY ships",
+		"the 'ships in plan' qualifier must be removed once M-ADD-KEY is wired")
 }
 
-// TestUserDetail_a_emits_placeholder_pending_03_08b — pressing 'a' on
-// any state (with or without keys) emits a tea.Println AND a toast both
-// containing the literal placeholder string. Plan 03-08b will REPLACE
-// this branch with `nav.PushCmd(addkey.New(...))`; this test gets
-// updated in 03-08b to assert push-to-addkey instead.
-func TestUserDetail_a_emits_placeholder_pending_03_08b(t *testing.T) {
+// TestUserDetail_a_pushes_addkey_modal — pressing 'a' pushes
+// *addkey.Model with this user's username and chrootRoot. Mirrors
+// TestUserDetail_p_pushes_password_modal (same shape, different
+// destination package). Replaces the prior placeholder-pending test
+// once plan 03-08b wired addkey.New.
+func TestUserDetail_a_pushes_addkey_modal(t *testing.T) {
 	t.Parallel()
-	m := userdetail.New(nil, testChrootRoot, testUsername)
+	f := sysops.NewFake()
+	m := userdetail.New(f, testChrootRoot, testUsername)
 	m.LoadEmptyForTest()
 
 	_, cmd := m.Update(keyPress("a"))
-	require.NotNil(t, cmd, "pressing 'a' must return a non-nil tea.Cmd (placeholder Println + toast)")
-
-	// The cmd is a tea.Batch of (tea.Println, toast.Flash). Walk the
-	// batch and confirm at least one sub-msg contains the placeholder
-	// string.
+	require.NotNil(t, cmd, "pressing 'a' must return a non-nil tea.Cmd (push addkey)")
 	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
-	require.True(t, ok, "expected tea.BatchMsg, got %T", msg)
-	var sawPlaceholder bool
-	for _, sub := range batch {
-		if sub == nil {
-			continue
-		}
-		s := fmt.Sprintf("%v", sub())
-		if strings.Contains(s, "03-08b") || strings.Contains(s, "M-ADD-KEY pending") {
-			sawPlaceholder = true
-			break
-		}
-	}
-	require.True(t, sawPlaceholder,
-		"at least one sub-cmd in the 'a' batch must produce a message containing the placeholder string '03-08b' (Println or toast)")
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	am, isAddKeyModel := nm.Screen.(*addkey.Model)
+	require.True(t, isAddKeyModel, "pushed screen must be *addkey.Model, got %T", nm.Screen)
+	require.Equal(t, "add ssh key — "+testUsername, am.Title(),
+		"M-ADD-KEY must carry this screen's username")
+}
 
-	// Pin the exported constant for the explicit literal check.
-	require.Equal(t, "M-ADD-KEY pending — see plan 03-08b", userdetail.PlaceholderAddKeyMessage,
-		"PlaceholderAddKeyMessage constant is the contract — plan 03-08b will delete this constant when it replaces the 'a' branch with addkey.New")
+// TestUserDetail_a_keybinding_no_longer_emits_placeholder_string —
+// regression guard against accidental revert of the 03-08b wiring. The
+// 'a' keypress's resulting message must NOT be a tea.PrintMsg and must
+// NOT contain the prior placeholder strings ("03-08b" / "pending" /
+// "M-ADD-KEY pending"). This complements the positive assertion in
+// TestUserDetail_a_pushes_addkey_modal.
+func TestUserDetail_a_keybinding_no_longer_emits_placeholder_string(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	m := userdetail.New(f, testChrootRoot, testUsername)
+	m.LoadEmptyForTest()
+
+	_, cmd := m.Update(keyPress("a"))
+	require.NotNil(t, cmd)
+	msg := cmd()
+
+	// Must NOT be a tea.PrintMsg / tea.BatchMsg containing one.
+	require.NotContains(t, fmt.Sprintf("%T", msg), "PrintMsg",
+		"'a' must not emit a tea.PrintMsg (the 03-08a placeholder used tea.Println)")
+	if bm, ok := msg.(tea.BatchMsg); ok {
+		for _, sub := range bm {
+			if sub == nil {
+				continue
+			}
+			subMsg := sub()
+			require.NotContains(t, fmt.Sprintf("%T", subMsg), "PrintMsg",
+				"no sub-cmd may produce a tea.PrintMsg")
+			s := fmt.Sprintf("%v", subMsg)
+			require.NotContains(t, s, "03-08b",
+				"placeholder string '03-08b' must not survive any sub-msg, got %q", s)
+			require.NotContains(t, s, "M-ADD-KEY pending",
+				"placeholder string 'M-ADD-KEY pending' must not survive any sub-msg, got %q", s)
+		}
+	} else {
+		// Single nav.Msg path — fine; just sanity-check intent.
+		nm, ok := msg.(nav.Msg)
+		require.True(t, ok, "expected nav.Msg, got %T", msg)
+		require.Equal(t, nav.Push, nm.Intent)
+	}
 }
 
 // TestUserDetail_p_pushes_password_modal — pressing 'p' pushes

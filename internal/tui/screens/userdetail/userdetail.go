@@ -18,11 +18,10 @@
 //     the prior file content automatically.
 //   - 'p' pushes M-PASSWORD for this user (plan 03-07's password.New).
 //   - 'c' copies the selected key's fingerprint via OSC 52 + toast.
-//   - 'a' is a PLACEHOLDER — plan 03-08b lands M-ADD-KEY and replaces
-//     this branch with `nav.PushCmd(addkey.New(...))`. The placeholder
-//     emits a tea.Println AND a toast both literally containing the
-//     string "M-ADD-KEY pending — see plan 03-08b" so admins know the
-//     wiring is intentional.
+//   - 'a' pushes M-ADD-KEY (addkey.New) — single-textarea entry surface
+//     that auto-detects per-line source (paste / gh:user / file path)
+//     per D-19, surfaces a mandatory review table per D-20, and commits
+//     via the four-step StrictModes verifier with rollback per D-21.
 //
 // Test seams (LoadKeysForTest, etc.) bypass Init's async load so unit
 // tests assert on render + dispatch without spinning up the goroutine.
@@ -45,18 +44,12 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/keys"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/addkey"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/password"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/styles"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/txn"
 )
-
-// PlaceholderAddKeyMessage is the literal string rendered both via
-// tea.Println and the inline toast when the admin presses 'a' before
-// plan 03-08b lands. Plan 03-08b will REPLACE both call sites with
-// `nav.PushCmd(addkey.New(...))`. The constant is exported so tests can
-// pin the literal without duplicating it.
-const PlaceholderAddKeyMessage = "M-ADD-KEY pending — see plan 03-08b"
 
 // keysLoadedMsg carries the async-load result back to Update.
 type keysLoadedMsg struct {
@@ -135,8 +128,8 @@ func (m *Model) LoadKeysForTest(parsed []keys.ParsedKey, mtime time.Time) {
 	m.errText = ""
 }
 
-// LoadEmptyForTest seeds the "no authorized_keys file yet" state — the
-// fresh-user path before plan 03-08b's M-ADD-KEY surface lands.
+// LoadEmptyForTest seeds the "no authorized_keys file yet" fresh-user
+// state. From this state, pressing 'a' pushes M-ADD-KEY (addkey.New).
 func (m *Model) LoadEmptyForTest() {
 	m.loading = false
 	m.keys = nil
@@ -280,16 +273,13 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		}
 		return m, nil
 	case "a":
-		// PLACEHOLDER pending plan 03-08b. The literal string
-		// PlaceholderAddKeyMessage is pinned in tests so the contract
-		// is auditable. Plan 03-08b REPLACES this entire branch with
-		// `return m, nav.PushCmd(addkey.New(m.ops, m.chrootRoot, m.username))`.
-		var flashCmd tea.Cmd
-		m.toast, flashCmd = m.toast.Flash(PlaceholderAddKeyMessage)
-		return m, tea.Batch(
-			tea.Println(PlaceholderAddKeyMessage),
-			flashCmd,
-		)
+		// 'a' pushes M-ADD-KEY (addkey.New). ops==nil is the unit-test
+		// path where LoadKeysForTest seeded state without a Fake —
+		// there's nothing to commit against, so return cleanly.
+		if m.ops == nil {
+			return m, nil
+		}
+		return m, nav.PushCmd(addkey.New(m.ops, m.chrootRoot, m.username))
 	case "d":
 		return m, m.startDeleteSelectedKey()
 	case "p":
@@ -425,13 +415,8 @@ func (m *Model) View() string {
 	b.WriteString("\n\n")
 
 	if !m.keysFileExists || len(m.keys) == 0 {
-		// Fresh-user empty state — explicitly mention plan 03-08b so
-		// admins know the [a] surface is pending. Plan 03-08b will
-		// REPLACE the parenthetical to drop the "(note: ... ships in
-		// plan 03-08b)" qualifier.
+		// Fresh-user empty state — [a] opens M-ADD-KEY (addkey.New).
 		b.WriteString("no authorized_keys file yet — press [a] to add the first key")
-		b.WriteString("\n")
-		b.WriteString(styles.Dim.Render("(note: M-ADD-KEY ships in plan 03-08b)"))
 		b.WriteString("\n\n")
 		b.WriteString(styles.Dim.Render(
 			"a·add key   p·set password   esc·back"))
@@ -531,7 +516,7 @@ type KeyMap struct {
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		Back:     nav.KeyBinding{Keys: []string{"esc", "q"}, Help: "back"},
-		AddKey:   nav.KeyBinding{Keys: []string{"a"}, Help: "add key (placeholder pending plan 03-08b)"},
+		AddKey:   nav.KeyBinding{Keys: []string{"a"}, Help: "add key (M-ADD-KEY)"},
 		Delete:   nav.KeyBinding{Keys: []string{"d"}, Help: "delete selected key"},
 		Password: nav.KeyBinding{Keys: []string{"p"}, Help: "set password"},
 		Copy:     nav.KeyBinding{Keys: []string{"c"}, Help: "copy fingerprint via OSC 52"},
