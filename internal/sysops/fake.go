@@ -91,6 +91,89 @@ type Fake struct {
 	// Used to simulate flock(2) failures.
 	LockError error
 
+	// ----------------------------------------------------------------
+	// Phase 3 additions — scripted-response mirrors of the new sysops
+	// mutation methods. Each *Error field, if non-nil, is returned from
+	// the corresponding method AFTER the call is recorded (parity with
+	// AtomicWriteError convention). Tests script the error path by
+	// setting the field; default zero-value = success.
+	// ----------------------------------------------------------------
+
+	// UseraddError, if non-nil, is returned from Useradd after recording.
+	UseraddError error
+
+	// UserdelError, if non-nil, is returned from Userdel after recording.
+	UserdelError error
+
+	// GpasswdError, if non-nil, is returned from Gpasswd after recording.
+	GpasswdError error
+
+	// ChpasswdStderr is returned in the *ChpasswdError.Stderr field when
+	// ChpasswdError is set. Tests use this to script pam_pwquality output.
+	ChpasswdStderr []byte
+
+	// ChpasswdError, if non-nil, becomes the ExitErr inside the
+	// *ChpasswdError returned from Chpasswd. ChpasswdStderr is bundled
+	// alongside.
+	ChpasswdError error
+
+	// ChageError, if non-nil, is returned from Chage after recording.
+	ChageError error
+
+	// ChmodError, if non-nil, is returned from Chmod after recording.
+	ChmodError error
+
+	// ChownError, if non-nil, is returned from Chown after recording.
+	ChownError error
+
+	// MkdirAllError, if non-nil, is returned from MkdirAll after recording.
+	MkdirAllError error
+
+	// RemoveAllError, if non-nil, is returned from RemoveAll after recording.
+	RemoveAllError error
+
+	// WriteAuthorizedKeysError, if non-nil, is returned from
+	// WriteAuthorizedKeys BEFORE materializing state in f.Files (parity
+	// with AtomicWriteError).
+	WriteAuthorizedKeysError error
+
+	// SshdTStderr is returned as the stderr return value from SshdT.
+	SshdTStderr []byte
+
+	// SshdTError, if non-nil, is returned as the error return value from SshdT.
+	SshdTError error
+
+	// SshdTWithContextStderr is returned as the stderr return value from
+	// SshdTWithContext.
+	SshdTWithContextStderr []byte
+
+	// SshdTWithContextError, if non-nil, is returned as the error return
+	// value from SshdTWithContext.
+	SshdTWithContextError error
+
+	// SystemctlReloadError, if non-nil, is returned from SystemctlReload.
+	SystemctlReloadError error
+
+	// SystemctlRestartSocketError, if non-nil, is returned from
+	// SystemctlRestartSocket.
+	SystemctlRestartSocketError error
+
+	// SystemctlDaemonReloadError, if non-nil, is returned from
+	// SystemctlDaemonReload.
+	SystemctlDaemonReloadError error
+
+	// TarError, if non-nil, is returned from Tar after recording.
+	TarError error
+
+	// SshdConfigResponse is returned from SshdDumpConfig (W-04 — fakeable
+	// post-reload verifier in plan 03-09 + advisory checks in plan 03-08b).
+	// nil → empty map (callers don't need nil-checks).
+	SshdConfigResponse map[string][]string
+
+	// SshdDumpConfigError, if non-nil, takes precedence and is returned
+	// from SshdDumpConfig.
+	SshdDumpConfigError error
+
 	// Calls is a recording of every method invocation in call order, with
 	// args serialized to the argv Args field.
 	Calls []FakeCall
@@ -242,15 +325,29 @@ func (f *Fake) Exec(_ context.Context, name string, args ...string) (ExecResult,
 	return ExecResult{}, fmt.Errorf("sysops.Fake: no scripted response for %q", key)
 }
 
-// SshdDumpConfig implements [SystemOps.SshdDumpConfig].
+// SshdDumpConfig implements [SystemOps.SshdDumpConfig]. Phase 3 (W-04)
+// adds two new ways to script:
+//   - SshdConfigResponse (preferred for Phase 3+ tests) — set the field to
+//     the desired map directly. Default nil → empty map (no nil-check needed).
+//   - SshdDumpConfigError, if non-nil, takes precedence and is returned.
+//
+// SshdConfig (legacy Phase 1/2 field) is consulted as a fallback so existing
+// tests keep working.
 func (f *Fake) SshdDumpConfig(_ context.Context) (map[string][]string, error) {
 	f.record("SshdDumpConfig")
-	if f.SshdConfig == nil {
+	if f.SshdDumpConfigError != nil {
+		return nil, f.SshdDumpConfigError
+	}
+	src := f.SshdConfigResponse
+	if src == nil {
+		src = f.SshdConfig
+	}
+	if src == nil {
 		return map[string][]string{}, nil
 	}
 	// Shallow-copy the top-level map so callers can't mutate fixture state.
-	out := make(map[string][]string, len(f.SshdConfig))
-	for k, v := range f.SshdConfig {
+	out := make(map[string][]string, len(src))
+	for k, v := range src {
 		out[k] = append([]string(nil), v...)
 	}
 	return out, nil
@@ -328,4 +425,171 @@ func (f *Fake) AcquireRunLock(_ context.Context, path string) (release func(), e
 		defer f.mu.Unlock()
 		f.LockHeld = false
 	}, nil
+}
+
+// ============================================================================
+// Phase 3 Fake methods. Each records the call into f.Calls (under f.mu in
+// record()), then consults the matching scripted-error field. Argv is the
+// typed-string representation documented in plan 03-01 — exactly mirrors
+// the test expectations to keep the contract evident.
+// ============================================================================
+
+// Useradd implements [SystemOps.Useradd] (Fake).
+func (f *Fake) Useradd(_ context.Context, opts UseraddOpts) error {
+	f.record("Useradd",
+		opts.Username,
+		fmt.Sprintf("uid=%d", opts.UID),
+		fmt.Sprintf("home=%s", opts.Home),
+		fmt.Sprintf("shell=%s", opts.Shell),
+		fmt.Sprintf("createHome=%t", opts.CreateHome),
+		fmt.Sprintf("memberOfSftpJailer=%t", opts.MemberOfSftpJailer),
+	)
+	return f.UseraddError
+}
+
+// Userdel implements [SystemOps.Userdel] (Fake).
+func (f *Fake) Userdel(_ context.Context, username string, removeHome bool) error {
+	f.record("Userdel", username, fmt.Sprintf("removeHome=%t", removeHome))
+	return f.UserdelError
+}
+
+// Gpasswd implements [SystemOps.Gpasswd] (Fake).
+func (f *Fake) Gpasswd(_ context.Context, op GpasswdOp, username, group string) error {
+	var opStr string
+	switch op {
+	case GpasswdAdd:
+		opStr = "op=add"
+	case GpasswdDel:
+		opStr = "op=del"
+	default:
+		opStr = fmt.Sprintf("op=unknown(%d)", op)
+	}
+	f.record("Gpasswd", opStr, username, group)
+	return f.GpasswdError
+}
+
+// Chpasswd implements [SystemOps.Chpasswd] (Fake). The password is NEVER
+// recorded — only its length appears in the recorded args (security
+// invariant per pitfall E3 / D-13). On scripted error, returns *ChpasswdError
+// matching the Real implementation's typed return.
+func (f *Fake) Chpasswd(_ context.Context, username, password string) error {
+	f.record("Chpasswd", username, fmt.Sprintf("len=%d", len(password)))
+	if f.ChpasswdError != nil {
+		return &ChpasswdError{
+			Username: username,
+			Stderr:   f.ChpasswdStderr,
+			ExitErr:  f.ChpasswdError,
+		}
+	}
+	return nil
+}
+
+// Chage implements [SystemOps.Chage] (Fake).
+func (f *Fake) Chage(_ context.Context, username string, opts ChageOpts) error {
+	f.record("Chage", username, fmt.Sprintf("lastDay=%d", opts.LastDay))
+	return f.ChageError
+}
+
+// Chmod implements [SystemOps.Chmod] (Fake).
+func (f *Fake) Chmod(_ context.Context, path string, mode fs.FileMode) error {
+	f.record("Chmod", path, fmt.Sprintf("mode=%o", mode))
+	return f.ChmodError
+}
+
+// Chown implements [SystemOps.Chown] (Fake).
+func (f *Fake) Chown(_ context.Context, path string, uid, gid int) error {
+	f.record("Chown", path, fmt.Sprintf("uid=%d", uid), fmt.Sprintf("gid=%d", gid))
+	return f.ChownError
+}
+
+// MkdirAll implements [SystemOps.MkdirAll] (Fake).
+func (f *Fake) MkdirAll(_ context.Context, path string, mode fs.FileMode) error {
+	f.record("MkdirAll", path, fmt.Sprintf("mode=%o", mode))
+	return f.MkdirAllError
+}
+
+// RemoveAll implements [SystemOps.RemoveAll] (Fake).
+func (f *Fake) RemoveAll(_ context.Context, path string) error {
+	f.record("RemoveAll", path)
+	return f.RemoveAllError
+}
+
+// WriteAuthorizedKeys implements [SystemOps.WriteAuthorizedKeys] (Fake).
+// On the success path, materializes the bytes in f.Files at the conventional
+// chrooted path so subsequent ReadFile round-trips return the same content.
+// Error path returns BEFORE state mutation (parity with AtomicWriteFile fake).
+func (f *Fake) WriteAuthorizedKeys(_ context.Context, username, chrootRoot string, keys []byte) error {
+	f.record("WriteAuthorizedKeys",
+		username,
+		chrootRoot,
+		fmt.Sprintf("len=%d", len(keys)),
+		"mode=600",
+	)
+	if f.WriteAuthorizedKeysError != nil {
+		return f.WriteAuthorizedKeysError
+	}
+	cp := make([]byte, len(keys))
+	copy(cp, keys)
+	authPath := chrootRoot + "/" + username + "/.ssh/authorized_keys"
+	f.mu.Lock()
+	if f.Files == nil {
+		f.Files = map[string][]byte{}
+	}
+	f.Files[authPath] = cp
+	f.mu.Unlock()
+	return nil
+}
+
+// SshdT implements [SystemOps.SshdT] (Fake). Records empty args; returns
+// (SshdTStderr, SshdTError) verbatim.
+func (f *Fake) SshdT(_ context.Context) ([]byte, error) {
+	f.record("SshdT")
+	return f.SshdTStderr, f.SshdTError
+}
+
+// SshdTWithContext implements [SystemOps.SshdTWithContext] (Fake). Records
+// the user/host/addr triple as `key=value` strings; returns
+// (SshdTWithContextStderr, SshdTWithContextError) verbatim.
+func (f *Fake) SshdTWithContext(_ context.Context, opts SshdTContextOpts) ([]byte, error) {
+	f.record("SshdTWithContext",
+		"user="+opts.User,
+		"host="+opts.Host,
+		"addr="+opts.Addr,
+	)
+	return f.SshdTWithContextStderr, f.SshdTWithContextError
+}
+
+// SystemctlReload implements [SystemOps.SystemctlReload] (Fake).
+func (f *Fake) SystemctlReload(_ context.Context, unit string) error {
+	f.record("SystemctlReload", unit)
+	return f.SystemctlReloadError
+}
+
+// SystemctlRestartSocket implements [SystemOps.SystemctlRestartSocket] (Fake).
+func (f *Fake) SystemctlRestartSocket(_ context.Context, unit string) error {
+	f.record("SystemctlRestartSocket", unit)
+	return f.SystemctlRestartSocketError
+}
+
+// SystemctlDaemonReload implements [SystemOps.SystemctlDaemonReload] (Fake).
+func (f *Fake) SystemctlDaemonReload(_ context.Context) error {
+	f.record("SystemctlDaemonReload")
+	return f.SystemctlDaemonReloadError
+}
+
+// Tar implements [SystemOps.Tar] (Fake).
+func (f *Fake) Tar(_ context.Context, opts TarOpts) error {
+	var modeStr string
+	switch opts.Mode {
+	case TarCreateGzip:
+		modeStr = "mode=czf"
+	default:
+		modeStr = fmt.Sprintf("mode=unknown(%d)", opts.Mode)
+	}
+	f.record("Tar",
+		modeStr,
+		"archive="+opts.ArchivePath,
+		"source="+opts.SourceDir,
+	)
+	return f.TarError
 }

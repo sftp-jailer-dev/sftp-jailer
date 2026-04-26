@@ -25,14 +25,16 @@ import (
 
 // FileInfo wraps unix.Stat_t essentials we need exposed through the interface.
 // We do not use os.FileInfo because we need Uid/Gid for the chroot ownership
-// chain walk (SETUP-01).
+// chain walk (SETUP-01). Phase 3 adds ModTime for the S-USER-DETAIL key-table
+// "added on" column (consumed by plan 03-08a).
 type FileInfo struct {
-	Path   string
-	Mode   fs.FileMode
-	UID    uint32
-	GID    uint32
-	IsDir  bool
-	IsLink bool
+	Path    string
+	Mode    fs.FileMode
+	UID     uint32
+	GID     uint32
+	IsDir   bool
+	IsLink  bool
+	ModTime time.Time
 }
 
 // ExecResult captures the outcome of a subprocess execution. A non-zero
@@ -84,6 +86,72 @@ type ObserveRunSubprocessOpts struct {
 // ErrLockHeld is returned from AcquireRunLock when another process already
 // holds the exclusive lock. Callers compare via errors.Is.
 var ErrLockHeld = errors.New("sysops: observe-run lock already held by another process")
+
+// ----------------------------------------------------------------------------
+// Phase 3 typed-opts structs — argument shapes for the new mutation methods
+// added to SystemOps below. Grouped here next to JournalctlStreamOpts for
+// readability.
+// ----------------------------------------------------------------------------
+
+// UseraddOpts is the typed argument shape for Useradd. Zero-value fields
+// map to "let useradd pick" semantics where applicable (UID=0 → no -u flag;
+// GID=0 → no -g flag, useradd creates same-name group via UPG default).
+type UseraddOpts struct {
+	Username           string
+	UID                int    // 0 = let useradd pick; non-zero → -u <UID>
+	GID                int    // 0 = useradd creates same-name group (UPG); non-zero → -g <GID>
+	Home               string // -d <home>
+	Shell              string // -s <shell> (typically "/usr/sbin/nologin" per pitfall B4)
+	CreateHome         bool   // true → -m flag (D-12); false → -M flag (D-14 orphan reconcile)
+	MemberOfSftpJailer bool   // post-useradd: gpasswd -a <user> sftp-jailer (informational; the call site invokes Gpasswd separately for compensator pairing)
+}
+
+// GpasswdOp enumerates the two group-membership operations the tool needs.
+type GpasswdOp int
+
+// GpasswdOp values mirror the gpasswd(1) flags the tool invokes.
+const (
+	GpasswdAdd GpasswdOp = iota // -a (add user to group)
+	GpasswdDel                  // -d (delete user from group)
+)
+
+// ChageOpts is the typed argument shape for Chage. Currently only LastDay
+// is exposed (D-13 force-change-next-login uses LastDay=0). Extend as new
+// chage flags are needed.
+type ChageOpts struct {
+	LastDay int // -d <days> ("days since 1970-01-01"; 0 = force change at next login)
+}
+
+// TarMode enumerates the tar invocation shapes the tool uses.
+type TarMode int
+
+// TarMode values map to tar(1) operation flags.
+const (
+	TarCreateGzip TarMode = iota // -czf (create gzipped archive) — D-15 Archive path
+)
+
+// TarOpts is the typed argument shape for Tar. SourceDir is appended as the
+// single source argument; the tool does not support multi-source tars.
+type TarOpts struct {
+	Mode        TarMode
+	ArchivePath string // -f <archive>
+	SourceDir   string // <source> (single dir; recursive)
+}
+
+// SshdTContextOpts is the typed argument shape for SshdTWithContext. Per
+// D-21 step 4 the M-ADD-KEY verifier needs `sshd -t -C user=<u>,host=<h>,addr=<a>`
+// so the validator evaluates Match-block-scoped directives for THIS user.
+// Plain SshdT (no -C) only validates global config.
+//
+// Threat model T-03-01-09: callers MUST validate username through the
+// existing `^[a-z][a-z0-9_-]{0,31}$` regex before calling — a comma or `=`
+// in any field would create a malformed -C value. Host/Addr are tool-set
+// literals ("localhost"/"127.0.0.1") and not user-influenced.
+type SshdTContextOpts struct {
+	User string
+	Host string // typically "localhost"
+	Addr string // typically "127.0.0.1"
+}
 
 // SystemOps is the seam between sftp-jailer and the operating system.
 // Phase 1 methods are read-only; Phase 2 introduces AtomicWriteFile + the
@@ -147,4 +215,99 @@ type SystemOps interface {
 	// a release func and nil on success, or the sentinel ErrLockHeld if
 	// another process holds it.
 	AcquireRunLock(ctx context.Context, path string) (release func(), err error)
+
+	// ------------------------------------------------------------------
+	// Phase 3 additions — mutation surface for users + sshd config +
+	// reload + archive. Architectural invariant: every Phase 3 call site
+	// for useradd/userdel/gpasswd/chpasswd/chage/tar/sshd -t/systemctl
+	// reload-restart-daemon-reload/chmod/chown lives inside this package
+	// (enforced by scripts/check-no-exec-outside-sysops.sh).
+	// ------------------------------------------------------------------
+
+	// Useradd creates a system user via `useradd`. Pre-flight checks
+	// (/etc/shells contains /usr/sbin/nologin, UID-collision, path-walk on
+	// <home> parent) are the CALLER's responsibility — the wrapper is
+	// mechanical. Compensator: Userdel(ctx, opts.Username, opts.CreateHome).
+	Useradd(ctx context.Context, opts UseraddOpts) error
+
+	// Userdel removes a system user via `userdel`. removeHome=true adds -r
+	// (irreversible — deletes home directory). D-15 Permanent path uses true;
+	// D-15 Archive path (post-tarball) uses false.
+	Userdel(ctx context.Context, username string, removeHome bool) error
+
+	// Gpasswd manipulates group membership via `gpasswd -a/-d <user> <group>`.
+	Gpasswd(ctx context.Context, op GpasswdOp, username, group string) error
+
+	// Chpasswd sets a user's password via `chpasswd` with "<user>:<password>\n"
+	// piped to stdin (NEVER argv per pitfall E3). On non-zero exit (typically
+	// a pam_pwquality rejection), returns *ChpasswdError carrying stderr
+	// verbatim for B5 surfacing in M-PASSWORD. Caller MUST apply a context
+	// deadline (recommended 30s) — chpasswd can hang on stdin pipe.
+	Chpasswd(ctx context.Context, username, password string) error
+
+	// Chage updates password-aging via `chage`. D-13 force-change-next-login
+	// sets ChageOpts.LastDay=0 (`-d 0`). WARNING: chrooted SFTP-only users
+	// cannot complete password change (pitfall 2 / RH solution 24758) — the
+	// CALLER is responsible for surfacing this UX warning.
+	Chage(ctx context.Context, username string, opts ChageOpts) error
+
+	// Chmod changes file mode via os.Chmod. SETUP-05 / D-12 use 0o750 on
+	// <home>; D-21 verifies 0o600 on authorized_keys. Caller-supplied path
+	// and mode per the SystemOps contract.
+	Chmod(ctx context.Context, path string, mode fs.FileMode) error
+
+	// Chown changes file ownership via os.Chown. SETUP-05 / D-12 set
+	// <user>:<user> on <home>. uid/gid as int (negative means "no change",
+	// matches os.Chown semantics).
+	Chown(ctx context.Context, path string, uid, gid int) error
+
+	// MkdirAll wraps os.MkdirAll. Typed pass-through so txn steps can stay
+	// testable through sysops.Fake (W-02). Mode is umask-affected per Go
+	// semantics; callers needing an explicit mode follow with Chmod.
+	MkdirAll(ctx context.Context, path string, mode fs.FileMode) error
+
+	// RemoveAll wraps os.RemoveAll. Typed pass-through paired with MkdirAll
+	// for txn compensators (W-02). ErrNotExist is treated as success per
+	// os.RemoveAll convention.
+	RemoveAll(ctx context.Context, path string) error
+
+	// WriteAuthorizedKeys atomically writes a per-user authorized_keys file
+	// at <chrootRoot>/<username>/.ssh/authorized_keys, then chowns to
+	// <username>:<username> and chmods to 0o600 (D-17, D-18). Composite
+	// wrapper — fewer call sites = less surface for the architectural-tax
+	// discussion in D-18. Lookup of the user's UID/GID is via os/user.Lookup
+	// inside this wrapper; missing user → typed error.
+	WriteAuthorizedKeys(ctx context.Context, username, chrootRoot string, keys []byte) error
+
+	// SshdT runs `sshd -t` (config validator) WITHOUT -C user-context. Returns
+	// stderr verbatim and a non-nil error on non-zero exit. SAFE-02 / D-09
+	// step 4 gates every sshd reload behind a successful SshdT call.
+	SshdT(ctx context.Context) (stderr []byte, err error)
+
+	// SshdTWithContext runs `sshd -t -C user=<u>,host=<h>,addr=<a>` so the
+	// validator evaluates Match-block-scoped directives for THIS user (D-21
+	// step 4). Used by the M-ADD-KEY verifier (plan 03-08b) to confirm
+	// that the user's chroot path actually resolves under the just-written
+	// authorized_keys configuration. See SshdTContextOpts godoc for the
+	// caller-validation invariant on opts.User (T-03-01-09).
+	SshdTWithContext(ctx context.Context, opts SshdTContextOpts) (stderr []byte, err error)
+
+	// SystemctlReload runs `systemctl reload <unit>`. SAFE-06 / D-09 step 5
+	// service-reload path (any directive that is NOT in the socket-affecting
+	// set: Port, ListenAddress, AddressFamily).
+	SystemctlReload(ctx context.Context, unit string) error
+
+	// SystemctlRestartSocket runs `systemctl restart <unit>`. SAFE-06 socket
+	// path: edits to Port/ListenAddress/AddressFamily require restarting
+	// ssh.socket (NOT reload of ssh.service) per Launchpad #2069041.
+	SystemctlRestartSocket(ctx context.Context, unit string) error
+
+	// SystemctlDaemonReload runs `systemctl daemon-reload`. Always paired
+	// with SystemctlRestartSocket per the SAFE-06 dispatcher.
+	SystemctlDaemonReload(ctx context.Context) error
+
+	// Tar invokes the system `tar` binary. D-15 Archive path uses
+	// TarCreateGzip to produce /var/lib/sftp-jailer/archive/<user>-<ISO>.tar.gz
+	// before userdel.
+	Tar(ctx context.Context, opts TarOpts) error
 }
