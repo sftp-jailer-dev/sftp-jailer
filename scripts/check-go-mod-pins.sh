@@ -11,6 +11,12 @@
 #
 # Phase 3 (plan 03-04) bumped the count from 11 → 12 with golang.org/x/crypto
 # (consumed by internal/keys for ssh.ParseAuthorizedKey + FingerprintSHA256).
+#
+# Phase 3 (plan 03-06) bumped the count from 12 → 13 with go-udiff (consumed
+# by internal/tui/screens/applysetup for the SAFE-05 unified-diff renderer in
+# the M-APPLY-SETUP modal). go-udiff was previously transitive via the bubbles
+# v2 toolchain; promoted to direct here so the SAFE-05 surface has a pinned
+# version it controls.
 set -euo pipefail
 
 declare -a REQUIRED=(
@@ -26,6 +32,7 @@ declare -a REQUIRED=(
     'github.com/knadh/koanf/parsers/yaml'
     'github.com/knadh/koanf/providers/rawbytes'
     'golang.org/x/crypto v0.50.0'
+    'github.com/aymanbagabas/go-udiff v0.4.1'
 )
 
 fail=0
@@ -39,4 +46,4 @@ done
 if [[ "$fail" == "1" ]]; then
     exit 1
 fi
-echo "OK: all 12 direct-dep pins match (bubbletea/bubbles/lipgloss/cobra/fuzzy/x-sys/sqlite + humanize + koanf/v2 + koanf/parsers/yaml + koanf/providers/rawbytes + x/crypto)"
+echo "OK: all 13 direct-dep pins match (bubbletea/bubbles/lipgloss/cobra/fuzzy/x-sys/sqlite + humanize + koanf/v2 + koanf/parsers/yaml + koanf/providers/rawbytes + x/crypto + go-udiff)"

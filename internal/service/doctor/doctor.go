@@ -39,6 +39,54 @@ func New(ops sysops.SystemOps) *Service {
 	return &Service{ops: ops, chrootRoot: "/srv/sftp-jailer"}
 }
 
+// Ops exposes the SystemOps handle so the TUI doctor screen can pass it to
+// action modals (e.g. M-APPLY-SETUP) without re-plumbing the bootstrap.
+// Phase 3 / D-06 — the screen-level [A] action constructor needs ops to
+// build the modal that runs txn.CanonicalApplySetupSteps + Tx.Apply.
+//
+// Phase 1/2 callers should NOT use this accessor; the doctor service owns
+// the SystemOps instance and the screen indirects through here precisely so
+// only one Service.Ops handle is in flight per screen lifetime.
+func (s *Service) Ops() sysops.SystemOps { return s.ops }
+
+// ChrootRoot returns the configured chroot root (defaults to /srv/sftp-jailer).
+// Phase 3: M-APPLY-SETUP seeds its proposed-root textinput from this value
+// when no ChrootDirectory directive is found in any drop-in. Once the modal
+// re-runs preflight against the real filesystem (D-08), the textinput value
+// reflects the parsed sshd_config rather than this default.
+func (s *Service) ChrootRoot() string { return s.chrootRoot }
+
+// NeedsCanonicalApply returns true iff the report indicates a SETUP-02..06
+// gap that the M-APPLY-SETUP modal can address. The doctor screen consults
+// this to decide whether to render the [A] action footer entry.
+//
+// True conditions (any one):
+//   - SshdDropIns.ContainsChrootMatch is false (no drop-in with the
+//     sftp-jailer Match Group → SETUP-02 / D-07 gap).
+//   - ChrootChain has any non-Missing link that fails the root:root +
+//     no-group-write + no-symlink invariant (SETUP-04 / pitfall A6 gap).
+//   - Subsystem.Warning is set (external sftp-server detected → pitfall A2 /
+//     SETUP-06 advisory; the modal shows the advisory note even though
+//     auto-fix is deferred per RESEARCH OQ-5).
+//
+// False otherwise — including when ChrootChain is entirely Missing (no
+// chroot root exists yet to walk; first-launch flow takes the SETUP-02
+// branch via SshdDropIns instead).
+func NeedsCanonicalApply(rep model.DoctorReport) bool {
+	if !rep.SshdDropIns.ContainsChrootMatch {
+		return true
+	}
+	for _, link := range rep.ChrootChain.Links {
+		if link.Missing {
+			continue
+		}
+		if !link.RootOwned || !link.NoGroupWrite || link.IsSymlink {
+			return true
+		}
+	}
+	return rep.Subsystem.Warning
+}
+
 // Run executes all six detectors sequentially and returns the aggregated
 // report. Phase 1 never errors the whole report — each detector reports its
 // own availability via its sub-report. The returned error is reserved for

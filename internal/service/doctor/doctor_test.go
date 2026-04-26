@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/model"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 )
@@ -413,4 +414,124 @@ func TestDetectUfwIPv6_errors_is_fs_errnotexist(t *testing.T) {
 	f := sysops.NewFake()
 	_, err := f.ReadFile(context.Background(), "/does/not/exist")
 	require.True(t, errors.Is(err, fs.ErrNotExist))
+}
+
+// ---- Phase 3 plan 03-06: Service.Ops / ChrootRoot / NeedsCanonicalApply ----
+
+// Service.Ops returns exactly the SystemOps handle passed to New — pointer
+// equality, not a copy. M-APPLY-SETUP relies on this single-handle ownership
+// (the Fake's recorded Calls slice must reflect modal-driven invocations).
+func TestService_OpsAccessor_returns_handle_passed_to_New(t *testing.T) {
+	f := sysops.NewFake()
+	svc := doctor.New(f)
+	require.Same(t, f, svc.Ops(), "Service.Ops must return the same SystemOps handle passed to New")
+}
+
+// Service.ChrootRoot returns the default /srv/sftp-jailer in absence of any
+// override. Phase 3's M-APPLY-SETUP seeds its proposed-root textinput from
+// this value; the modal then re-runs preflight against the real filesystem.
+func TestService_ChrootRoot_returns_default(t *testing.T) {
+	f := sysops.NewFake()
+	svc := doctor.New(f)
+	require.Equal(t, "/srv/sftp-jailer", svc.ChrootRoot())
+}
+
+// NeedsCanonicalApply: missing drop-in (SETUP-02 / D-07 gap) → true.
+func TestNeedsCanonicalApply_missing_dropin_true(t *testing.T) {
+	rep := model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: false},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+			},
+		},
+		Subsystem: model.SubsystemReport{IsInternal: true},
+	}
+	require.True(t, doctor.NeedsCanonicalApply(rep))
+}
+
+// NeedsCanonicalApply: clean report (drop-in present, chain clean, internal
+// sftp) → false.
+func TestNeedsCanonicalApply_clean_report_false(t *testing.T) {
+	rep := model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: true},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+				{Path: "/srv", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+				{Path: "/srv/sftp-jailer", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+			},
+		},
+		Subsystem: model.SubsystemReport{IsInternal: true},
+	}
+	require.False(t, doctor.NeedsCanonicalApply(rep))
+}
+
+// NeedsCanonicalApply: chroot chain has a symlink (pitfall A6) → true.
+func TestNeedsCanonicalApply_chroot_chain_symlink_true(t *testing.T) {
+	rep := model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: true},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+				{Path: "/srv", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o777, IsSymlink: true},
+			},
+		},
+		Subsystem: model.SubsystemReport{IsInternal: true},
+	}
+	require.True(t, doctor.NeedsCanonicalApply(rep))
+}
+
+// NeedsCanonicalApply: subsystem warning (external sftp-server / pitfall A2)
+// → true. SETUP-06 advisory; the modal still surfaces the informational note.
+func TestNeedsCanonicalApply_subsystem_warning_true(t *testing.T) {
+	rep := model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: true},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+			},
+		},
+		Subsystem: model.SubsystemReport{Target: "/usr/lib/openssh/sftp-server", Warning: true},
+	}
+	require.True(t, doctor.NeedsCanonicalApply(rep))
+}
+
+// NeedsCanonicalApply: chroot chain group-write on chroot root → true.
+func TestNeedsCanonicalApply_chroot_chain_group_write_true(t *testing.T) {
+	rep := model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: true},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+				{Path: "/srv", RootOwned: true, NoGroupWrite: false, NoOtherWrite: true, Mode: 0o775},
+			},
+		},
+		Subsystem: model.SubsystemReport{IsInternal: true},
+	}
+	require.True(t, doctor.NeedsCanonicalApply(rep))
+}
+
+// NeedsCanonicalApply: chroot chain entirely Missing (no chroot root yet)
+// → false. The first-launch flow takes the SETUP-02 branch via SshdDropIns
+// (which will already be flagged), so we don't double-prompt.
+func TestNeedsCanonicalApply_chroot_chain_missing_only_false_when_dropin_clean(t *testing.T) {
+	rep := model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: true},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+				{Path: "/srv", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+				{Path: "/srv/sftp-jailer", Missing: true},
+			},
+		},
+		Subsystem: model.SubsystemReport{IsInternal: true},
+	}
+	require.False(t, doctor.NeedsCanonicalApply(rep), "Missing-only links must NOT trip NeedsCanonicalApply (first-launch flow takes the SETUP-02 branch)")
 }

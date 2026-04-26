@@ -29,6 +29,15 @@ func RenderText(rep model.DoctorReport) string {
 	sb.WriteString(renderNftConsumers(rep.NftConsumers))
 	sb.WriteString(renderSubsystem(rep.Subsystem))
 
+	// Phase 3 / D-06: when the canonical-config gap is detected, append the
+	// [A] action prompt so CLI consumers see the same prescription surface
+	// the TUI doctor screen renders. The TUI binds 'a' to push M-APPLY-SETUP;
+	// the CLI text rendering shows the prompt for parity (a future `doctor
+	// --apply` flag could consume this signal directly).
+	if NeedsCanonicalApply(rep) {
+		sb.WriteString("\n[A] Apply canonical config — addresses missing drop-in, broken chain, or external sftp-server\n")
+	}
+
 	return sb.String()
 }
 

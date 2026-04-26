@@ -21,4 +21,16 @@
 //     real production import via `internal/keys` (ssh.ParseAuthorizedKey
 //     + ssh.FingerprintSHA256). New direct deps that have a real
 //     consumer landing in the same plan never need a pin-keeper entry.
+//   - 03-06 Task 1: ADD `_ "github.com/aymanbagabas/go-udiff"` — the dep
+//     is promoted from indirect to direct in this task (M-APPLY-SETUP
+//     SAFE-05 unified-diff renderer requires it), but the real production
+//     import lands in Task 2 (the new applysetup package). Pin-keeper
+//     bridges the two atomic commits so the `// indirect` marker
+//     disappears immediately and `scripts/check-go-mod-pins.sh` can count
+//     the new direct entry. Task 2 removes this entry when the real
+//     applysetup import lands.
 package pins
+
+// Phase 3 plan 03-06 Task 1 → Task 2 bridge. See package doc shrinkage log
+// entry "03-06 Task 1" for removal cadence.
+import _ "github.com/aymanbagabas/go-udiff"

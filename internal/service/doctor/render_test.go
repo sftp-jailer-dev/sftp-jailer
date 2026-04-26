@@ -136,6 +136,45 @@ func TestRenderText_unavailable_detectors_info(t *testing.T) {
 	require.NotContains(t, got, "[WARN] nftables consumers:")
 }
 
+// Phase 3 plan 03-06 / D-06: when NeedsCanonicalApply returns true, RenderText
+// must append the [A] action prompt so the CLI surface mirrors the TUI doctor
+// screen's footer entry. The TUI binds 'a' to push M-APPLY-SETUP.
+func TestRenderText_includes_apply_action_when_needs_canonical_apply(t *testing.T) {
+	r := model.DoctorReport{
+		// Missing canonical drop-in trips NeedsCanonicalApply.
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: false},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+			},
+		},
+		Subsystem: model.SubsystemReport{IsInternal: true},
+	}
+	got := doctor.RenderText(r)
+	require.Contains(t, got, "[A] Apply canonical config")
+	require.Contains(t, got, "missing drop-in, broken chain, or external sftp-server")
+}
+
+// When the report is fully clean, the [A] action prompt MUST NOT appear —
+// adding it noisily would erode the prescription signal.
+func TestRenderText_omits_apply_action_when_clean(t *testing.T) {
+	r := model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: true},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+				{Path: "/srv", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+				{Path: "/srv/sftp-jailer", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+			},
+		},
+		Subsystem: model.SubsystemReport{IsInternal: true},
+	}
+	got := doctor.RenderText(r)
+	require.NotContains(t, got, "[A] Apply canonical config")
+}
+
 // Round-trip the structured report through JSON — confirms every field used
 // by the renderer is json-serialisable (supports `doctor --json` output).
 func TestDoctorReport_json_roundtrip(t *testing.T) {
