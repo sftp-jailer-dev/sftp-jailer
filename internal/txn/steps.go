@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
@@ -402,3 +403,152 @@ func (s *sshdVerifyStep) Apply(ctx context.Context, ops sysops.SystemOps) error 
 	return errors.New("sshd -T did not report chrootdirectory or forcecommand — drop-in not applied?")
 }
 func (s *sshdVerifyStep) Compensate(_ context.Context, _ sysops.SystemOps) error { return nil }
+
+// ---- Userdel (no compensator — D-15 irreversibility) -----------------------
+
+// NewUserdelStep is the standalone Userdel constructor for the D-15
+// Permanent and Archive paths in M-DELETE-USER (plan 03-08a). Unlike the
+// Useradd-paired Userdel inside [NewUseraddStep]'s compensator, this Step
+// is a top-level Apply that intentionally has NO compensator: once a system
+// user is gone there is no Go-level reverse operation — recreating from
+// scratch is the admin's call (and would belong inside a separate
+// M-NEW-USER batch, not a Userdel compensator).
+//
+//   - removeHome=true → adds `-r` to userdel (D-15 Permanent path —
+//     irreversibly deletes the home directory).
+//   - removeHome=false → leaves the home dir on disk (D-15 Archive path
+//     — caller's NewTarStep wrote a backup tarball before this Step ran).
+//
+// Idempotency: re-running userdel on an already-deleted user returns an
+// "unknown user" error from the underlying tool. The call site decides
+// whether to treat that as success on retry; the Step itself returns the
+// error verbatim from sysops.
+func NewUserdelStep(username string, removeHome bool) Step {
+	return &userdelStep{username: username, removeHome: removeHome}
+}
+
+type userdelStep struct {
+	username   string
+	removeHome bool
+}
+
+func (s *userdelStep) Name() string { return "Userdel" }
+func (s *userdelStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	return ops.Userdel(ctx, s.username, s.removeHome)
+}
+func (s *userdelStep) Compensate(_ context.Context, _ sysops.SystemOps) error { return nil }
+
+// ---- MkdirAll (W-02 — uses typed ops wrappers, fully Fake-testable) -------
+
+// NewMkdirAllStep ensures dir exists with mode (mkdir + chmod, since the
+// stdlib mkdir-all primitive respects umask). uid/gid passed: -1 means
+// "skip chown".
+//
+// Compensate: best-effort ops.RemoveAll iff the dir did NOT exist before
+// Apply (captured at Apply time via ops.Lstat). When the dir already
+// existed, Compensate is a no-op — we don't claim ownership of a dir we
+// did not create.
+//
+// W-02: this Step uses the sysops typed wrappers (sysops.MkdirAll +
+// sysops.RemoveAll added to SystemOps in plan 03-01). It MUST NOT bypass
+// them with raw stdlib FS calls — the typed wrappers are the seam that
+// keeps the Step Fake-testable.
+//
+// Idempotency: ops.MkdirAll is idempotent on existing paths; ops.Chmod
+// re-applies the same mode harmlessly; ops.RemoveAll treats ErrNotExist
+// as success. Re-running Apply or Compensate is safe.
+func NewMkdirAllStep(dir string, mode fs.FileMode, uid, gid int) Step {
+	return &mkdirAllStep{dir: dir, mode: mode, uid: uid, gid: gid}
+}
+
+type mkdirAllStep struct {
+	dir           string
+	mode          fs.FileMode
+	uid, gid      int
+	existedBefore bool
+}
+
+func (s *mkdirAllStep) Name() string { return "MkdirAll" }
+func (s *mkdirAllStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	if _, err := ops.Lstat(ctx, s.dir); err == nil {
+		s.existedBefore = true
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("lstat %s: %w", s.dir, err)
+	}
+	if err := ops.MkdirAll(ctx, s.dir, s.mode); err != nil {
+		return fmt.Errorf("mkdir %s: %w", s.dir, err)
+	}
+	if err := ops.Chmod(ctx, s.dir, s.mode); err != nil {
+		return fmt.Errorf("chmod %s: %w", s.dir, err)
+	}
+	if s.uid >= 0 && s.gid >= 0 {
+		if err := ops.Chown(ctx, s.dir, s.uid, s.gid); err != nil {
+			return fmt.Errorf("chown %s: %w", s.dir, err)
+		}
+	}
+	return nil
+}
+func (s *mkdirAllStep) Compensate(ctx context.Context, ops sysops.SystemOps) error {
+	if s.existedBefore {
+		return nil
+	}
+	return ops.RemoveAll(ctx, s.dir)
+}
+
+// ---- VerifyAuthKeys (D-21 steps 1+2 wrapper, callable from Apply) ---------
+
+// VerifyViolation is the txn-level shape used by NewVerifyAuthKeysStep.
+// Caller adapts internal/chrootcheck.Violation into this shape to avoid
+// an import cycle (txn → chrootcheck would pull the FS-walking package
+// into the framework). Fields mirror chrootcheck.Violation 1:1.
+type VerifyViolation struct {
+	Path   string
+	Reason string
+}
+
+// NewVerifyAuthKeysStep wraps a verifier function in a Step. The verifier
+// is the caller's responsibility to inject (avoiding txn → chrootcheck
+// import — see VerifyViolation godoc).
+//
+// Apply returns a non-nil error iff there are violations; the error
+// message joins all violation reasons with `; ` and is prefixed with
+// "StrictModes failed: " so the M-ADD-KEY / S-USER-DETAIL UI can surface
+// it verbatim per pitfall B6.
+//
+// Compensate is a no-op — verification has no side effect to undo. The
+// rollback ordering ensures that the prior NewAtomicWriteAuthorizedKeysStep's
+// compensator restores the prior file content when this verifier fails.
+func NewVerifyAuthKeysStep(username, chrootRoot string, verify func(ctx context.Context, ops sysops.SystemOps, username, chrootRoot string) ([]VerifyViolation, error)) Step {
+	return &verifyAuthKeysStep{
+		username:   username,
+		chrootRoot: chrootRoot,
+		verify:     verify,
+	}
+}
+
+type verifyAuthKeysStep struct {
+	username, chrootRoot string
+	verify               func(ctx context.Context, ops sysops.SystemOps, username, chrootRoot string) ([]VerifyViolation, error)
+}
+
+func (s *verifyAuthKeysStep) Name() string { return "VerifyAuthKeys" }
+func (s *verifyAuthKeysStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	vios, err := s.verify(ctx, ops, s.username, s.chrootRoot)
+	if err != nil {
+		return fmt.Errorf("verify auth keys: %w", err)
+	}
+	if len(vios) > 0 {
+		var buf strings.Builder
+		for i, v := range vios {
+			if i > 0 {
+				buf.WriteString("; ")
+			}
+			buf.WriteString(v.Reason)
+		}
+		return fmt.Errorf("StrictModes failed: %s", buf.String())
+	}
+	return nil
+}
+func (s *verifyAuthKeysStep) Compensate(_ context.Context, _ sysops.SystemOps) error {
+	return nil
+}

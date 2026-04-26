@@ -366,6 +366,11 @@ func TestStepNames_are_unique_and_descriptive(t *testing.T) {
 		NewSshdValidateStep(),
 		NewSystemctlReloadStep(ReloadService),
 		NewSshdVerifyChrootDirectiveStep(),
+		NewUserdelStep("alice", true),
+		NewMkdirAllStep("/var/lib/sftp-jailer/archive", 0o700, 0, 0),
+		NewVerifyAuthKeysStep("alice", "/srv/sftp", func(_ context.Context, _ sysops.SystemOps, _, _ string) ([]VerifyViolation, error) {
+			return nil, nil
+		}),
 	}
 
 	seen := make(map[string]bool, len(steps))
@@ -520,6 +525,222 @@ func TestStepsFile_does_not_import_sshdcfg(t *testing.T) {
 	require.True(t, true)
 }
 
+// ============================================================================
+// Plan 03-08a — NewUserdelStep / NewMkdirAllStep / NewVerifyAuthKeysStep
+// ============================================================================
+
+func TestNewUserdelStep_apply_records_Userdel_compensate_is_noop(t *testing.T) {
+	t.Parallel()
+
+	f := sysops.NewFake()
+	step := NewUserdelStep("alice", true)
+
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	// One Userdel call recorded after Apply.
+	var userdelCalls int
+	for _, c := range f.Calls {
+		if c.Method == "Userdel" {
+			userdelCalls++
+			require.Equal(t, "alice", c.Args[0])
+			require.Equal(t, "removeHome=true", c.Args[1])
+		}
+	}
+	require.Equal(t, 1, userdelCalls, "Apply must record exactly one Userdel call")
+
+	beforeCount := len(f.Calls)
+	require.NoError(t, step.Compensate(ctx, f))
+	require.Equal(t, beforeCount, len(f.Calls),
+		"Compensate must NOT record any sysops call (D-15 irreversibility — no-op)")
+}
+
+func TestNewUserdelStep_archive_path_uses_removeHome_false(t *testing.T) {
+	t.Parallel()
+
+	f := sysops.NewFake()
+	step := NewUserdelStep("alice", false)
+
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	for _, c := range f.Calls {
+		if c.Method == "Userdel" {
+			require.Equal(t, "removeHome=false", c.Args[1],
+				"Archive path uses removeHome=false so the home dir survives for the tarball-residue inspection workflow")
+		}
+	}
+}
+
+func TestNewMkdirAllStep_apply_calls_ops_MkdirAll_then_Chmod_then_Chown(t *testing.T) {
+	t.Parallel()
+
+	const dir = "/var/lib/sftp-jailer/archive"
+	f := sysops.NewFake()
+	// No prior FileStats entry — Lstat returns ErrNotExist → existedBefore stays false.
+	step := NewMkdirAllStep(dir, 0o700, 0, 0)
+
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	// Assert the typed-wrapper sequence: Lstat → MkdirAll → Chmod → Chown.
+	// (W-02 — NOT direct os.MkdirAll; the typed wrapper IS the seam.)
+	var seen []string
+	for _, c := range f.Calls {
+		switch c.Method {
+		case "Lstat", "MkdirAll", "Chmod", "Chown":
+			seen = append(seen, c.Method)
+		}
+	}
+	require.Equal(t, []string{"Lstat", "MkdirAll", "Chmod", "Chown"}, seen,
+		"Apply must call ops.Lstat (existed-before probe), then ops.MkdirAll, then ops.Chmod, then ops.Chown — in that order, all via the typed wrappers (W-02)")
+}
+
+func TestNewMkdirAllStep_apply_skips_chown_when_uid_negative(t *testing.T) {
+	t.Parallel()
+
+	const dir = "/var/lib/sftp-jailer/archive"
+	f := sysops.NewFake()
+	step := NewMkdirAllStep(dir, 0o700, -1, -1)
+
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	for _, c := range f.Calls {
+		require.NotEqual(t, "Chown", c.Method,
+			"uid=-1 / gid=-1 means 'skip chown' — no Chown call should be recorded")
+	}
+}
+
+func TestNewMkdirAllStep_compensate_calls_ops_RemoveAll_when_dir_didnt_exist_before(t *testing.T) {
+	t.Parallel()
+
+	const dir = "/var/lib/sftp-jailer/archive"
+	f := sysops.NewFake()
+	// No FileStats entry → Lstat returns ErrNotExist → existedBefore = false.
+	step := NewMkdirAllStep(dir, 0o700, 0, 0)
+
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+	require.NoError(t, step.Compensate(ctx, f))
+
+	var sawRemove bool
+	for _, c := range f.Calls {
+		if c.Method == "RemoveAll" && len(c.Args) > 0 && c.Args[0] == dir {
+			sawRemove = true
+		}
+	}
+	require.True(t, sawRemove,
+		"Compensate must call ops.RemoveAll on the dir we created (W-02 typed wrapper)")
+}
+
+func TestNewMkdirAllStep_compensate_noop_when_dir_existed_before(t *testing.T) {
+	t.Parallel()
+
+	const dir = "/var/lib/sftp-jailer/archive"
+	f := sysops.NewFake()
+	// Pre-existing dir → Apply's initial Lstat succeeds → existedBefore = true.
+	f.FileStats[dir] = sysops.FileInfo{Path: dir, Mode: 0o700, IsDir: true}
+
+	step := NewMkdirAllStep(dir, 0o700, 0, 0)
+
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+	require.NoError(t, step.Compensate(ctx, f))
+
+	for _, c := range f.Calls {
+		require.False(t, c.Method == "RemoveAll" && len(c.Args) > 0 && c.Args[0] == dir,
+			"Compensate must NOT remove a dir that existed before Apply — we don't claim ownership of it")
+	}
+}
+
+func TestNewMkdirAllStep_uses_typed_sysops_wrappers_not_raw_os(t *testing.T) {
+	t.Parallel()
+
+	// W-02 contract: Apply must invoke ops.MkdirAll AND ops.RemoveAll
+	// through the typed sysops seam — no direct os.MkdirAll / os.RemoveAll.
+	// The Fake records every typed-wrapper call; if Apply / Compensate ever
+	// regress to raw os calls, the Fake will not see them and this test
+	// would fail by missing the expected call records.
+	const dir = "/var/lib/sftp-jailer/archive"
+	f := sysops.NewFake()
+	step := NewMkdirAllStep(dir, 0o700, 0, 0)
+
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+	require.NoError(t, step.Compensate(ctx, f))
+
+	var sawMkdirAll, sawRemoveAll bool
+	for _, c := range f.Calls {
+		if c.Method == "MkdirAll" && len(c.Args) > 0 && c.Args[0] == dir {
+			sawMkdirAll = true
+		}
+		if c.Method == "RemoveAll" && len(c.Args) > 0 && c.Args[0] == dir {
+			sawRemoveAll = true
+		}
+	}
+	require.True(t, sawMkdirAll, "Apply must route through ops.MkdirAll (W-02)")
+	require.True(t, sawRemoveAll, "Compensate must route through ops.RemoveAll (W-02)")
+}
+
+func TestNewVerifyAuthKeysStep_apply_returns_joined_error_on_violations(t *testing.T) {
+	t.Parallel()
+
+	verify := func(_ context.Context, _ sysops.SystemOps, _, _ string) ([]VerifyViolation, error) {
+		return []VerifyViolation{
+			{Path: "/x", Reason: "bad mode"},
+			{Path: "/y", Reason: "bad owner"},
+		}, nil
+	}
+	step := NewVerifyAuthKeysStep("alice", "/srv/sftp", verify)
+
+	f := sysops.NewFake()
+	err := step.Apply(context.Background(), f)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "StrictModes failed")
+	require.Contains(t, err.Error(), "bad mode")
+	require.Contains(t, err.Error(), "bad owner")
+}
+
+func TestNewVerifyAuthKeysStep_apply_succeeds_on_no_violations(t *testing.T) {
+	t.Parallel()
+
+	verify := func(_ context.Context, _ sysops.SystemOps, _, _ string) ([]VerifyViolation, error) {
+		return nil, nil
+	}
+	step := NewVerifyAuthKeysStep("alice", "/srv/sftp", verify)
+
+	f := sysops.NewFake()
+	require.NoError(t, step.Apply(context.Background(), f))
+}
+
+func TestNewVerifyAuthKeysStep_apply_propagates_verifier_error(t *testing.T) {
+	t.Parallel()
+
+	verify := func(_ context.Context, _ sysops.SystemOps, _, _ string) ([]VerifyViolation, error) {
+		return nil, errors.New("boom")
+	}
+	step := NewVerifyAuthKeysStep("alice", "/srv/sftp", verify)
+
+	err := step.Apply(context.Background(), sysops.NewFake())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "verify auth keys")
+	require.Contains(t, err.Error(), "boom")
+}
+
+func TestNewVerifyAuthKeysStep_compensate_is_noop(t *testing.T) {
+	t.Parallel()
+
+	verify := func(_ context.Context, _ sysops.SystemOps, _, _ string) ([]VerifyViolation, error) {
+		return nil, nil
+	}
+	step := NewVerifyAuthKeysStep("alice", "/srv/sftp", verify)
+
+	f := sysops.NewFake()
+	require.NoError(t, step.Compensate(context.Background(), f))
+	require.Empty(t, f.Calls, "Compensate must not invoke any sysops call")
+}
+
 // reflect-based sanity that Step is satisfied by a known concrete type.
 // Compile-time assertion belongs in steps.go; here we just call Name() to
 // fail loudly if the constructor returns nil.
@@ -542,6 +763,12 @@ func TestAllConstructors_return_non_nil_steps(t *testing.T) {
 		{"SystemctlReloadService", NewSystemctlReloadStep(ReloadService)},
 		{"SystemctlReloadSocket", NewSystemctlReloadStep(RestartSocket)},
 		{"SshdVerifyChrootDirective", NewSshdVerifyChrootDirectiveStep()},
+		{"UserdelPermanent", NewUserdelStep("alice", true)},
+		{"UserdelArchive", NewUserdelStep("alice", false)},
+		{"MkdirAll", NewMkdirAllStep("/var/lib/sftp-jailer/archive", 0o700, 0, 0)},
+		{"VerifyAuthKeys", NewVerifyAuthKeysStep("alice", "/srv/sftp", func(_ context.Context, _ sysops.SystemOps, _, _ string) ([]VerifyViolation, error) {
+			return nil, nil
+		})},
 	}
 
 	for _, tc := range cases {
