@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/sshdcfg"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/store"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui"
@@ -29,6 +31,44 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/version"
 )
+
+// defaultChrootRoot is the fallback when sshd_config.d drop-ins do not
+// declare a ChrootDirectory we recognise. Same default M-APPLY-SETUP uses
+// (plan 03-06) so the canonical-config path stays consistent.
+const defaultChrootRoot = "/srv/sftp-jailer"
+
+// resolveChrootRoot scans /etc/ssh/sshd_config.d/*.conf for a Match-block
+// ChrootDirectory directive, strips the per-user expansion suffix
+// (`/%u` / `/%h`), and returns the literal path. Falls back to
+// defaultChrootRoot on any read/parse failure or absent directive.
+//
+// Phase 3 plan 03-07 wiring: passed into usersscreen.NewWithConfig so the
+// M-NEW-USER + Enter-on-INFO-orphan flows can pre-fill the home path
+// against whatever chroot root is actually deployed (admins occasionally
+// move it from /srv/sftp-jailer to /var/sftp-jailer or similar).
+func resolveChrootRoot(ctx context.Context, ops sysops.SystemOps) string {
+	paths, _ := ops.Glob(ctx, "/etc/ssh/sshd_config.d/*.conf")
+	for _, p := range paths {
+		b, err := ops.ReadFile(ctx, p)
+		if err != nil {
+			continue
+		}
+		d, _ := sshdcfg.ParseDropIn(b)
+		for _, m := range d.Matches {
+			for _, dir := range m.Body {
+				if dir.Keyword == "chrootdirectory" {
+					v := strings.TrimSpace(dir.Value)
+					v = strings.TrimSuffix(v, "/%u")
+					v = strings.TrimSuffix(v, "/%h")
+					if v = strings.TrimRight(v, "/"); v != "" {
+						return v
+					}
+				}
+			}
+		}
+	}
+	return defaultChrootRoot
+}
 
 // ldflag-injected at build time. Defaults are dev-friendly.
 var (
@@ -213,13 +253,18 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// C2 wiring (plan 01-04): doctor service.
 	doctorSvc := doctor.New(ops)
 
+	// Phase 3 plan 03-07: resolve the chroot root once at startup so the
+	// usersscreen factory can hand it to M-NEW-USER pushes without each
+	// modal having to re-parse sshd_config.d/*.conf.
+	chrootRoot := resolveChrootRoot(cmd.Context(), ops)
+
 	// Factory injections — sorted alphabetically by screen name so future
 	// wave plans can insert their own line without merge conflict noise.
 	home.SetDoctorFactory(func() nav.Screen { return doctorscreen.New(doctorSvc) })
 	home.SetFirewallFactory(func() nav.Screen { return firewallscreen.New(ops) })
 	home.SetLogsFactory(func() nav.Screen { return logsscreen.New(queries, ops) })
 	home.SetSettingsFactory(func() nav.Screen { return settingsscreen.New(ops, configFilePath) })
-	home.SetUsersFactory(func() nav.Screen { return usersscreen.NewWithConfig(usersEnum, &usersCfg) })
+	home.SetUsersFactory(func() nav.Screen { return usersscreen.NewWithConfig(usersEnum, &usersCfg, ops, chrootRoot) })
 
 	// Construct the App with the splash as the initial screen. The splash
 	// will auto-dismiss after 2s and ReplaceMsg itself with a home screen

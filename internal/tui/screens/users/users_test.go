@@ -13,7 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/newuser"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/password"
 	usersscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 )
@@ -268,7 +271,7 @@ func TestUsersScreen_cursor_movement(t *testing.T) {
 // this to understand the colored "fresh / aging / stale" hints.
 func TestUsersScreen_renders_legend_with_threshold_values(t *testing.T) {
 	cfg := &config.Settings{PasswordAgingDays: 180, PasswordStaleDays: 365}
-	m := usersscreen.NewWithConfig(nil, cfg)
+	m := usersscreen.NewWithConfig(nil, cfg, nil, "")
 	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001}}, nil)
 	v := m.View()
 	require.Contains(t, v,
@@ -281,7 +284,7 @@ func TestUsersScreen_renders_legend_with_threshold_values(t *testing.T) {
 // defaults. Sanity-check on the substitution path.
 func TestUsersScreen_renders_legend_with_custom_thresholds(t *testing.T) {
 	cfg := &config.Settings{PasswordAgingDays: 30, PasswordStaleDays: 90}
-	m := usersscreen.NewWithConfig(nil, cfg)
+	m := usersscreen.NewWithConfig(nil, cfg, nil, "")
 	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001}}, nil)
 	v := m.View()
 	require.Contains(t, v, "fresh < 30d", "legend must use cfg.PasswordAgingDays")
@@ -294,7 +297,7 @@ func TestUsersScreen_renders_legend_with_custom_thresholds(t *testing.T) {
 // sentinel rather than a numeric "Nd (…)" form.
 func TestUsersScreen_renders_indefinite_for_max_99999(t *testing.T) {
 	cfg := &config.Settings{PasswordAgingDays: 180, PasswordStaleDays: 365}
-	m := usersscreen.NewWithConfig(nil, cfg)
+	m := usersscreen.NewWithConfig(nil, cfg, nil, "")
 	m.LoadRowsForTest([]users.Row{{
 		Username: "alice", UID: 1001, ChrootPath: "/srv/sftp/alice",
 		PasswordAgeDays: 50, PasswordMaxDays: 99999,
@@ -311,7 +314,7 @@ func TestUsersScreen_renders_indefinite_for_max_99999(t *testing.T) {
 // calls FormatPasswordAge rather than the old `Nd` form.
 func TestUsersScreen_renders_status_hint_for_aging(t *testing.T) {
 	cfg := &config.Settings{PasswordAgingDays: 180, PasswordStaleDays: 365}
-	m := usersscreen.NewWithConfig(nil, cfg)
+	m := usersscreen.NewWithConfig(nil, cfg, nil, "")
 	m.LoadRowsForTest([]users.Row{{
 		Username: "alice", UID: 1001, ChrootPath: "/srv/sftp/alice",
 		PasswordAgeDays: 200, PasswordMaxDays: 90, // bounded max, age ≥ aging, < stale
@@ -340,4 +343,128 @@ func TestUsersScreen_search_filters_rows(t *testing.T) {
 	require.Contains(t, v, "bob")
 	require.False(t, strings.Contains(v, "alice"),
 		"search query `bob` must exclude alice; got View=%s", v)
+}
+
+// ============================================================================
+// Phase 3 plan 03-07 tests — n / p / Enter-on-INFO + cursor extension
+// ============================================================================
+
+// TestUsersScreen_n_keybinding_pushes_new_user_when_ops_set — pressing 'n'
+// with ops != nil pushes a *newuser.Model onto the nav stack.
+func TestUsersScreen_n_keybinding_pushes_new_user_when_ops_set(t *testing.T) {
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001}}, nil)
+	_, cmd := m.Update(keyPress("n"))
+	require.NotNil(t, cmd, "pressing 'n' with ops set must return a Push tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent, "expected Push intent")
+	_, isNewUser := nm.Screen.(*newuser.Model)
+	require.True(t, isNewUser, "pushed screen must be *newuser.Model, got %T", nm.Screen)
+}
+
+// TestUsersScreen_n_keybinding_noop_when_ops_nil — pressing 'n' on a
+// model constructed via the legacy New() (ops=nil) is a no-op.
+func TestUsersScreen_n_keybinding_noop_when_ops_nil(t *testing.T) {
+	m := usersscreen.New(nil)
+	m.LoadRowsForTest(nil, nil)
+	_, cmd := m.Update(keyPress("n"))
+	require.Nil(t, cmd, "pressing 'n' with ops=nil must be a no-op")
+}
+
+// TestUsersScreen_p_keybinding_pushes_password_modal_with_selected_username
+// — pressing 'p' on a selected real row pushes M-PASSWORD with that user.
+func TestUsersScreen_p_keybinding_pushes_password_modal_with_selected_username(t *testing.T) {
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001}}, nil)
+	// Cursor defaults to 0 (first real row).
+	_, cmd := m.Update(keyPress("p"))
+	require.NotNil(t, cmd)
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok)
+	require.Equal(t, nav.Push, nm.Intent)
+	pm, isPwModel := nm.Screen.(*password.Model)
+	require.True(t, isPwModel, "pushed screen must be *password.Model, got %T", nm.Screen)
+	require.Equal(t, "alice", pm.UsernameForTest(),
+		"M-PASSWORD must carry the selected row's username")
+}
+
+// TestUsersScreen_p_keybinding_noop_when_no_selected_row — pressing 'p'
+// with no real rows is a no-op.
+func TestUsersScreen_p_keybinding_noop_when_no_selected_row(t *testing.T) {
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest(nil, nil)
+	_, cmd := m.Update(keyPress("p"))
+	require.Nil(t, cmd, "pressing 'p' with no selectable rows must be a no-op")
+}
+
+// TestUsersScreen_enter_on_orphan_INFO_pushes_newuser_NewFromOrphan —
+// Enter on an orphan-kind INFO row pushes M-NEW-USER constructed via
+// NewFromOrphan (carrying the UID + GID for B-03).
+func TestUsersScreen_enter_on_orphan_INFO_pushes_newuser_NewFromOrphan(t *testing.T) {
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest(nil, []users.InfoRow{{
+		Kind: users.InfoOrphan, Detail: "/srv/sftp-jailer/orphan99 (no backing system user)",
+		Hint: "[fix in Phase 3]",
+		Dir:  "/srv/sftp-jailer/orphan99", UID: 5555, GID: 5555,
+	}})
+	m.SetInfoCursorForTest(0)
+	_, cmd := m.Update(keyPress("enter"))
+	require.NotNil(t, cmd)
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	nu, isNewUser := nm.Screen.(*newuser.Model)
+	require.True(t, isNewUser, "pushed screen must be *newuser.Model, got %T", nm.Screen)
+	require.True(t, nu.IsOrphanForTest(),
+		"Enter-on-orphan-INFO must push NewFromOrphan (isOrphan=true) — B-03 contract")
+	require.Equal(t, 5555, nu.OrphanGIDForTest(),
+		"orphan GID must propagate from InfoRow into the new-user modal (B-03)")
+}
+
+// TestUsersScreen_enter_on_missing_config_INFO_toasts_doctor_pointer —
+// Enter on a missing-match / missing-chroot INFO row flashes a toast
+// pointing the admin at the doctor [A] action; no Push.
+func TestUsersScreen_enter_on_missing_config_INFO_toasts_doctor_pointer(t *testing.T) {
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest(nil, []users.InfoRow{{
+		Kind:   users.InfoMissingMatch,
+		Detail: "no Match Group sftp* block in any drop-in",
+		Hint:   "[fix in Phase 3]",
+	}})
+	m.SetInfoCursorForTest(0)
+	_, cmd := m.Update(keyPress("enter"))
+	// Toast.Flash returns a tea.Cmd that ticks expire — we don't drive it
+	// (would block 2s). Existence of the cmd + toast text in View is the
+	// assertion.
+	require.NotNil(t, cmd, "missing-config Enter must Flash a toast")
+	require.Contains(t, m.View(), "doctor",
+		"missing-config Enter must surface doctor pointer in the toast")
+	require.Contains(t, m.View(), "[A]",
+		"missing-config Enter must mention the [A] apply action")
+}
+
+// TestUsersScreen_KeyMap_includes_New_and_Password_bindings — the KeyMap
+// surfaces 'n' (New) and 'p' (Password) bindings with help text.
+func TestUsersScreen_KeyMap_includes_New_and_Password_bindings(t *testing.T) {
+	km := usersscreen.DefaultKeyMap()
+	require.NotEmpty(t, km.New.Keys, "KeyMap.New must have keys")
+	require.NotEmpty(t, km.New.Help, "KeyMap.New must have help text")
+	require.NotEmpty(t, km.Password.Keys, "KeyMap.Password must have keys")
+	require.NotEmpty(t, km.Password.Help, "KeyMap.Password must have help text")
+	require.Contains(t, km.New.Keys, "n")
+	require.Contains(t, km.Password.Keys, "p")
 }

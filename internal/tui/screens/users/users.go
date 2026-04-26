@@ -40,7 +40,10 @@ import (
 	"github.com/sahilm/fuzzy"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/newuser"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/password"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/styles"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
@@ -105,6 +108,13 @@ type Model struct {
 	// config.Defaults() when called with a nil pointer.
 	cfg *config.Settings
 
+	// Phase 3 plan 03-07: ops + chrootRoot enable the n / p / Enter-on-INFO
+	// flows that push M-NEW-USER and M-PASSWORD modals onto the nav stack.
+	// Both are nil-tolerant: when ops is nil (legacy New / test path) the
+	// 'n' / 'p' / Enter-on-INFO handlers no-op so existing tests stay green.
+	ops        sysops.SystemOps
+	chrootRoot string
+
 	// Loaded data — populated either from rowsLoadedMsg or LoadRowsForTest.
 	rows    []users.Row
 	infos   []users.InfoRow
@@ -123,6 +133,13 @@ type Model struct {
 	toast          widgets.Toast
 	keys           KeyMap
 	width          int
+
+	// Phase 3 plan 03-07: infoCursor extends the cursor across the INFO
+	// pseudo-rows. -1 = cursor is on a real row (m.cursor); >= 0 = cursor
+	// is on infos[infoCursor] (Enter routes to the kind-specific handler).
+	// j/k navigation cycles infos → filtered → infos (wrap) — see
+	// handleNavKey for the math.
+	infoCursor int
 }
 
 // New constructs the screen wired to enum (the data-layer composer shipped
@@ -130,25 +147,35 @@ type Model struct {
 // LoadRowsForTest. The password-age thresholds default to
 // config.Defaults() — callers that have a loaded config.Settings should
 // use [NewWithConfig] instead.
+//
+// Phase 3 plan 03-07: this legacy constructor leaves ops + chrootRoot at
+// their zero values, which makes the 'n' / 'p' / Enter-on-INFO handlers
+// no-op. Production wiring should use NewWithConfig with the full ops +
+// chrootRoot pair so the M-NEW-USER + M-PASSWORD modals are reachable.
 func New(enum *users.Enumerator) *Model {
-	return NewWithConfig(enum, nil)
+	return NewWithConfig(enum, nil, nil, "")
 }
 
-// NewWithConfig is the canonical constructor — accepts the enumerator AND
-// the loaded *config.Settings used to drive the password-age column
-// formatting + legend. A nil cfg falls back to config.Defaults() so unit
-// tests that don't care about thresholds can pass nil.
-func NewWithConfig(enum *users.Enumerator, cfg *config.Settings) *Model {
+// NewWithConfig is the canonical constructor — accepts the enumerator,
+// the loaded *config.Settings (drives the password-age column formatting
+// + legend), the SystemOps handle (for the M-NEW-USER + M-PASSWORD
+// modal pushes), and the resolved chroot root path. ops + chrootRoot may
+// be nil/empty in unit tests; the 'n' / 'p' / Enter-on-INFO handlers
+// no-op when ops is nil. A nil cfg falls back to config.Defaults().
+func NewWithConfig(enum *users.Enumerator, cfg *config.Settings, ops sysops.SystemOps, chrootRoot string) *Model {
 	if cfg == nil {
 		d := config.Defaults()
 		cfg = &d
 	}
 	return &Model{
-		enum:    enum,
-		cfg:     cfg,
-		loading: true,
-		keys:    DefaultKeyMap(),
-		search:  widgets.NewSearch(),
+		enum:       enum,
+		cfg:        cfg,
+		ops:        ops,
+		chrootRoot: chrootRoot,
+		loading:    true,
+		keys:       DefaultKeyMap(),
+		search:     widgets.NewSearch(),
+		infoCursor: -1,
 	}
 }
 
@@ -248,27 +275,145 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		return m, nil
 	case "c":
 		return m.handleCopy()
+	case "n":
+		// Phase 3 plan 03-07 / D-11: 'n' pushes M-NEW-USER (fresh-create).
+		// Gated on ops != nil so legacy callers (New + LoadRowsForTest in
+		// existing tests) stay no-op.
+		if m.ops == nil {
+			return m, nil
+		}
+		return m, nav.PushCmd(newuser.New(m.ops, m.chrootRoot))
+	case "p":
+		// Phase 3 plan 03-07 / D-13: 'p' pushes M-PASSWORD for the
+		// selected user (auto-gen mode). No-op when no row is selected
+		// or ops is nil.
+		if m.ops == nil {
+			return m, nil
+		}
+		r := m.selectedRow()
+		if r == nil {
+			return m, nil
+		}
+		return m, nav.PushCmd(password.New(m.ops, r.Username, password.AutoGenerateMode))
 	case "enter":
-		// User-detail modal deferred (UI-SPEC line 162: Phase 2 ships
-		// list-only; detail-modal-on-Enter is acknowledged but not
-		// mandated for v1 land). No-op for now.
-		return m, nil
+		return m.handleEnter()
 	case "j", "down":
-		if m.cursor < len(m.filtered)-1 {
-			m.cursor++
-		}
+		m.moveCursorDown()
 	case "k", "up":
-		if m.cursor > 0 {
-			m.cursor--
-		}
+		m.moveCursorUp()
 	case "g":
-		m.cursor = 0
+		// Top — go to first INFO row if any, else first real row.
+		if len(m.infos) > 0 {
+			m.infoCursor = 0
+			m.cursor = 0
+		} else {
+			m.infoCursor = -1
+			m.cursor = 0
+		}
 	case "G":
+		// Bottom — go to last real row if any, else last INFO row.
 		if n := len(m.filtered); n > 0 {
 			m.cursor = n - 1
+			m.infoCursor = -1
+		} else if len(m.infos) > 0 {
+			m.infoCursor = len(m.infos) - 1
 		}
 	}
 	return m, nil
+}
+
+// moveCursorDown advances the cursor through INFO rows and then real rows.
+// Layout (top-to-bottom): infos[0..N-1] then filtered[0..M-1]. The
+// infoCursor sentinel (-1) means "on a real row at m.cursor"; >=0 means
+// "on infos[infoCursor]".
+func (m *Model) moveCursorDown() {
+	if m.infoCursor >= 0 {
+		// Currently on an INFO row.
+		if m.infoCursor < len(m.infos)-1 {
+			m.infoCursor++
+			return
+		}
+		// Last INFO row — fall through to first real row (if any).
+		if len(m.filtered) > 0 {
+			m.infoCursor = -1
+			m.cursor = 0
+		}
+		return
+	}
+	// On a real row.
+	if m.cursor < len(m.filtered)-1 {
+		m.cursor++
+	}
+}
+
+// moveCursorUp is the inverse of moveCursorDown.
+func (m *Model) moveCursorUp() {
+	if m.infoCursor >= 0 {
+		if m.infoCursor > 0 {
+			m.infoCursor--
+		}
+		return
+	}
+	// On a real row at m.cursor.
+	if m.cursor > 0 {
+		m.cursor--
+		return
+	}
+	// At the top of the real rows — fall through to the last INFO row.
+	if len(m.infos) > 0 {
+		m.infoCursor = len(m.infos) - 1
+	}
+}
+
+// handleEnter dispatches the Enter key based on cursor position.
+//
+// Phase 3 plan 03-07 D-06 + D-14:
+//   - infoCursor >= 0 (Enter on an INFO row): branch on InfoRow.Kind.
+//     orphan        → push newuser.NewFromOrphan (D-14, B-03)
+//     missing-match → toast "open doctor and press [A] to apply canonical config"
+//     missing-chroot → same toast (same fix path)
+//   - infoCursor == -1 (Enter on a real row): no-op for now
+//     (S-USER-DETAIL lands in plan 03-08a).
+func (m *Model) handleEnter() (nav.Screen, tea.Cmd) {
+	if m.infoCursor >= 0 && m.infoCursor < len(m.infos) {
+		info := m.infos[m.infoCursor]
+		switch info.Kind {
+		case users.InfoOrphan:
+			if m.ops == nil {
+				return m, nil
+			}
+			return m, nav.PushCmd(newuser.NewFromOrphan(m.ops, m.chrootRoot, info))
+		case users.InfoMissingMatch, users.InfoMissingChroot:
+			var flashCmd tea.Cmd
+			m.toast, flashCmd = m.toast.Flash(
+				"open doctor (d) and press [A] to apply canonical config")
+			return m, flashCmd
+		}
+	}
+	// Real-row Enter: S-USER-DETAIL deferred to plan 03-08a.
+	return m, nil
+}
+
+// selectedRow returns the currently-selected real Row, or nil if the cursor
+// is on an INFO row (or there are no real rows).
+func (m *Model) selectedRow() *users.Row {
+	if m.infoCursor >= 0 {
+		return nil
+	}
+	if m.cursor < 0 || m.cursor >= len(m.filtered) {
+		return nil
+	}
+	return &m.filtered[m.cursor]
+}
+
+// SetInfoCursorForTest exposes a direct cursor poke so unit tests don't
+// have to drive j/k navigation across an arbitrary number of INFO rows
+// to land on the one they want to assert against.
+func (m *Model) SetInfoCursorForTest(idx int) {
+	m.infoCursor = idx
+	if idx >= 0 {
+		m.cursor = 0 // sentinel — handleEnter only consults infoCursor
+	}
 }
 
 // handleCopy emits the OSC 52 SetClipboard cmd + toast flash for the
@@ -400,7 +545,15 @@ func (m *Model) View() string {
 	}
 
 	// INFO pseudo-rows render at the TOP, in the new Info token (cyan).
-	for _, info := range m.infos {
+	// Phase 3 plan 03-07: when m.infoCursor == i, prefix the row with the
+	// `▌ ` cursor marker so admins see which INFO row is selected for
+	// Enter-on-INFO dispatch (orphan reconcile / canonical-config toast).
+	for i, info := range m.infos {
+		marker := "  "
+		if i == m.infoCursor {
+			marker = "▌ "
+		}
+		b.WriteString(marker)
 		b.WriteString(styles.Info.Render(
 			fmt.Sprintf("[INFO] %s: %s", info.Kind, info.Detail)))
 		b.WriteString("  ")
@@ -509,6 +662,9 @@ type KeyMap struct {
 	SortCycle   nav.KeyBinding
 	SortReverse nav.KeyBinding
 	Copy        nav.KeyBinding
+	// Phase 3 plan 03-07 additions:
+	New      nav.KeyBinding // 'n' → push M-NEW-USER
+	Password nav.KeyBinding // 'p' → push M-PASSWORD on selected row
 }
 
 // DefaultKeyMap returns the canonical S-USERS bindings per UI-SPEC §S-USERS.
@@ -520,20 +676,23 @@ func DefaultKeyMap() KeyMap {
 		SortCycle:   nav.KeyBinding{Keys: []string{"s"}, Help: "sort"},
 		SortReverse: nav.KeyBinding{Keys: []string{"S"}, Help: "reverse sort"},
 		Copy:        nav.KeyBinding{Keys: []string{"c"}, Help: "copy row"},
+		New:         nav.KeyBinding{Keys: []string{"n"}, Help: "new user"},
+		Password:    nav.KeyBinding{Keys: []string{"p"}, Help: "set password"},
 	}
 }
 
 // ShortHelp surfaces the bindings shown in the footer / `?` overlay's
 // compact mode. Reverse-sort is a power-user flag, kept to FullHelp only.
 func (k KeyMap) ShortHelp() []nav.KeyBinding {
-	return []nav.KeyBinding{k.Back, k.Search, k.Detail, k.SortCycle, k.Copy}
+	return []nav.KeyBinding{k.Back, k.Search, k.Detail, k.SortCycle, k.Copy, k.New, k.Password}
 }
 
-// FullHelp shows two columns: nav row (back/search/detail) and action row
-// (sort/reverse-sort/copy).
+// FullHelp shows three columns: nav row (back/search/detail), action row
+// (sort/reverse-sort/copy), and Phase 3 mutation row (new/password).
 func (k KeyMap) FullHelp() [][]nav.KeyBinding {
 	return [][]nav.KeyBinding{
 		{k.Back, k.Search, k.Detail},
 		{k.SortCycle, k.SortReverse, k.Copy},
+		{k.New, k.Password},
 	}
 }
