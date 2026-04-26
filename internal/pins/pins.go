@@ -17,4 +17,8 @@
 //     bubbletea/v2, bubbles/v2, lipgloss/v2, and sahilm/fuzzy directly.
 //     This file is now empty; kept in place as documentation of the
 //     pattern so future plans know where to park future pre-import pins.
+//   - 03-04: NO change required — `golang.org/x/crypto` was added as a
+//     real production import via `internal/keys` (ssh.ParseAuthorizedKey
+//     + ssh.FingerprintSHA256). New direct deps that have a real
+//     consumer landing in the same plan never need a pin-keeper entry.
 package pins

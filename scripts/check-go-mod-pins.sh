@@ -8,6 +8,9 @@
 # internal/observe.Runner for RunSummary.DurationHuman). The koanf
 # providers/structs sub-provider is unversioned-latest in its README and
 # pins via go.sum; we anchor only the four primary entries here.
+#
+# Phase 3 (plan 03-04) bumped the count from 11 → 12 with golang.org/x/crypto
+# (consumed by internal/keys for ssh.ParseAuthorizedKey + FingerprintSHA256).
 set -euo pipefail
 
 declare -a REQUIRED=(
@@ -22,6 +25,7 @@ declare -a REQUIRED=(
     'github.com/knadh/koanf/v2 v2.3.4'
     'github.com/knadh/koanf/parsers/yaml'
     'github.com/knadh/koanf/providers/rawbytes'
+    'golang.org/x/crypto v0.50.0'
 )
 
 fail=0
@@ -35,4 +39,4 @@ done
 if [[ "$fail" == "1" ]]; then
     exit 1
 fi
-echo "OK: all 11 direct-dep pins match (bubbletea/bubbles/lipgloss/cobra/fuzzy/x-sys/sqlite + humanize + koanf/v2 + koanf/parsers/yaml + koanf/providers/rawbytes)"
+echo "OK: all 12 direct-dep pins match (bubbletea/bubbles/lipgloss/cobra/fuzzy/x-sys/sqlite + humanize + koanf/v2 + koanf/parsers/yaml + koanf/providers/rawbytes + x/crypto)"
