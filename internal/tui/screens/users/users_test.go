@@ -15,8 +15,10 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/deleteuser"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/newuser"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/password"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/userdetail"
 	usersscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 )
@@ -467,4 +469,158 @@ func TestUsersScreen_KeyMap_includes_New_and_Password_bindings(t *testing.T) {
 	require.NotEmpty(t, km.Password.Help, "KeyMap.Password must have help text")
 	require.Contains(t, km.New.Keys, "n")
 	require.Contains(t, km.Password.Keys, "p")
+}
+
+// ============================================================================
+// Phase 3 plan 03-08a tests — k / d / Enter-on-real-row routing
+// + W-03 regression guards (n/p still wired)
+// ============================================================================
+
+// TestUsersScreen_k_keybinding_pushes_userdetail — pressing 'k' on a
+// selected real row pushes a *userdetail.Model.
+func TestUsersScreen_k_keybinding_pushes_userdetail(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001, ChrootPath: "/srv/sftp-jailer/alice", HomePath: "/srv/sftp-jailer/alice"}}, nil)
+
+	_, cmd := m.Update(keyPress("k"))
+	require.NotNil(t, cmd, "pressing 'k' on a selected real row must return a Push tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	ud, isUD := nm.Screen.(*userdetail.Model)
+	require.True(t, isUD, "pushed screen must be *userdetail.Model, got %T", nm.Screen)
+	require.Equal(t, "alice", ud.UsernameForTest(),
+		"S-USER-DETAIL must carry the selected row's username")
+}
+
+// TestUsersScreen_d_keybinding_pushes_deleteuser — pressing 'd' on a
+// selected real row pushes a *deleteuser.Model.
+func TestUsersScreen_d_keybinding_pushes_deleteuser(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001, ChrootPath: "/srv/sftp-jailer/alice", HomePath: "/srv/sftp-jailer/alice"}}, nil)
+
+	_, cmd := m.Update(keyPress("d"))
+	require.NotNil(t, cmd, "pressing 'd' on a selected real row must return a Push tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	_, isDU := nm.Screen.(*deleteuser.Model)
+	require.True(t, isDU, "pushed screen must be *deleteuser.Model, got %T", nm.Screen)
+}
+
+// TestUsersScreen_enter_on_real_row_pushes_userdetail — Enter on a real
+// row pushes S-USER-DETAIL (the slot reserved by plan 03-07's
+// handleEnter).
+func TestUsersScreen_enter_on_real_row_pushes_userdetail(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001, ChrootPath: "/srv/sftp-jailer/alice", HomePath: "/srv/sftp-jailer/alice"}}, nil)
+	// Cursor defaults to 0 (real row); infoCursor = -1.
+
+	_, cmd := m.Update(keyPress("enter"))
+	require.NotNil(t, cmd, "Enter on a real row must push S-USER-DETAIL")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok)
+	require.Equal(t, nav.Push, nm.Intent)
+	_, isUD := nm.Screen.(*userdetail.Model)
+	require.True(t, isUD, "Enter on real row pushes *userdetail.Model, got %T", nm.Screen)
+}
+
+// TestUsersScreen_k_with_no_selected_row_is_noop_or_navigates — pressing
+// 'k' with no real row selected (e.g. cursor on INFO) must NOT push
+// S-USER-DETAIL; it falls through to cursor-up navigation.
+func TestUsersScreen_k_with_no_real_row_does_not_push(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest(nil, []users.InfoRow{{Kind: users.InfoOrphan, Detail: "orphan dir", Hint: "[fix in Phase 3]"}})
+	m.SetInfoCursorForTest(0)
+
+	_, cmd := m.Update(keyPress("k"))
+	if cmd != nil {
+		// If a cmd was returned, it must NOT be a Push of *userdetail.Model.
+		msg := cmd()
+		if nm, ok := msg.(nav.Msg); ok && nm.Intent == nav.Push {
+			_, isUD := nm.Screen.(*userdetail.Model)
+			require.False(t, isUD,
+				"'k' with cursor on INFO row (no selected real row) must NOT push S-USER-DETAIL")
+		}
+	}
+}
+
+// TestUsersScreen_d_with_no_selected_row_is_noop — pressing 'd' with
+// cursor on INFO row (or empty list) must be a no-op.
+func TestUsersScreen_d_with_no_selected_row_is_noop(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest(nil, nil)
+
+	_, cmd := m.Update(keyPress("d"))
+	require.Nil(t, cmd, "pressing 'd' with no rows must be a no-op")
+}
+
+// TestUsersScreen_KeyMap_includes_Keys_and_Delete_bindings — KeyMap.Keys
+// and KeyMap.Delete fields exist with help text.
+func TestUsersScreen_KeyMap_includes_Keys_and_Delete_bindings(t *testing.T) {
+	t.Parallel()
+	km := usersscreen.DefaultKeyMap()
+	require.NotEmpty(t, km.Keys.Keys, "KeyMap.Keys must have keys")
+	require.NotEmpty(t, km.Keys.Help, "KeyMap.Keys must have help text")
+	require.NotEmpty(t, km.Delete.Keys, "KeyMap.Delete must have keys")
+	require.NotEmpty(t, km.Delete.Help, "KeyMap.Delete must have help text")
+	require.Contains(t, km.Keys.Keys, "k")
+	require.Contains(t, km.Delete.Keys, "d")
+}
+
+// TestUsersScreen_KeyMap_preserves_New_and_Password_bindings_from_03_07
+// — W-03 regression guard. KeyMap.New AND KeyMap.Password fields must
+// STILL exist after plan 03-08a's wiring change. If a regression deletes
+// the n/p bindings this test fails to build.
+func TestUsersScreen_KeyMap_preserves_New_and_Password_bindings_from_03_07(t *testing.T) {
+	t.Parallel()
+	km := usersscreen.DefaultKeyMap()
+	require.NotEmpty(t, km.New.Keys, "W-03: KeyMap.New must STILL exist after plan 03-08a wiring change")
+	require.NotEmpty(t, km.Password.Keys, "W-03: KeyMap.Password must STILL exist")
+	require.Contains(t, km.New.Keys, "n", "W-03: 'n' binding still present")
+	require.Contains(t, km.Password.Keys, "p", "W-03: 'p' binding still present")
+}
+
+// TestUsersScreen_n_and_p_keybindings_still_route_to_newuser_and_password
+// — W-03 regression guard. Re-execute the corresponding plan-03-07
+// dispatch behavior against the new code: 'n' still pushes
+// *newuser.Model; 'p' on a selected row still pushes *password.Model.
+func TestUsersScreen_n_and_p_keybindings_still_route_to_newuser_and_password(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001}}, nil)
+
+	// W-03: 'n' still pushes M-NEW-USER.
+	_, cmd := m.Update(keyPress("n"))
+	require.NotNil(t, cmd, "W-03: 'n' must STILL push M-NEW-USER after plan 03-08a")
+	nm := cmd().(nav.Msg)
+	_, isNU := nm.Screen.(*newuser.Model)
+	require.True(t, isNU, "W-03: 'n' pushed screen must STILL be *newuser.Model")
+
+	// W-03: 'p' on the selected row still pushes M-PASSWORD.
+	_, cmd2 := m.Update(keyPress("p"))
+	require.NotNil(t, cmd2, "W-03: 'p' must STILL push M-PASSWORD after plan 03-08a")
+	nm2 := cmd2().(nav.Msg)
+	_, isPW := nm2.Screen.(*password.Model)
+	require.True(t, isPW, "W-03: 'p' pushed screen must STILL be *password.Model")
 }

@@ -42,8 +42,10 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/deleteuser"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/newuser"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/password"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/userdetail"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/styles"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
@@ -295,11 +297,43 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 			return m, nil
 		}
 		return m, nav.PushCmd(password.New(m.ops, r.Username, password.AutoGenerateMode))
+	case "k":
+		// Phase 3 plan 03-08a / D-22: 'k' pushes S-USER-DETAIL for the
+		// selected user (the detail screen carries the keys table +
+		// single-key delete UX). No-op when no row is selected or ops is
+		// nil. Shadows the existing 'k' as cursor-up only when the
+		// cursor is on a real row — j/k navigation is preserved by
+		// falling through to the down-case below when there is no
+		// row to "open".
+		if m.ops != nil {
+			if r := m.selectedRow(); r != nil {
+				return m, nav.PushCmd(userdetail.New(m.ops, m.chrootRoot, r.Username))
+			}
+		}
+		// Fall through to the j/k cursor-up handler when there is no
+		// real-row to open (INFO-row cursor or empty list).
+		m.moveCursorUp()
+		return m, nil
+	case "d":
+		// Phase 3 plan 03-08a / D-15: 'd' pushes M-DELETE-USER for the
+		// selected user. No-op when no row is selected or ops is nil.
+		if m.ops == nil {
+			return m, nil
+		}
+		if r := m.selectedRow(); r != nil {
+			return m, nav.PushCmd(deleteuser.New(m.ops, m.chrootRoot, r.Username, r.HomePath))
+		}
+		return m, nil
 	case "enter":
 		return m.handleEnter()
 	case "j", "down":
 		m.moveCursorDown()
-	case "k", "up":
+	case "up":
+		// Phase 3 plan 03-08a: 'k' is now S-USER-DETAIL push (case "k"
+		// above). Arrow-key navigation 'up' still moves the cursor up;
+		// the 'k' case above falls through to moveCursorUp() when no
+		// real row is selected (INFO row / empty list) so admins on a
+		// non-real-row cursor can still vi-navigate up with 'k'.
 		m.moveCursorUp()
 	case "g":
 		// Top — go to first INFO row if any, else first real row.
@@ -390,7 +424,12 @@ func (m *Model) handleEnter() (nav.Screen, tea.Cmd) {
 			return m, flashCmd
 		}
 	}
-	// Real-row Enter: S-USER-DETAIL deferred to plan 03-08a.
+	// Real-row Enter: Phase 3 plan 03-08a — push S-USER-DETAIL.
+	if m.ops != nil {
+		if r := m.selectedRow(); r != nil {
+			return m, nav.PushCmd(userdetail.New(m.ops, m.chrootRoot, r.Username))
+		}
+	}
 	return m, nil
 }
 
@@ -665,6 +704,9 @@ type KeyMap struct {
 	// Phase 3 plan 03-07 additions:
 	New      nav.KeyBinding // 'n' → push M-NEW-USER
 	Password nav.KeyBinding // 'p' → push M-PASSWORD on selected row
+	// Phase 3 plan 03-08a additions:
+	Keys   nav.KeyBinding // 'k' → push S-USER-DETAIL on selected real row
+	Delete nav.KeyBinding // 'd' → push M-DELETE-USER on selected real row
 }
 
 // DefaultKeyMap returns the canonical S-USERS bindings per UI-SPEC §S-USERS.
@@ -678,21 +720,25 @@ func DefaultKeyMap() KeyMap {
 		Copy:        nav.KeyBinding{Keys: []string{"c"}, Help: "copy row"},
 		New:         nav.KeyBinding{Keys: []string{"n"}, Help: "new user"},
 		Password:    nav.KeyBinding{Keys: []string{"p"}, Help: "set password"},
+		Keys:        nav.KeyBinding{Keys: []string{"k"}, Help: "keys (S-USER-DETAIL)"},
+		Delete:      nav.KeyBinding{Keys: []string{"d"}, Help: "delete user"},
 	}
 }
 
 // ShortHelp surfaces the bindings shown in the footer / `?` overlay's
 // compact mode. Reverse-sort is a power-user flag, kept to FullHelp only.
 func (k KeyMap) ShortHelp() []nav.KeyBinding {
-	return []nav.KeyBinding{k.Back, k.Search, k.Detail, k.SortCycle, k.Copy, k.New, k.Password}
+	return []nav.KeyBinding{k.Back, k.Search, k.Detail, k.SortCycle, k.Copy, k.New, k.Password, k.Keys, k.Delete}
 }
 
-// FullHelp shows three columns: nav row (back/search/detail), action row
-// (sort/reverse-sort/copy), and Phase 3 mutation row (new/password).
+// FullHelp shows four columns: nav row (back/search/detail), action row
+// (sort/reverse-sort/copy), Phase 3 mutation row (new/password), and the
+// per-row mutation row added in plan 03-08a (keys/delete).
 func (k KeyMap) FullHelp() [][]nav.KeyBinding {
 	return [][]nav.KeyBinding{
 		{k.Back, k.Search, k.Detail},
 		{k.SortCycle, k.SortReverse, k.Copy},
 		{k.New, k.Password},
+		{k.Keys, k.Delete},
 	}
 }
