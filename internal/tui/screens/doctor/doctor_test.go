@@ -101,18 +101,58 @@ func TestDoctorScreen_implements_nav_Screen(t *testing.T) {
 	require.NotEmpty(t, km.FullHelp())
 }
 
-// KeyMap exposes c + esc/q bindings.
+// KeyMap exposes c + esc/q + a bindings (Apply added in plan 03-06 Task 2).
 func TestDoctorScreen_keymap_bindings(t *testing.T) {
 	km := doctorscreen.DefaultKeyMap()
 	short := km.ShortHelp()
-	require.Len(t, short, 2)
+	require.Len(t, short, 3)
 	found := map[string]bool{}
 	for _, b := range short {
 		for _, k := range b.Keys {
 			found[k] = true
 		}
 	}
-	for _, k := range []string{"esc", "q", "c"} {
+	for _, k := range []string{"esc", "q", "c", "a"} {
 		require.True(t, found[k], "KeyMap must expose %q", k)
 	}
+}
+
+// Phase 3 plan 03-06: pressing 'a' on the doctor screen pushes
+// M-APPLY-SETUP when the report indicates a SETUP-02..06 gap. The push
+// is asserted by inspecting the returned tea.Cmd's payload.
+func TestDoctorScreen_a_action_pushes_applysetup_when_NeedsCanonicalApply(t *testing.T) {
+	svc := doctor.New(sysops.NewFake())
+	s := doctorscreen.New(svc)
+	// Missing canonical drop-in trips NeedsCanonicalApply.
+	s.LoadReportForTest(model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: false},
+	})
+	_, cmd := s.Update(keyPress("a"))
+	require.NotNil(t, cmd, "Apply on a gap-bearing report must emit a tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.NotNil(t, nm.Screen, "pushed screen must be non-nil")
+	require.Equal(t, "apply canonical config", nm.Screen.Title(),
+		"pushed screen title must be M-APPLY-SETUP's Title()")
+}
+
+// Phase 3 plan 03-06: pressing 'a' when the report is fully clean (no gap)
+// is a no-op — no modal is pushed.
+func TestDoctorScreen_a_action_noop_when_canonical_already_applied(t *testing.T) {
+	svc := doctor.New(sysops.NewFake())
+	s := doctorscreen.New(svc)
+	s.LoadReportForTest(model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: true},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+			},
+		},
+		Subsystem: model.SubsystemReport{IsInternal: true},
+	})
+	_, cmd := s.Update(keyPress("a"))
+	require.Nil(t, cmd, "Apply on a clean report must NOT push a modal")
 }

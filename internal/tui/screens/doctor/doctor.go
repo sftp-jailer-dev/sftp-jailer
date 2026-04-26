@@ -18,6 +18,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/model"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/applysetup"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/styles"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
 )
@@ -90,6 +91,16 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 				m.toast, flashCmd = m.toast.Flash("copied via OSC 52")
 				return m, tea.Batch(tea.SetClipboard(text), flashCmd)
 			}
+		case "a", "A":
+			// Phase 3 / D-06: prescription action — push M-APPLY-SETUP when
+			// the report indicates a SETUP-02..06 gap. NeedsCanonicalApply
+			// returns true for missing drop-in / chroot-chain violation /
+			// external-sftp warning. The modal sources its SystemOps via
+			// doctor.Service.Ops() (single-handle ownership; plan 03-06
+			// Task 1).
+			if m.report != nil && m.svc != nil && doctor.NeedsCanonicalApply(*m.report) {
+				return m, nav.PushCmd(applysetup.New(m.svc.Ops(), m.svc.ChrootRoot()))
+			}
 		}
 	}
 	m.toast = m.toast.Update(msg)
@@ -140,23 +151,27 @@ func colorizeReport(text string) string {
 
 // KeyMap describes the doctor screen's bindings. Implements nav.KeyMap.
 type KeyMap struct {
-	Back nav.KeyBinding
-	Copy nav.KeyBinding
+	Back  nav.KeyBinding
+	Copy  nav.KeyBinding
+	Apply nav.KeyBinding
 }
 
 // DefaultKeyMap returns the canonical doctor-screen bindings.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
-		Back: nav.KeyBinding{Keys: []string{"esc", "q"}, Help: "back"},
-		Copy: nav.KeyBinding{Keys: []string{"c"}, Help: "copy report"},
+		Back:  nav.KeyBinding{Keys: []string{"esc", "q"}, Help: "back"},
+		Copy:  nav.KeyBinding{Keys: []string{"c"}, Help: "copy report"},
+		Apply: nav.KeyBinding{Keys: []string{"a"}, Help: "apply canonical config"},
 	}
 }
 
 // ShortHelp implements nav.KeyMap.
-func (k KeyMap) ShortHelp() []nav.KeyBinding { return []nav.KeyBinding{k.Back, k.Copy} }
+func (k KeyMap) ShortHelp() []nav.KeyBinding { return []nav.KeyBinding{k.Back, k.Copy, k.Apply} }
 
 // FullHelp implements nav.KeyMap.
-func (k KeyMap) FullHelp() [][]nav.KeyBinding { return [][]nav.KeyBinding{{k.Back, k.Copy}} }
+func (k KeyMap) FullHelp() [][]nav.KeyBinding {
+	return [][]nav.KeyBinding{{k.Back, k.Copy, k.Apply}}
+}
 
 // Title is shown in the help overlay header.
 func (m *Model) Title() string { return "diagnostic" }
