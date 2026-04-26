@@ -25,6 +25,12 @@ type Fake struct {
 	// Files maps absolute path -> content returned from ReadFile.
 	Files map[string][]byte
 
+	// Shadow maps username -> the /etc/shadow fields exposed via ReadShadow
+	// (last-change-day = field 3; max-days = field 5). A missing username
+	// causes ReadShadow to return fs.ErrNotExist (graceful-degradation
+	// contract: caller leaves PasswordAgeDays / PasswordMaxDays at -1).
+	Shadow map[string]ShadowEntry
+
 	// FileStats maps absolute path -> FileInfo returned from Stat and Lstat.
 	// Phase 1 keeps a single map; a separate LstatResults map could be added
 	// later if Stat/Lstat need to diverge in tests.
@@ -96,12 +102,22 @@ type FakeCall struct {
 	Args   []string
 }
 
+// ShadowEntry is the test-injection shape for /etc/shadow fields exposed
+// through ReadShadow. LastChangeDay corresponds to field 3 (days since
+// 1970-01-01 UTC); MaxDays corresponds to field 5 (>= 99999 conventionally
+// means "no expiry policy"; 0 means "field empty / not set").
+type ShadowEntry struct {
+	LastChangeDay int
+	MaxDays       int
+}
+
 // NewFake returns an initialized Fake with EUID=0 (root) and all maps
 // non-nil but empty.
 func NewFake() *Fake {
 	return &Fake{
 		EUID:                  0,
 		Files:                 map[string][]byte{},
+		Shadow:                map[string]ShadowEntry{},
 		FileStats:             map[string]FileInfo{},
 		DirEntries:            map[string][]fs.DirEntry{},
 		GlobResults:           map[string][]string{},
@@ -135,6 +151,22 @@ func (f *Fake) ReadFile(_ context.Context, path string) ([]byte, error) {
 		return nil, fs.ErrNotExist
 	}
 	return b, nil
+}
+
+// ReadShadow implements [SystemOps.ReadShadow]. Returns the seeded
+// ShadowEntry for `username`; an unseeded username returns fs.ErrNotExist
+// so the enrichment-layer caller can branch on errors.Is and degrade
+// gracefully (leave PasswordAgeDays / PasswordMaxDays at -1).
+func (f *Fake) ReadShadow(_ context.Context, username string) (int, int, error) {
+	f.record("ReadShadow", username)
+	if f.Shadow == nil {
+		return 0, 0, fs.ErrNotExist
+	}
+	e, ok := f.Shadow[username]
+	if !ok {
+		return 0, 0, fs.ErrNotExist
+	}
+	return e.LastChangeDay, e.MaxDays, nil
 }
 
 // ReadDir implements [SystemOps.ReadDir].

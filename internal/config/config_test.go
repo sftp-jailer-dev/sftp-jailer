@@ -164,6 +164,75 @@ func TestValidate_compact_after_days_le_detail(t *testing.T) {
 	require.Empty(t, config.Validate(good2))
 }
 
+// TestConfig_PasswordAging_defaults_and_validate covers the new
+// PasswordAgingDays + PasswordStaleDays knobs (02-11 / SC #3). Defaults()
+// populates them; Validate enforces the strict ordering
+//
+//	0 < PasswordAgingDays < PasswordStaleDays
+//
+// The fields are NOT exposed in S-SETTINGS UI in this plan — config-file
+// only — so the test exercises the data-layer contract directly.
+func TestConfig_PasswordAging_defaults_and_validate(t *testing.T) {
+	t.Run("defaults_populated", func(t *testing.T) {
+		d := config.Defaults()
+		require.Equal(t, 180, d.PasswordAgingDays,
+			"Defaults().PasswordAgingDays must be 180")
+		require.Equal(t, 365, d.PasswordStaleDays,
+			"Defaults().PasswordStaleDays must be 365")
+	})
+
+	t.Run("validate_accepts_defaults", func(t *testing.T) {
+		require.Empty(t, config.Validate(config.Defaults()),
+			"Defaults() must be Validate-clean")
+	})
+
+	t.Run("validate_rejects_zero_aging", func(t *testing.T) {
+		s := config.Defaults()
+		s.PasswordAgingDays = 0
+		require.NotEmpty(t, config.Validate(s),
+			"PasswordAgingDays=0 must fail (must be > 0)")
+	})
+
+	t.Run("validate_rejects_negative_aging", func(t *testing.T) {
+		s := config.Defaults()
+		s.PasswordAgingDays = -1
+		require.NotEmpty(t, config.Validate(s),
+			"PasswordAgingDays<0 must fail")
+	})
+
+	t.Run("validate_rejects_stale_le_aging", func(t *testing.T) {
+		s := config.Defaults()
+		s.PasswordAgingDays = 200
+		s.PasswordStaleDays = 200 // equal — must fail (strict >)
+		require.NotEmpty(t, config.Validate(s),
+			"PasswordStaleDays must be strictly > PasswordAgingDays")
+
+		s.PasswordStaleDays = 100 // below aging — must fail
+		require.NotEmpty(t, config.Validate(s),
+			"PasswordStaleDays<PasswordAgingDays must fail")
+	})
+
+	t.Run("validate_accepts_valid_pair", func(t *testing.T) {
+		s := config.Defaults()
+		s.PasswordAgingDays = 30
+		s.PasswordStaleDays = 90
+		require.Empty(t, config.Validate(s),
+			"30/90 is a valid pair")
+	})
+
+	t.Run("load_overlays_password_defaults_for_zero_values", func(t *testing.T) {
+		f := sysops.NewFake()
+		// Existing config file with only retention knobs set; password fields absent.
+		f.Files[settingsPath] = []byte("detail_retention_days: 60\n")
+		got, err := config.Load(context.Background(), f, settingsPath)
+		require.NoError(t, err)
+		require.Equal(t, 180, got.PasswordAgingDays,
+			"absent password_aging_days must overlay to 180")
+		require.Equal(t, 365, got.PasswordStaleDays,
+			"absent password_stale_days must overlay to 365")
+	})
+}
+
 // TestValidate_returns_all_errors_not_just_first: every failing rule
 // contributes its own error so the TUI can render them as a list.
 //

@@ -58,13 +58,21 @@ type InfoRow struct {
 
 // Row is one D-10 user row consumed by S-USERS. Fields without data carry
 // zero values: KeysCount/IPAllowlistCount=0, LastLoginNs=0, FirstSeenIP="".
-// PasswordAgeDays is reserved for Phase 3 (PASS-01); Phase 2 leaves it -1.
+//
+// Password-age semantics (02-11 / SC #3):
+//   - PasswordAgeDays: -1 = unknown (shadow unreadable / user missing /
+//     field empty). >= 0 = real age in days, computed as
+//     daysSinceEpoch(now) - lstchg.
+//   - PasswordMaxDays: -1 = unknown; 0 = empty/no max set;
+//     >= 99999 conventionally means "no expiry policy" (the indefinite
+//     marker, treated as ∞ by FormatPasswordAge).
 type Row struct {
 	Username         string
 	UID              int
 	ChrootPath       string // resolved via sshdcfg ChrootDirectory or /etc/passwd home
 	HomePath         string // /etc/passwd home dir
-	PasswordAgeDays  int    // -1 until Phase 3 (PASS-01)
+	PasswordAgeDays  int    // -1 = unknown; >=0 = days since lstchg
+	PasswordMaxDays  int    // -1 = unknown; 0 = empty; >=99999 = indefinite policy
 	KeysCount        int
 	LastLoginNs      int64
 	FirstSeenIP      string
@@ -281,7 +289,8 @@ func (e *Enumerator) readPasswdAndEnrich(ctx context.Context, sftpUsers map[stri
 			UID:             uid,
 			HomePath:        home,
 			ChrootPath:      home, // best-effort: most setups colocate chroot=home
-			PasswordAgeDays: -1,   // Phase 3 (PASS-01) populates
+			PasswordAgeDays: -1,   // overwritten by enrichPasswordAge on success
+			PasswordMaxDays: -1,   // overwritten by enrichPasswordAge on success
 		})
 	}
 	return rows, nil

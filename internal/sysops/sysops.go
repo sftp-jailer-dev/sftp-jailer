@@ -99,6 +99,18 @@ type SystemOps interface {
 	Lstat(ctx context.Context, path string) (FileInfo, error) // does not follow
 	Glob(ctx context.Context, pattern string) ([]string, error)
 
+	// ReadShadow returns BOTH the last-password-change-day field (field 3
+	// of /etc/shadow, days since 1970-01-01 UTC) AND the password-max-days
+	// field (field 5: number of days a password may be used before it must
+	// be changed; conventionally >= 99999 means "no expiry policy"; an
+	// empty field is reported as 0).
+	//
+	// Returns fs.ErrNotExist if the user is not present in /etc/shadow.
+	// Returns the underlying ReadFile error for permission / missing-file
+	// failures (callers should treat any error as "leave PasswordAgeDays /
+	// PasswordMaxDays at -1; render `—`" — graceful degradation).
+	ReadShadow(ctx context.Context, username string) (lstchg int, maxDays int, err error)
+
 	// External command runner (allowlisted, absolute paths cached at startup).
 	// Phase 1 uses this for: sshd, aa-status, nft, systemctl (read-only).
 	// Phase 2 extends the allowlist with: journalctl, ufw.

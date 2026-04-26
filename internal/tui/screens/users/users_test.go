@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 	usersscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
@@ -258,6 +259,66 @@ func TestUsersScreen_cursor_movement(t *testing.T) {
 	require.NotEqual(t, v, v2, "pressing `j` must change View() (cursor moved to bob)")
 	require.Contains(t, v2, "alice", "alice still rendered after cursor moves")
 	require.Contains(t, v2, "bob", "bob still rendered after cursor moves")
+}
+
+// TestUsersScreen_renders_legend_with_threshold_values — UI-SPEC §S-USERS
+// password-age legend (02-11 / SC #3 A+): a single muted line below the
+// table that explains the four buckets and substitutes the live cfg
+// thresholds. The exact wording is part of the contract — admins read
+// this to understand the colored "fresh / aging / stale" hints.
+func TestUsersScreen_renders_legend_with_threshold_values(t *testing.T) {
+	cfg := &config.Settings{PasswordAgingDays: 180, PasswordStaleDays: 365}
+	m := usersscreen.NewWithConfig(nil, cfg)
+	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001}}, nil)
+	v := m.View()
+	require.Contains(t, v,
+		"pwd age: ∞ = no expiry policy · fresh < 180d · aging < 365d · stale ≥ 365d",
+		"legend wording must substitute cfg thresholds verbatim; got View=%s", v)
+}
+
+// TestUsersScreen_renders_legend_with_custom_thresholds — verifies the
+// legend reflects whatever the admin configured rather than hardcoded
+// defaults. Sanity-check on the substitution path.
+func TestUsersScreen_renders_legend_with_custom_thresholds(t *testing.T) {
+	cfg := &config.Settings{PasswordAgingDays: 30, PasswordStaleDays: 90}
+	m := usersscreen.NewWithConfig(nil, cfg)
+	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001}}, nil)
+	v := m.View()
+	require.Contains(t, v, "fresh < 30d", "legend must use cfg.PasswordAgingDays")
+	require.Contains(t, v, "aging < 90d", "legend must use cfg.PasswordStaleDays for aging cap")
+	require.Contains(t, v, "stale ≥ 90d", "legend must use cfg.PasswordStaleDays for stale floor")
+}
+
+// TestUsersScreen_renders_indefinite_for_max_99999 — when a row carries
+// PasswordMaxDays >= 99999, the rendered "pwd age" cell shows the ∞
+// sentinel rather than a numeric "Nd (…)" form.
+func TestUsersScreen_renders_indefinite_for_max_99999(t *testing.T) {
+	cfg := &config.Settings{PasswordAgingDays: 180, PasswordStaleDays: 365}
+	m := usersscreen.NewWithConfig(nil, cfg)
+	m.LoadRowsForTest([]users.Row{{
+		Username: "alice", UID: 1001, ChrootPath: "/srv/sftp/alice",
+		PasswordAgeDays: 50, PasswordMaxDays: 99999,
+	}}, nil)
+	v := m.View()
+	require.Contains(t, v, "∞",
+		"PasswordMaxDays>=99999 must render as ∞ in the pwd-age column; got View=%s", v)
+	require.NotContains(t, v, "50d",
+		"the indefinite branch wins over the numeric branch; got View=%s", v)
+}
+
+// TestUsersScreen_renders_status_hint_for_aging — exercises the live
+// rendering path for the "Nd (aging)" bucket. Verifies that the screen
+// calls FormatPasswordAge rather than the old `Nd` form.
+func TestUsersScreen_renders_status_hint_for_aging(t *testing.T) {
+	cfg := &config.Settings{PasswordAgingDays: 180, PasswordStaleDays: 365}
+	m := usersscreen.NewWithConfig(nil, cfg)
+	m.LoadRowsForTest([]users.Row{{
+		Username: "alice", UID: 1001, ChrootPath: "/srv/sftp/alice",
+		PasswordAgeDays: 200, PasswordMaxDays: 90, // bounded max, age ≥ aging, < stale
+	}}, nil)
+	v := m.View()
+	require.Contains(t, v, "(aging)",
+		"age=200, aging=180, stale=365 must render the (aging) hint; got View=%s", v)
 }
 
 // TestUsersScreen_search_filters_rows — typing into the active search

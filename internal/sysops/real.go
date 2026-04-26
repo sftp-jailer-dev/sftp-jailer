@@ -167,6 +167,12 @@ func (r *Real) Exec(ctx context.Context, name string, args ...string) (ExecResul
 	return res, err
 }
 
+// ReadShadow implements [SystemOps.ReadShadow] (stub for Task 2 — replaced
+// in Task 3 with the production parser).
+func (r *Real) ReadShadow(_ context.Context, _ string) (int, int, error) {
+	return 0, 0, fmt.Errorf("ReadShadow: not implemented")
+}
+
 // SshdDumpConfig parses `sshd -T` output into a map[directive][]values.
 // Directive names are lowercased; values are space-joined when the original
 // line has multiple whitespace-separated fields after the key. Duplicate

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -18,6 +19,14 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 )
+
+// daysSinceEpochUTC mirrors the production daysSinceEpoch helper inside
+// internal/users/enumerate.go (kept package-private there). The test
+// reproduces it locally so we can seed Fake.Shadow with a "today minus N
+// days" lstchg without exporting the helper.
+func daysSinceEpochUTC(t time.Time) int {
+	return int(t.UTC().Unix() / 86400)
+}
 
 // fakeDirEntry is a minimal fs.DirEntry implementation used to seed
 // sysops.Fake.DirEntries for orphan-row detection. Only Name() and IsDir()
@@ -304,4 +313,81 @@ func TestEnumerate_authorized_keys_count_via_sysops_ReadFile(t *testing.T) {
 	require.Equal(t, 3, alice.KeysCount)
 	carol := rowFor(t, rows, "carol")
 	require.Equal(t, 0, carol.KeysCount, "missing authorized_keys → 0, not error")
+}
+
+// TestEnumerate_enrichPasswordAge_populates_from_shadow: a seeded
+// Fake.Shadow entry for alice (lstchg = today - 42, max = 90) results in
+// alice.PasswordAgeDays in [41, 42] (day-boundary tolerance) AND
+// PasswordMaxDays == 90. Mirrors the keys / logins / allowlist enricher
+// shape — fail-silent on per-row errors.
+func TestEnumerate_enrichPasswordAge_populates_from_shadow(t *testing.T) {
+	f := sysops.NewFake()
+	seedBaseFakeFS(t, f)
+	f.ExecResponses["ufw status numbered"] = sysops.ExecResult{
+		Stdout: []byte("Status: active\n"), ExitCode: 0,
+	}
+	today := daysSinceEpochUTC(time.Now())
+	f.Shadow["alice"] = sysops.ShadowEntry{LastChangeDay: today - 42, MaxDays: 90}
+
+	_, q := newDB(t)
+	e := users.New(f, q)
+	rows, _, err := e.Enumerate(context.Background())
+	require.NoError(t, err)
+
+	alice := rowFor(t, rows, "alice")
+	require.GreaterOrEqual(t, alice.PasswordAgeDays, 41,
+		"PasswordAgeDays must be ≈42 (day-boundary tolerance)")
+	require.LessOrEqual(t, alice.PasswordAgeDays, 42,
+		"PasswordAgeDays must be ≈42 (day-boundary tolerance)")
+	require.Equal(t, 90, alice.PasswordMaxDays,
+		"PasswordMaxDays must be lifted from ShadowEntry")
+}
+
+// TestEnumerate_enrichPasswordAge_falls_back_to_minus_one_on_missing_shadow_entry:
+// when the Shadow map has no entry for the user, the row's PasswordAgeDays
+// AND PasswordMaxDays both stay at the readPasswdAndEnrich default (-1).
+// This preserves the existing graceful-degradation contract.
+func TestEnumerate_enrichPasswordAge_falls_back_to_minus_one_on_missing_shadow_entry(t *testing.T) {
+	f := sysops.NewFake()
+	seedBaseFakeFS(t, f)
+	f.ExecResponses["ufw status numbered"] = sysops.ExecResult{
+		Stdout: []byte("Status: active\n"), ExitCode: 0,
+	}
+	// Shadow map is empty — every per-user lookup misses.
+
+	_, q := newDB(t)
+	e := users.New(f, q)
+	rows, _, err := e.Enumerate(context.Background())
+	require.NoError(t, err)
+
+	alice := rowFor(t, rows, "alice")
+	require.Equal(t, -1, alice.PasswordAgeDays,
+		"missing shadow entry → PasswordAgeDays stays at -1")
+	require.Equal(t, -1, alice.PasswordMaxDays,
+		"missing shadow entry → PasswordMaxDays stays at -1")
+}
+
+// TestEnumerate_enrichPasswordAge_populates_max_days exercises the three
+// max-days regimes: bounded (90), indefinite (>= 99999), empty (0). Each
+// must round-trip through the enricher into Row.PasswordMaxDays verbatim
+// (FormatPasswordAge later interprets the sentinel values).
+func TestEnumerate_enrichPasswordAge_populates_max_days(t *testing.T) {
+	f := sysops.NewFake()
+	seedBaseFakeFS(t, f)
+	f.ExecResponses["ufw status numbered"] = sysops.ExecResult{
+		Stdout: []byte("Status: active\n"), ExitCode: 0,
+	}
+	today := daysSinceEpochUTC(time.Now())
+	f.Shadow["alice"] = sysops.ShadowEntry{LastChangeDay: today - 10, MaxDays: 90}
+	f.Shadow["bob"] = sysops.ShadowEntry{LastChangeDay: today - 10, MaxDays: 99999}
+	f.Shadow["carol"] = sysops.ShadowEntry{LastChangeDay: today - 10, MaxDays: 0}
+
+	_, q := newDB(t)
+	e := users.New(f, q)
+	rows, _, err := e.Enumerate(context.Background())
+	require.NoError(t, err)
+
+	require.Equal(t, 90, rowFor(t, rows, "alice").PasswordMaxDays, "bounded max round-trips")
+	require.Equal(t, 99999, rowFor(t, rows, "bob").PasswordMaxDays, "indefinite max round-trips")
+	require.Equal(t, 0, rowFor(t, rows, "carol").PasswordMaxDays, "empty max round-trips as 0")
 }

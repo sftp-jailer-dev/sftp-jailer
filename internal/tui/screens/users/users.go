@@ -39,6 +39,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/sahilm/fuzzy"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/styles"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
@@ -99,6 +100,11 @@ type rowsLoadedMsg struct {
 type Model struct {
 	enum *users.Enumerator
 
+	// cfg drives the password-age column legend + per-row formatting.
+	// Never nil after construction — New / NewWithConfig fall back to
+	// config.Defaults() when called with a nil pointer.
+	cfg *config.Settings
+
 	// Loaded data — populated either from rowsLoadedMsg or LoadRowsForTest.
 	rows    []users.Row
 	infos   []users.InfoRow
@@ -121,10 +127,25 @@ type Model struct {
 
 // New constructs the screen wired to enum (the data-layer composer shipped
 // in 02-03). enum may be nil in unit tests that drive the screen via
-// LoadRowsForTest.
+// LoadRowsForTest. The password-age thresholds default to
+// config.Defaults() — callers that have a loaded config.Settings should
+// use [NewWithConfig] instead.
 func New(enum *users.Enumerator) *Model {
+	return NewWithConfig(enum, nil)
+}
+
+// NewWithConfig is the canonical constructor — accepts the enumerator AND
+// the loaded *config.Settings used to drive the password-age column
+// formatting + legend. A nil cfg falls back to config.Defaults() so unit
+// tests that don't care about thresholds can pass nil.
+func NewWithConfig(enum *users.Enumerator, cfg *config.Settings) *Model {
+	if cfg == nil {
+		d := config.Defaults()
+		cfg = &d
+	}
 	return &Model{
 		enum:    enum,
+		cfg:     cfg,
 		loading: true,
 		keys:    DefaultKeyMap(),
 		search:  widgets.NewSearch(),

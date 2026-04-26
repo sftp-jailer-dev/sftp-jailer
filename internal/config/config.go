@@ -37,13 +37,20 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 )
 
-// Settings is the typed shape of /etc/sftp-jailer/config.yaml. All three
-// fields are days/MB integers; the koanf struct tags map them to the
-// snake_case YAML keys per RESEARCH lines 1131-1148.
+// Settings is the typed shape of /etc/sftp-jailer/config.yaml. The
+// retention knobs are days/MB integers; the password-age threshold knobs
+// drive the S-USERS "pwd age" column color buckets. All koanf struct tags
+// map to snake_case YAML keys.
+//
+// PasswordAgingDays / PasswordStaleDays are NOT exposed in the S-SETTINGS
+// cycle UI in this plan — admins can edit the config file directly. A
+// follow-up v1.1 plan will surface them in the cycle UI.
 type Settings struct {
 	DetailRetentionDays int `koanf:"detail_retention_days"`
 	DBMaxSizeMB         int `koanf:"db_max_size_mb"`
 	CompactAfterDays    int `koanf:"compact_after_days"`
+	PasswordAgingDays   int `koanf:"password_aging_days"`
+	PasswordStaleDays   int `koanf:"password_stale_days"`
 }
 
 // Defaults returns the canonical default Settings. Used when the config

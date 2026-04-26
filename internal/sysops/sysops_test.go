@@ -43,6 +43,43 @@ func TestFake_ReadFile_missing_returns_fs_ErrNotExist(t *testing.T) {
 	require.True(t, errors.Is(err, fs.ErrNotExist), "expected fs.ErrNotExist, got %v", err)
 }
 
+// TestFake_ReadShadow_returns_both_fields: seeded ShadowEntry returns BOTH
+// the lstchg (field 3) and max (field 5) values verbatim.
+func TestFake_ReadShadow_returns_both_fields(t *testing.T) {
+	f := NewFake()
+	f.Shadow["alice"] = ShadowEntry{LastChangeDay: 19500, MaxDays: 90}
+	lstchg, maxDays, err := f.ReadShadow(context.Background(), "alice")
+	require.NoError(t, err)
+	require.Equal(t, 19500, lstchg)
+	require.Equal(t, 90, maxDays)
+	// Call recorded with the username.
+	require.GreaterOrEqual(t, len(f.Calls), 1)
+	last := f.Calls[len(f.Calls)-1]
+	require.Equal(t, "ReadShadow", last.Method)
+	require.Equal(t, []string{"alice"}, last.Args)
+}
+
+// TestFake_ReadShadow_returns_indefinite_max: a seeded entry with MaxDays
+// >= 99999 is round-tripped without normalization — the caller decides how
+// to interpret "no expiry policy."
+func TestFake_ReadShadow_returns_indefinite_max(t *testing.T) {
+	f := NewFake()
+	f.Shadow["bob"] = ShadowEntry{LastChangeDay: 19000, MaxDays: 99999}
+	_, maxDays, err := f.ReadShadow(context.Background(), "bob")
+	require.NoError(t, err)
+	require.Equal(t, 99999, maxDays)
+}
+
+// TestFake_ReadShadow_unknown_user_returns_fs_ErrNotExist: an unseeded
+// username surfaces fs.ErrNotExist so callers can errors.Is and silently
+// degrade (leave PasswordAgeDays / PasswordMaxDays at -1).
+func TestFake_ReadShadow_unknown_user_returns_fs_ErrNotExist(t *testing.T) {
+	f := NewFake()
+	_, _, err := f.ReadShadow(context.Background(), "ghost")
+	require.Error(t, err)
+	require.True(t, errors.Is(err, fs.ErrNotExist), "expected fs.ErrNotExist, got %v", err)
+}
+
 func TestFake_Exec_exact_match_wins(t *testing.T) {
 	f := NewFake()
 	f.ExecResponses["sshd -T"] = ExecResult{Stdout: []byte("port 22\n"), ExitCode: 0}
