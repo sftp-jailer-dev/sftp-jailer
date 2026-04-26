@@ -30,6 +30,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/dustin/go-humanize"
+	"github.com/sahilm/fuzzy"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/store"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
@@ -121,7 +122,12 @@ type Model struct {
 	ops     sysops.SystemOps
 
 	// Loaded data — populated either from messages or LoadXForTest seams.
-	events       []store.Event
+	events []store.Event
+	// filtered is the search-narrowed view of `events`. When the search
+	// query is empty (or search inactive) this aliases `events`. The
+	// cursor indexes into `filtered`, NOT `events` — mirrors S-USERS
+	// m.filtered (02-04).
+	filtered     []store.Event
 	status       store.StatusRow
 	loading      bool
 	statusLoaded bool
@@ -206,6 +212,33 @@ func (m *Model) currentFilterOpts() store.FilterOpts {
 	return opts
 }
 
+// applyFilter (re)computes the filtered slice from m.events + the search
+// query. Resets cursor to 0 if it would now point past the end.
+//
+// Search uses sahilm/fuzzy against a compound corpus of
+// `User + SourceIP + EventType + Tier` per UI-SPEC line 235. Mirrors the
+// S-USERS applySortAndFilter pattern (02-04 line 287). Sort is unnecessary
+// here — events arrive in DB-returned ts-DESC order from FilterEvents.
+func (m *Model) applyFilter() {
+	q := strings.TrimSpace(m.search.Value())
+	if !m.search.Active || q == "" {
+		m.filtered = m.events
+	} else {
+		corpus := make([]string, len(m.events))
+		for i, e := range m.events {
+			corpus[i] = e.User + " " + e.SourceIP + " " + e.EventType + " " + e.Tier
+		}
+		matches := fuzzy.Find(q, corpus)
+		m.filtered = make([]store.Event, 0, len(matches))
+		for _, mm := range matches {
+			m.filtered = append(m.filtered, m.events[mm.Index])
+		}
+	}
+	if m.cursor >= len(m.filtered) {
+		m.cursor = 0
+	}
+}
+
 // LoadEventsForTest bypasses Init+FilterEvents and sets the loaded events
 // directly. Mirrors usersscreen.LoadRowsForTest from 02-04.
 func (m *Model) LoadEventsForTest(evs []store.Event, err error) {
@@ -216,9 +249,7 @@ func (m *Model) LoadEventsForTest(evs []store.Event, err error) {
 	} else {
 		m.errText = ""
 	}
-	if m.cursor >= len(m.events) {
-		m.cursor = 0
-	}
+	m.applyFilter()
 }
 
 // LoadStatusForTest bypasses StatusRow and sets the status row directly.
@@ -254,9 +285,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 			m.errText = ""
 			m.events = msg.events
 		}
-		if m.cursor >= len(m.events) {
-			m.cursor = 0
-		}
+		m.applyFilter()
 		return m, nil
 
 	case statusLoadedMsg:
@@ -294,6 +323,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		if m.search.Active {
 			var cmd tea.Cmd
 			m.search, cmd = m.search.Update(msg)
+			m.applyFilter()
 			return m, cmd
 		}
 		return m.handleKey(msg)
@@ -349,7 +379,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		// S-FIREWALL Enter no-op.
 		return m, nil
 	case "j", "down":
-		if m.cursor < len(m.events)-1 {
+		if m.cursor < len(m.filtered)-1 {
 			m.cursor++
 		}
 	case "k", "up":
@@ -359,7 +389,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 	case "g":
 		m.cursor = 0
 	case "G":
-		if n := len(m.events); n > 0 {
+		if n := len(m.filtered); n > 0 {
 			m.cursor = n - 1
 		}
 	}
@@ -368,12 +398,13 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 
 // handleCopy emits the OSC 52 SetClipboard cmd + toast flash for the
 // currently-selected event's RawJSON. No-op when there is no selection
-// or the event has no RawJSON.
+// or the event has no RawJSON. Targets m.filtered so what the admin
+// sees is what gets copied (mirrors S-USERS handleCopy).
 func (m *Model) handleCopy() (nav.Screen, tea.Cmd) {
-	if m.cursor < 0 || m.cursor >= len(m.events) {
+	if m.cursor < 0 || m.cursor >= len(m.filtered) {
 		return m, nil
 	}
-	raw := m.events[m.cursor].RawJSON
+	raw := m.filtered[m.cursor].RawJSON
 	var flashCmd tea.Cmd
 	m.toast, flashCmd = m.toast.Flash("copied raw record via OSC 52")
 	return m, tea.Batch(tea.SetClipboard(raw), flashCmd)
@@ -395,8 +426,14 @@ func (m *Model) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(styles.Primary.Render(
-		fmt.Sprintf("logs — %d events", len(m.events))))
+	var headerLine string
+	isFiltered := (m.search.Active && strings.TrimSpace(m.search.Value()) != "") || m.tier != tierAll
+	if isFiltered {
+		headerLine = fmt.Sprintf("logs — %d of %d events", len(m.filtered), len(m.events))
+	} else {
+		headerLine = fmt.Sprintf("logs — %d events", len(m.events))
+	}
+	b.WriteString(styles.Primary.Render(headerLine))
 	b.WriteString("\n")
 	b.WriteString(m.renderStatusRow())
 	b.WriteString("\n\n")
@@ -494,7 +531,7 @@ func (m *Model) renderList(_ int) string {
 	var b strings.Builder
 	b.WriteString(styles.Dim.Render("ts(UTC)         user      src             t"))
 	b.WriteString("\n")
-	for i, e := range m.events {
+	for i, e := range m.filtered {
 		ts := time.Unix(0, e.TsUnixNs).UTC().Format("15:04:05")
 		line := fmt.Sprintf("%-15s %-9s %-15s %s",
 			ts, displayN(e.User, 9), displayN(e.SourceIP, 15), tierGlyph(e.Tier))
@@ -510,11 +547,13 @@ func (m *Model) renderList(_ int) string {
 
 // renderDetailPane produces the right-pane key/value layout for the
 // currently-selected event. Empty/no-selection → a faint placeholder.
+// Indexes m.filtered so the right pane mirrors the visible cursor row
+// when search shrinks the slice.
 func (m *Model) renderDetailPane(w int) string {
-	if m.cursor >= len(m.events) {
+	if m.cursor >= len(m.filtered) {
 		return styles.Dim.Render("(no event selected)")
 	}
-	return RenderDetail(m.events[m.cursor], w)
+	return RenderDetail(m.filtered[m.cursor], w)
 }
 
 // displayN pads s to exactly n columns (truncating with ellipsis if

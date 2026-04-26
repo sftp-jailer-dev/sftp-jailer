@@ -414,8 +414,14 @@ func TestLogsScreen_consumes_nav_ObserveRunCancelledToast(t *testing.T) {
 
 // TestLogsScreen_search_narrows_visible_events_by_user — typing into the
 // active `/` widget restricts which rows the View renders. After typing
-// `ali`, the rendered View must contain `alice`, exclude `bob` and
-// `carol`, and the header must read `1 of 3 events` (NOT `3 events`).
+// `alice`, the rendered View must contain `alice` and exclude `bob`
+// and `xerxes`, and the header must read `1 of 3 events` (NOT
+// `3 events`). The query is the FULL username here because sahilm/fuzzy
+// matches subsequences (order-preserving), so a 3-letter query like
+// `ali` would also match other rows whose corpus contains the letters
+// a, l, i in order across columns. The full-string match is the
+// realistic admin behaviour ("type the user I want until only their
+// row is visible").
 func TestLogsScreen_search_narrows_visible_events_by_user(t *testing.T) {
 	m := logsscreen.New(nil, nil)
 	_, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -423,22 +429,22 @@ func TestLogsScreen_search_narrows_visible_events_by_user(t *testing.T) {
 	m.LoadEventsForTest([]store.Event{
 		{ID: 1, TsUnixNs: now, Tier: "success", User: "alice", SourceIP: "10.0.0.1", EventType: "auth-success"},
 		{ID: 2, TsUnixNs: now, Tier: "targeted", User: "bob", SourceIP: "10.0.0.2", EventType: "auth-fail"},
-		{ID: 3, TsUnixNs: now, Tier: "noise", User: "carol", SourceIP: "10.0.0.3", EventType: "auth-success"},
+		{ID: 3, TsUnixNs: now, Tier: "noise", User: "xerxes", SourceIP: "10.0.0.3", EventType: "preauth-disconnect"},
 	}, nil)
 	m.LoadStatusForTest(store.StatusRow{
 		SchemaVersion: store.ExpectedSchemaVersion,
 		DetailCount:   3,
 		LastSuccessNs: now,
 	})
-	// Activate search and type `ali`.
+	// Activate search and type the full username `alice`.
 	_, _ = m.Update(keyPress("/"))
-	for _, r := range "ali" {
+	for _, r := range "alice" {
 		_, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: r, Text: string(r)}))
 	}
 	v := m.View()
 	require.Contains(t, v, "alice", "filtered View must contain `alice`; got %q", v)
 	require.NotContains(t, v, "bob", "filtered View must exclude `bob`; got %q", v)
-	require.NotContains(t, v, "carol", "filtered View must exclude `carol`; got %q", v)
+	require.NotContains(t, v, "xerxes", "filtered View must exclude `xerxes`; got %q", v)
 	require.Contains(t, v, "1 of 3 events",
 		"header must show `1 of 3 events` when filter is active; got %q", v)
 }
@@ -520,8 +526,12 @@ func TestLogsScreen_search_narrows_by_source_ip_and_event_type_and_tier(t *testi
 // TestLogsScreen_search_clamps_cursor_to_filtered_length — when the
 // admin has the cursor on a row, then activates search and types a
 // query that shrinks the result, the cursor must clamp to within the
-// filtered slice. Pressing `c` must copy the visible filtered row's
-// RawJSON, NOT the originally-selected unfiltered row.
+// filtered slice. While search is active, the rendered View must
+// contain only the matching row(s). After deactivating search and
+// pressing `c`, the SetClipboard sub-cmd must carry the formerly-first
+// (now sole-visible-during-search) row's RawJSON — proving the cursor
+// clamped to 0 during typing rather than retaining its pre-search
+// out-of-bounds index.
 func TestLogsScreen_search_clamps_cursor_to_filtered_length(t *testing.T) {
 	m := logsscreen.New(nil, nil)
 	_, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
@@ -531,8 +541,8 @@ func TestLogsScreen_search_clamps_cursor_to_filtered_length(t *testing.T) {
 	m.LoadEventsForTest([]store.Event{
 		{ID: 1, TsUnixNs: now, Tier: "success", User: "alice", SourceIP: "10.0.0.1", EventType: "auth-success", RawJSON: firstRaw},
 		{ID: 2, TsUnixNs: now, Tier: "success", User: "bob", SourceIP: "10.0.0.2", EventType: "auth-success", RawJSON: `{"u":"bob"}`},
-		{ID: 3, TsUnixNs: now, Tier: "success", User: "carol", SourceIP: "10.0.0.3", EventType: "auth-success", RawJSON: `{"u":"carol"}`},
-		{ID: 4, TsUnixNs: now, Tier: "success", User: "dave", SourceIP: "10.0.0.4", EventType: "auth-success", RawJSON: `{"u":"dave"}`},
+		{ID: 3, TsUnixNs: now, Tier: "success", User: "carmine", SourceIP: "10.0.0.3", EventType: "auth-success", RawJSON: `{"u":"carmine"}`},
+		{ID: 4, TsUnixNs: now, Tier: "success", User: "dustin", SourceIP: "10.0.0.4", EventType: "auth-success", RawJSON: `{"u":"dustin"}`},
 		{ID: 5, TsUnixNs: now, Tier: "success", User: "eve", SourceIP: "10.0.0.5", EventType: "auth-success", RawJSON: fifthRaw},
 	}, nil)
 	m.LoadStatusForTest(store.StatusRow{SchemaVersion: store.ExpectedSchemaVersion, DetailCount: 5, LastSuccessNs: now})
@@ -545,62 +555,23 @@ func TestLogsScreen_search_clamps_cursor_to_filtered_length(t *testing.T) {
 	for _, r := range "alice" {
 		_, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: r, Text: string(r)}))
 	}
-	// Press `c` and assert the SetClipboard sub-cmd carries the FIRST
-	// event's RawJSON, not the fifth's.
-	// `c` must NOT route through search.Update (search is greedy when
-	// active) — so deactivate search first via esc.
-	_, _ = m.Update(keyPress("esc"))
-	// Re-apply the same query via SetValueForTest equivalent: keep
-	// search inactive but the cursor should already be clamped because
-	// applyFilter ran while search was active. Verify by taking a copy
-	// snapshot via the test seam: since deactivating clears the query
-	// and resets m.filtered to m.events, we instead exercise the copy
-	// path inside the active-search world by re-activating and
-	// re-typing, then asserting via the nav.handleCopy seam.
-	// Simpler: re-build the model, set cursor, type query, then since
-	// `c` is intercepted by search.Update we use a direct seam below.
-	// (See alternative path: use keyPress("c") only when search is
-	// inactive; we test the cursor-clamp via the View body.)
+	// While search is active, the rendered View must contain `alice`
+	// and exclude `eve` (the cursor row before search activated). The
+	// substring `eve ` (with the trailing space from the user-column
+	// padding) is a tighter assertion than bare `eve` — `events` in
+	// the header would otherwise match.
 	v := m.View()
-	require.Contains(t, v, "alice", "after search shrinks the slice, View must contain `alice`; got %q", v)
-	require.NotContains(t, v, "eve", "post-search View must NOT contain `eve` (cursor row before search); got %q", v)
-
-	// Now build a parallel model to exercise `c` while search is
-	// inactive but the same shrink has been applied. We reach the
-	// equivalent state via tier-cycle isn't usable here, so we use the
-	// search-Filter→deactivate sequence: set the search query via the
-	// widget seam, run applyFilter implicitly, then deactivate to leave
-	// `c` unblocked. The widget API doesn't allow query-without-Active,
-	// so we instead drive `c` while search IS active via a synthetic
-	// post-deactivation: type query, then press a non-text Code key
-	// (esc) to deactivate WITHOUT clearing? The widget DOES clear on
-	// esc, so that path won't work either.
-	//
-	// Alternative: assert cursor clamp + copy together by switching to
-	// a tier-filter that yields exactly the first row, then pressing
-	// `c`. Build a fresh model, load 5 mixed-tier events, send `t` to
-	// cycle to the tier holding only the FIRST event, then `c`.
-	m2 := logsscreen.New(nil, nil)
-	_, _ = m2.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	m2.LoadEventsForTest([]store.Event{
-		{ID: 1, TsUnixNs: now, Tier: "success", User: "alice", SourceIP: "10.0.0.1", EventType: "auth-success", RawJSON: firstRaw},
-		{ID: 5, TsUnixNs: now, Tier: "success", User: "eve", SourceIP: "10.0.0.5", EventType: "auth-success", RawJSON: fifthRaw},
-	}, nil)
-	m2.LoadStatusForTest(store.StatusRow{SchemaVersion: store.ExpectedSchemaVersion, DetailCount: 2, LastSuccessNs: now})
-	// Move cursor to the second (last) row.
-	_, _ = m2.Update(keyPress("j"))
-	// Activate search and type `alice` — this shrinks the visible slice
-	// to ONLY the first row.
-	_, _ = m2.Update(keyPress("/"))
-	for _, r := range "alice" {
-		_, _ = m2.Update(tea.KeyPressMsg(tea.Key{Code: r, Text: string(r)}))
-	}
+	require.Contains(t, v, "alice     ", "during active search, View must contain the `alice` row; got %q", v)
+	require.NotContains(t, v, "eve       ", "during active search, View must NOT contain the `eve` row; got %q", v)
+	require.NotContains(t, v, "10.0.0.5", "during active search, View must NOT contain eve's source IP; got %q", v)
+	require.Contains(t, v, "1 of 5 events", "header must show `1 of 5 events`; got %q", v)
 	// Deactivate search via esc — this clears the query and restores
-	// the full slice — but we expect the cursor to already have been
-	// clamped to 0 during the typing. So after esc, m.cursor should be
-	// 0 and pressing `c` should copy the first row.
-	_, _ = m2.Update(keyPress("esc"))
-	_, cmd := m2.Update(keyPress("c"))
+	// the full slice — but the cursor must already have been clamped
+	// to 0 during typing (when the filtered slice shrank to length 1).
+	// After esc, m.filtered = m.events again, but m.cursor is 0, so
+	// pressing `c` copies the first row's RawJSON, not the fifth's.
+	_, _ = m.Update(keyPress("esc"))
+	_, cmd := m.Update(keyPress("c"))
 	require.NotNil(t, cmd, "`c` must emit a tea.Cmd")
 	msg := cmd()
 	batch, ok := msg.(tea.BatchMsg)
@@ -613,13 +584,12 @@ func TestLogsScreen_search_clamps_cursor_to_filtered_length(t *testing.T) {
 		s := fmt.Sprintf("%v", sub())
 		if strings.Contains(s, "Accepted publickey for alice") {
 			found = true
-			break
 		}
 		require.NotContains(t, s, "Accepted publickey for eve",
-			"`c` after search-shrink must NOT copy the pre-search-cursor row; got %q", s)
+			"`c` after search-shrink must NOT copy the pre-search cursor row; got %q", s)
 	}
 	require.True(t, found,
-		"batch must include a clipboard sub-cmd carrying the FIRST row's RawJSON (`alice`)")
+		"batch must include a clipboard sub-cmd carrying the first row's RawJSON (`alice`) — proves the cursor clamped to 0 during search")
 }
 
 // TestLogsScreen_search_composes_with_tier_filter — proves that SQL
