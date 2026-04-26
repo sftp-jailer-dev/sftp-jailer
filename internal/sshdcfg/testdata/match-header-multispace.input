@@ -1,0 +1,2 @@
+Match  Group developers
+  ChrootDirectory /home/%u

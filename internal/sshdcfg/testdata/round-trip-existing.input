@@ -1,0 +1,4 @@
+PasswordAuthentication yes
+Match Group developers
+  ChrootDirectory /home/%u
+  ForceCommand internal-sftp
