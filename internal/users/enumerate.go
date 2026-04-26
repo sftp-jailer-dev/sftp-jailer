@@ -58,10 +58,24 @@ const hintFixInPhase3 = "[fix in Phase 3]"
 // InfoRow is the D-12 pseudo-row shape rendered ABOVE the real user rows in
 // S-USERS. It is non-selectable in the UI; this package only exposes the
 // data — rendering is the screen's concern.
+//
+// Phase 3 (plan 03-07 / B-03): orphan rows additionally carry the absolute
+// directory path, the inferred UID, and the inferred GID (via Lstat on the
+// orphan dir). The S-USERS Enter-on-INFO-orphan dispatcher consumes these
+// to pre-fill the M-NEW-USER modal; the orphan-reconcile flow MUST pass
+// BOTH UID AND GID into useradd (`-u <uid> -g <gid>`) so the new user
+// reuses the existing same-name group rather than letting useradd create a
+// fresh same-name group with a new GID (silent ownership drift). Empty /
+// zero values for non-orphan kinds.
 type InfoRow struct {
 	Kind   InfoKind
 	Detail string
 	Hint   string
+
+	// Orphan-only metadata (zero for non-orphan kinds):
+	Dir string // absolute directory path (e.g. /srv/sftp/ghost)
+	UID int    // inferred uid from Lstat(Dir).UID
+	GID int    // inferred gid from Lstat(Dir).GID
 }
 
 // Row is one D-10 user row consumed by S-USERS. Fields without data carry
@@ -432,10 +446,26 @@ func (e *Enumerator) detectOrphans(ctx context.Context, rows []Row) []InfoRow {
 		if known[name] {
 			continue
 		}
+		dir := e.chrootRoot + "/" + name
+		// B-03 (plan 03-07): the orphan reconcile flow needs the original
+		// UID AND GID of the dir so useradd can re-attach the new account
+		// to the existing same-name group (no GID drift). Lstat is the
+		// chrootcheck-blessed read for ownership inspection. A failed
+		// Lstat (permission denied / vanished) yields zero UID/GID; the
+		// modal still surfaces the row but the admin will see the orphan
+		// and can choose to retry after fixing perms.
+		var uid, gid int
+		if fi, lerr := e.ops.Lstat(ctx, dir); lerr == nil {
+			uid = int(fi.UID)
+			gid = int(fi.GID)
+		}
 		infos = append(infos, InfoRow{
 			Kind:   InfoOrphan,
-			Detail: fmt.Sprintf("%s/%s (no backing system user)", e.chrootRoot, name),
+			Detail: fmt.Sprintf("%s (no backing system user)", dir),
 			Hint:   hintFixInPhase3,
+			Dir:    dir,
+			UID:    uid,
+			GID:    gid,
 		})
 	}
 	return infos
