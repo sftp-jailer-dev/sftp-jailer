@@ -139,7 +139,7 @@ type TarOpts struct {
 }
 
 // SshdTContextOpts is the typed argument shape for SshdTWithContext. Per
-// D-21 step 4 the M-ADD-KEY verifier needs `sshd -t -C user=<u>,host=<h>,addr=<a>`
+// D-21 step 4 the M-ADD-KEY verifier needs `sshd -T -C user=<u>,host=<h>,addr=<a>`
 // so the validator evaluates Match-block-scoped directives for THIS user.
 // Plain SshdT (no -C) only validates global config.
 //
@@ -284,7 +284,7 @@ type SystemOps interface {
 	// step 4 gates every sshd reload behind a successful SshdT call.
 	SshdT(ctx context.Context) (stderr []byte, err error)
 
-	// SshdTWithContext runs `sshd -t -C user=<u>,host=<h>,addr=<a>` so the
+	// SshdTWithContext runs `sshd -T -C user=<u>,host=<h>,addr=<a>` so the
 	// validator evaluates Match-block-scoped directives for THIS user (D-21
 	// step 4). Used by the M-ADD-KEY verifier (plan 03-08b) to confirm
 	// that the user's chroot path actually resolves under the just-written

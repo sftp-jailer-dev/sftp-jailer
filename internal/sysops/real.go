@@ -489,8 +489,14 @@ func (r *Real) SshdTWithContext(ctx context.Context, opts SshdTContextOpts) ([]b
 		defer cancel()
 	}
 	connSpec := fmt.Sprintf("user=%s,host=%s,addr=%s", opts.User, opts.Host, opts.Addr)
-	cmd := exec.CommandContext(ctx, r.binSshd, "-t", "-C", connSpec) //nolint:gosec // G204: typed wrapper, args from typed opts struct
+	// OpenSSH requires -T (extended test mode that prints effective config) when
+	// -C is supplied; -t alone exits 255 with "Config test connection parameter
+	// (-C) provided without test mode (-T)". Discovered empirically against
+	// OpenSSH 9.6 on Ubuntu 24.04. Stdout (effective config dump) is discarded;
+	// non-zero exit still surfaces parse failures via stderr.
+	cmd := exec.CommandContext(ctx, r.binSshd, "-T", "-C", connSpec) //nolint:gosec // G204: typed wrapper, args from typed opts struct
 	cmd.Stdin = nil
+	cmd.Stdout = nil // discard the effective-config dump; we only care about exit + stderr
 	var serr bytes.Buffer
 	cmd.Stderr = &serr
 	err := cmd.Run()
