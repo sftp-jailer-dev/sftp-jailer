@@ -323,3 +323,236 @@ func TestRunner_unmatched_lines_counted_not_aborted(t *testing.T) {
 	require.NoError(t, st.R.QueryRow("SELECT COUNT(*) FROM observations WHERE tier='unmatched'").Scan(&nUnmatched))
 	require.Equal(t, 1, nUnmatched)
 }
+
+// pruneDetail tests (Plan 02-12, Option A — closes OBS-05 silent-knob gap).
+//
+// These three tests pin the contract for the new pruneDetail step in
+// Runner.Run: a parameterized DELETE that drops observations rows older than
+// (now - DetailRetentionDays * 86400 ns), wired between compact() and
+// pruneToCap(). Zero/negative DetailRetentionDays is a no-op (legacy
+// "leave it alone" semantics, matching pruneToCap's capMB ≤ 0 zero-guard).
+//
+// The dropped row count flows into summary.EventsDropped (additive — both
+// pruneDetail and pruneToCap contribute).
+
+// seedObsRowAt INSERTs a single observations row at the given ts_unix_ns
+// using a fresh observation_runs row to satisfy the FK. Mirrors the seeding
+// idiom used by TestRunner_compaction_folds_old_rows above.
+func seedObsRowAt(t *testing.T, st *store.Store, runID int64, tsUnixNs int64) {
+	t.Helper()
+	_, err := st.W.Exec(`INSERT INTO observations(ts_unix_ns, tier, user, source_ip, event_type, raw_message, raw_json, run_id)
+		VALUES (?, 'noise', 'xyz', '198.51.100.1', 'auth_pwd_fail_invalid', 'msg', '{"MESSAGE":"msg"}', ?)`, tsUnixNs, runID)
+	require.NoError(t, err)
+}
+
+// seedRunRow inserts an observation_runs row that satisfies the FK on
+// observations.run_id. Returns the new run_id.
+func seedRunRow(t *testing.T, st *store.Store) int64 {
+	t.Helper()
+	res, err := st.W.Exec(`INSERT INTO observation_runs(started_at_unix_ns, result) VALUES (?, 'success')`, time.Now().UnixNano())
+	require.NoError(t, err)
+	id, err := res.LastInsertId()
+	require.NoError(t, err)
+	return id
+}
+
+// parseDoneSummary scans the runner's stdout for the terminal `done` line
+// and unmarshals its `summary` field into a RunSummary-shaped map. Returns
+// the events_dropped + events_compacted + counters_added counts, which are
+// the counters the pruneDetail tests assert on.
+func parseDoneSummary(t *testing.T, stdout *bytes.Buffer) (eventsDropped, eventsCompacted, countersAdded int) {
+	t.Helper()
+	out := strings.TrimRight(stdout.String(), "\n")
+	for _, line := range strings.Split(out, "\n") {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			continue
+		}
+		if m["phase"] != "done" {
+			continue
+		}
+		summary, ok := m["summary"].(map[string]any)
+		require.True(t, ok, "done line missing `summary` object: %q", line)
+		if v, ok := summary["events_dropped"].(float64); ok {
+			eventsDropped = int(v)
+		}
+		if v, ok := summary["events_compacted"].(float64); ok {
+			eventsCompacted = int(v)
+		}
+		if v, ok := summary["counters_added"].(float64); ok {
+			countersAdded = int(v)
+		}
+		return
+	}
+	t.Fatalf("no `done` line found in stdout: %q", stdout.String())
+	return
+}
+
+func TestRunner_pruneDetail_drops_rows_older_than_retention_window(t *testing.T) {
+	st := openTmpStore(t)
+	f := sysops.NewFake()
+	f.JournalctlStdout["ssh"] = []byte("") // no new events; isolate the prune step
+
+	runID := seedRunRow(t, st)
+
+	// Seed 5 rows at ages 100d, 60d, 30d, 5d, 1h.
+	now := time.Now()
+	ts100d := now.Add(-100 * 24 * time.Hour).UnixNano()
+	ts60d := now.Add(-60 * 24 * time.Hour).UnixNano()
+	ts30d := now.Add(-30 * 24 * time.Hour).UnixNano()
+	ts5d := now.Add(-5 * 24 * time.Hour).UnixNano()
+	ts1h := now.Add(-1 * time.Hour).UnixNano()
+	seedObsRowAt(t, st, runID, ts100d)
+	seedObsRowAt(t, st, runID, ts60d)
+	seedObsRowAt(t, st, runID, ts30d)
+	seedObsRowAt(t, st, runID, ts5d)
+	seedObsRowAt(t, st, runID, ts1h)
+
+	// CompactAfterDays=365 → compact is a no-op (nothing older than 1 year).
+	// DetailRetentionDays=45 → 100d + 60d rows must be DELETEd; 30d/5d/1h survive.
+	// DBMaxSizeMB=1000 → pruneToCap is a no-op.
+	opts := observe.RunOpts{
+		CursorFile:          "/tmp/sftp-jailer-test.cursor",
+		DetailRetentionDays: 45,
+		DBMaxSizeMB:         1000,
+		CompactAfterDays:    365,
+	}
+
+	var stdout bytes.Buffer
+	require.NoError(t, observe.NewRunner(f, st).Run(context.Background(), opts, &stdout))
+
+	var nObs int
+	require.NoError(t, st.R.QueryRow("SELECT COUNT(*) FROM observations").Scan(&nObs))
+	require.Equal(t, 3, nObs, "rows older than 45d (100d + 60d) must be pruned; 30d + 5d + 1h survive")
+
+	// Confirm specifically WHICH rows survived.
+	var survivors []int64
+	rows, err := st.R.Query("SELECT ts_unix_ns FROM observations ORDER BY ts_unix_ns ASC")
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var ts int64
+		require.NoError(t, rows.Scan(&ts))
+		survivors = append(survivors, ts)
+	}
+	require.Equal(t, []int64{ts30d, ts5d, ts1h}, survivors)
+
+	// EventsDropped must include the 2 detail rows pruneDetail dropped.
+	dropped, _, _ := parseDoneSummary(t, &stdout)
+	require.Equal(t, 2, dropped, "pruneDetail dropped 2 rows; pruneToCap was a no-op")
+}
+
+func TestRunner_pruneDetail_zero_guard_skips_when_disabled(t *testing.T) {
+	st := openTmpStore(t)
+	f := sysops.NewFake()
+	f.JournalctlStdout["ssh"] = []byte("")
+
+	runID := seedRunRow(t, st)
+
+	now := time.Now()
+	for _, age := range []time.Duration{100 * 24 * time.Hour, 60 * 24 * time.Hour, 30 * 24 * time.Hour, 5 * 24 * time.Hour, 1 * time.Hour} {
+		seedObsRowAt(t, st, runID, now.Add(-age).UnixNano())
+	}
+
+	// DetailRetentionDays=0 → zero-guard MUST skip the prune step.
+	opts := observe.RunOpts{
+		CursorFile:          "/tmp/sftp-jailer-test.cursor",
+		DetailRetentionDays: 0,
+		DBMaxSizeMB:         1000,
+		CompactAfterDays:    365,
+	}
+
+	var stdout bytes.Buffer
+	require.NoError(t, observe.NewRunner(f, st).Run(context.Background(), opts, &stdout))
+
+	var nObs int
+	require.NoError(t, st.R.QueryRow("SELECT COUNT(*) FROM observations").Scan(&nObs))
+	require.Equal(t, 5, nObs, "DetailRetentionDays=0: zero-guard skips prune; all 5 rows survive")
+
+	dropped, _, _ := parseDoneSummary(t, &stdout)
+	require.Equal(t, 0, dropped, "pruneDetail skipped + pruneToCap a no-op → EventsDropped == 0")
+}
+
+func TestRunner_pruneDetail_negative_value_skips_when_disabled(t *testing.T) {
+	st := openTmpStore(t)
+	f := sysops.NewFake()
+	f.JournalctlStdout["ssh"] = []byte("")
+
+	runID := seedRunRow(t, st)
+
+	now := time.Now()
+	seedObsRowAt(t, st, runID, now.Add(-100*24*time.Hour).UnixNano())
+	seedObsRowAt(t, st, runID, now.Add(-1*time.Hour).UnixNano())
+
+	// DetailRetentionDays=-1 → same zero-guard behavior as 0.
+	opts := observe.RunOpts{
+		CursorFile:          "/tmp/sftp-jailer-test.cursor",
+		DetailRetentionDays: -1,
+		DBMaxSizeMB:         1000,
+		CompactAfterDays:    365,
+	}
+
+	var stdout bytes.Buffer
+	require.NoError(t, observe.NewRunner(f, st).Run(context.Background(), opts, &stdout))
+
+	var nObs int
+	require.NoError(t, st.R.QueryRow("SELECT COUNT(*) FROM observations").Scan(&nObs))
+	require.Equal(t, 2, nObs, "DetailRetentionDays=-1: zero-guard skips prune; both rows survive")
+
+	dropped, _, _ := parseDoneSummary(t, &stdout)
+	require.Equal(t, 0, dropped)
+}
+
+func TestRunner_pruneDetail_runs_after_compact_before_pruneToCap(t *testing.T) {
+	st := openTmpStore(t)
+	f := sysops.NewFake()
+	f.JournalctlStdout["ssh"] = []byte("")
+
+	runID := seedRunRow(t, st)
+
+	// Seed 4 rows: 100d (compact will fold + delete), 80d (pruneDetail will
+	// delete — older than 60d retention but younger than 90d compact window),
+	// 30d + 1h (both survive).
+	now := time.Now()
+	ts100d := now.Add(-100 * 24 * time.Hour).UnixNano()
+	ts80d := now.Add(-80 * 24 * time.Hour).UnixNano()
+	ts30d := now.Add(-30 * 24 * time.Hour).UnixNano()
+	ts1h := now.Add(-1 * time.Hour).UnixNano()
+	seedObsRowAt(t, st, runID, ts100d)
+	seedObsRowAt(t, st, runID, ts80d)
+	seedObsRowAt(t, st, runID, ts30d)
+	seedObsRowAt(t, st, runID, ts1h)
+
+	// CompactAfterDays=90 → 100d row folds into noise_counters and is DELETEd by compact.
+	// DetailRetentionDays=60 → 80d row is DELETEd by pruneDetail (it's between
+	//   the compact window 90d and the retention window 60d, so compact left it
+	//   alone but pruneDetail must catch it).
+	// DBMaxSizeMB=1000 → pruneToCap is a no-op.
+	//
+	// Expected: 2 observation rows survive (30d + 1h), 1 noise_counter row
+	// from the compact, EventsCompacted=1, EventsDropped=1 (the pruneDetail
+	// hit on the 80d row — the compact's DELETE is not counted in
+	// EventsDropped because compact accounts via EventsCompacted).
+	opts := observe.RunOpts{
+		CursorFile:          "/tmp/sftp-jailer-test.cursor",
+		DetailRetentionDays: 60,
+		DBMaxSizeMB:         1000,
+		CompactAfterDays:    90,
+	}
+
+	var stdout bytes.Buffer
+	require.NoError(t, observe.NewRunner(f, st).Run(context.Background(), opts, &stdout))
+
+	var nObs int
+	require.NoError(t, st.R.QueryRow("SELECT COUNT(*) FROM observations").Scan(&nObs))
+	require.Equal(t, 2, nObs, "30d + 1h survive; 100d folded by compact; 80d pruned by pruneDetail")
+
+	var nCounters int
+	require.NoError(t, st.R.QueryRow("SELECT COUNT(*) FROM noise_counters").Scan(&nCounters))
+	require.GreaterOrEqual(t, nCounters, 1, "compact produced ≥1 noise_counters row from the 100d row")
+
+	dropped, compacted, countersAdded := parseDoneSummary(t, &stdout)
+	require.Equal(t, 1, compacted, "compact folded exactly 1 row (the 100d one)")
+	require.GreaterOrEqual(t, countersAdded, 1)
+	require.Equal(t, 1, dropped, "pruneDetail dropped exactly 1 row (the 80d one); pruneToCap a no-op")
+}
