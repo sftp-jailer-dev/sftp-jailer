@@ -78,6 +78,11 @@ const (
 	// the modal's preflight will surface the lockout risk before any
 	// write).
 	fieldPasswordAuthN
+	// fieldLockdownWindow is the Phase 4 LOCK-04 / D-L0204-01 knob —
+	// observation lookback window the LOCK-02 proposal generator uses.
+	// Routes through the standard inline-edit mechanic (textinput +
+	// validate-on-Enter + atomic Save). Default 90; range [1, 3650].
+	fieldLockdownWindow
 
 	// fieldKindCount is the modulus sentinel for cursor wrap math; place
 	// new fields BEFORE this constant.
@@ -96,6 +101,8 @@ func (k fieldKind) name() string {
 		return "compact_after_days"
 	case fieldPasswordAuthN:
 		return "password_authentication"
+	case fieldLockdownWindow:
+		return "lockdown.proposal_window_days"
 	}
 	return "unknown"
 }
@@ -111,6 +118,8 @@ func (k fieldKind) hint() string {
 		return "(must be ≤ detail_retention_days)"
 	case fieldPasswordAuthN:
 		return "(globally allow / disallow password auth — managed users without keys block disable)"
+	case fieldLockdownWindow:
+		return "days (proposal lookback; default 90)"
 	}
 	return ""
 }
@@ -286,6 +295,11 @@ func (m *Model) SetCursorForTest(idx int) {
 // the enum's iota position drifting in a future refactor.
 const PasswordAuthNRowIndexForTest = int(fieldPasswordAuthN)
 
+// LockdownWindowRowIndexForTest exposes the field-row index for
+// fieldLockdownWindow (Phase 4 / LOCK-04) so tests can SetCursor +
+// assert without depending on the enum's iota position drifting.
+const LockdownWindowRowIndexForTest = int(fieldLockdownWindow)
+
 // EditingForTest exposes the inline-edit-mode flag for assertions.
 func (m *Model) EditingForTest() bool { return m.editing }
 
@@ -439,6 +453,8 @@ func (m *Model) currentValue() int {
 		return m.settings.DBMaxSizeMB
 	case fieldCompact:
 		return m.settings.CompactAfterDays
+	case fieldLockdownWindow:
+		return m.settings.LockdownProposalWindowDays
 	}
 	return 0
 }
@@ -453,6 +469,8 @@ func (m *Model) valueFor(k fieldKind) int {
 		return m.settings.DBMaxSizeMB
 	case fieldCompact:
 		return m.settings.CompactAfterDays
+	case fieldLockdownWindow:
+		return m.settings.LockdownProposalWindowDays
 	}
 	return 0
 }
@@ -476,6 +494,8 @@ func (m *Model) attemptSave() tea.Cmd {
 		candidate.DBMaxSizeMB = v
 	case fieldCompact:
 		candidate.CompactAfterDays = v
+	case fieldLockdownWindow:
+		candidate.LockdownProposalWindowDays = v
 	}
 	if errs := config.Validate(candidate); len(errs) > 0 {
 		// First error per field is the most relevant — surfaces the

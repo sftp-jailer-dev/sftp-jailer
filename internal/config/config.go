@@ -51,6 +51,14 @@ type Settings struct {
 	CompactAfterDays    int `koanf:"compact_after_days"`
 	PasswordAgingDays   int `koanf:"password_aging_days"`
 	PasswordStaleDays   int `koanf:"password_stale_days"`
+
+	// LockdownProposalWindowDays (Phase 4 / D-L0204-01) — observation
+	// lookback window the LOCK-02 proposal generator uses (`tier=success`
+	// observations grouped by source IP per user). INDEPENDENT from
+	// detail_retention_days: they answer different questions (one is
+	// "how long do we keep raw rows?", the other is "how far back do we
+	// look when proposing an allowlist?"). Default 90; range [1, 3650].
+	LockdownProposalWindowDays int `koanf:"lockdown.proposal_window_days"`
 }
 
 // Defaults returns the canonical default Settings. Used when the config
@@ -64,11 +72,12 @@ type Settings struct {
 // recently-changed passwords.
 func Defaults() Settings {
 	return Settings{
-		DetailRetentionDays: 90,
-		DBMaxSizeMB:         500,
-		CompactAfterDays:    90,
-		PasswordAgingDays:   180,
-		PasswordStaleDays:   365,
+		DetailRetentionDays:        90,
+		DBMaxSizeMB:                500,
+		CompactAfterDays:           90,
+		PasswordAgingDays:          180,
+		PasswordStaleDays:          365,
+		LockdownProposalWindowDays: 90,
 	}
 }
 
@@ -92,6 +101,17 @@ func Load(ctx context.Context, ops sysops.SystemOps, path string) (Settings, err
 	var s Settings
 	if err := k.Unmarshal("", &s); err != nil {
 		return Settings{}, fmt.Errorf("config.Load unmarshal: %w", err)
+	}
+	// koanf's Unmarshal does NOT interpret a `.` in struct tags as a
+	// nested-YAML path during YAML→struct mapping — it treats the dotted
+	// string as a literal flat key. The YAML for D-L0204-01 lives under
+	// the `lockdown:` block (so admins can group future lockdown.* keys
+	// together), so we read the nested value explicitly via the
+	// dotted-path API which DOES walk nested keys. If the key is absent,
+	// k.Int returns 0 and overlayDefaults supplies the production
+	// fallback (90).
+	if v := k.Int("lockdown.proposal_window_days"); v != 0 {
+		s.LockdownProposalWindowDays = v
 	}
 	return overlayDefaults(s, defaults), nil
 }
@@ -153,6 +173,13 @@ func Validate(s Settings) []error {
 	if s.PasswordStaleDays <= s.PasswordAgingDays {
 		errs = append(errs, fmt.Errorf("password_stale_days must be strictly greater than password_aging_days (got stale=%d, aging=%d)", s.PasswordStaleDays, s.PasswordAgingDays))
 	}
+	// LockdownProposalWindowDays (D-L0204-01): independent koanf knob;
+	// range [1, 3650] (10-year cap mitigates T-04-07-06 "absurd-input"
+	// SQL DoS). Mirrors the detail_retention_days range — admins reading
+	// the rules hint will recognise the shape.
+	if s.LockdownProposalWindowDays < 1 || s.LockdownProposalWindowDays > 3650 {
+		errs = append(errs, fmt.Errorf("lockdown.proposal_window_days must be a positive integer between 1 and 3650 (got %d)", s.LockdownProposalWindowDays))
+	}
 	return errs
 }
 
@@ -175,6 +202,9 @@ func overlayDefaults(s, d Settings) Settings {
 	}
 	if s.PasswordStaleDays == 0 {
 		s.PasswordStaleDays = d.PasswordStaleDays
+	}
+	if s.LockdownProposalWindowDays == 0 {
+		s.LockdownProposalWindowDays = d.LockdownProposalWindowDays
 	}
 	return s
 }
