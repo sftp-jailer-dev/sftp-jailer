@@ -44,6 +44,20 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/ufwcomment"
 )
 
+// addRuleFactory is the package-level seam for Plan 04-05 to inject
+// the M-ADD-RULE modal constructor without S-FIREWALL importing
+// internal/tui/screens/firewallrule (factory-injection avoids a
+// future cycle if that package ever needs to read S-FIREWALL state).
+//
+// The bootstrap (main.go::runTUI) calls SetAddRuleFactory once with a
+// closure that captures ops + watcher + sftpPort. nil-factory path is a
+// no-op (e.g. test paths that don't exercise add).
+var addRuleFactory func() nav.Screen
+
+// SetAddRuleFactory registers the M-ADD-RULE constructor. Called once
+// at TUI bootstrap. Pass nil to clear (test cleanup).
+func SetAddRuleFactory(fn func() nav.Screen) { addRuleFactory = fn }
+
 // ViewMode toggles between flat-rules and per-user-grouped layouts.
 type ViewMode int
 
@@ -174,6 +188,18 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
 		return m, nav.PopCmd()
+	case "a":
+		// Plan 04-05: push M-ADD-RULE via the factory seam. No-op when
+		// no factory has been registered (test paths / bootstrap not
+		// yet wired). The factory captures ops + watcher + sftpPort
+		// from main.go::runTUI.
+		if addRuleFactory != nil {
+			screen := addRuleFactory()
+			if screen != nil {
+				return m, nav.PushCmd(screen)
+			}
+		}
+		return m, nil
 	case "/":
 		var cmd tea.Cmd
 		m.search, cmd = m.search.Activate()
@@ -429,6 +455,7 @@ type KeyMap struct {
 	Detail      nav.KeyBinding
 	ToggleGroup nav.KeyBinding
 	Copy        nav.KeyBinding
+	AddRule     nav.KeyBinding // Plan 04-05 — pushes M-ADD-RULE via factory seam
 }
 
 // DefaultKeyMap returns the canonical S-FIREWALL bindings per UI-SPEC
@@ -440,20 +467,21 @@ func DefaultKeyMap() KeyMap {
 		Detail:      nav.KeyBinding{Keys: []string{"enter"}, Help: "detail"},
 		ToggleGroup: nav.KeyBinding{Keys: []string{"g"}, Help: "group"},
 		Copy:        nav.KeyBinding{Keys: []string{"c"}, Help: "copy rule"},
+		AddRule:     nav.KeyBinding{Keys: []string{"a"}, Help: "add rule"},
 	}
 }
 
 // ShortHelp surfaces the bindings in the footer / `?` overlay's compact
 // mode.
 func (k KeyMap) ShortHelp() []nav.KeyBinding {
-	return []nav.KeyBinding{k.Back, k.Search, k.Detail, k.ToggleGroup, k.Copy}
+	return []nav.KeyBinding{k.Back, k.Search, k.Detail, k.ToggleGroup, k.Copy, k.AddRule}
 }
 
 // FullHelp shows two columns: nav row (back/search/detail) and action
-// row (toggle-group/copy).
+// row (toggle-group/copy/add-rule).
 func (k KeyMap) FullHelp() [][]nav.KeyBinding {
 	return [][]nav.KeyBinding{
 		{k.Back, k.Search, k.Detail},
-		{k.ToggleGroup, k.Copy},
+		{k.ToggleGroup, k.Copy, k.AddRule},
 	}
 }

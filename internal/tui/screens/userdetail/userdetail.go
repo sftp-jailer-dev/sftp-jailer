@@ -51,6 +51,28 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/txn"
 )
 
+// addRuleFactory is the package-level seam for Plan 04-05 to inject
+// the M-ADD-RULE modal constructor. Pressing 'r' on S-USER-DETAIL
+// invokes the factory with this screen's username so the modal locks
+// the user pre-fill (the S-USER-DETAIL → M-ADD-RULE handoff is the
+// "scoped per-user add" path documented in CONTEXT.md D-FW-01).
+//
+// Keybind W1 deviation: CONTEXT.md originally specified 'a' for this
+// surface, but Phase 3 plan 03-08a already binds 'a' to the M-ADD-KEY
+// (add-SSH-key) modal — Phase 3's 03-08b UAT validated that muscle
+// memory on a real Ubuntu 24.04 host. Resolution: this plan uses 'r'
+// (mnemonic: r = rule). CONTEXT.md amended in 04-CONTEXT.md
+// "Integration Points" + "Existing code" sections so future plans
+// inherit the corrected spec. The deviation is documented in
+// 04-05-SUMMARY.md.
+var addRuleFactory func(username string) nav.Screen
+
+// SetAddRuleFactory registers the M-ADD-RULE constructor. Called once
+// at TUI bootstrap with a closure that captures ops + watcher +
+// sftpPort + the *store.Queries handle. Pass nil to clear (test
+// cleanup).
+func SetAddRuleFactory(fn func(username string) nav.Screen) { addRuleFactory = fn }
+
 // keysLoadedMsg carries the async-load result back to Update.
 type keysLoadedMsg struct {
 	exists bool
@@ -276,10 +298,27 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		// 'a' pushes M-ADD-KEY (addkey.New). ops==nil is the unit-test
 		// path where LoadKeysForTest seeded state without a Fake —
 		// there's nothing to commit against, so return cleanly.
+		//
+		// W-03 regression guard: Phase 4 explicitly does NOT replace
+		// this keybind with M-ADD-RULE. Phase 3 UAT-validated muscle
+		// memory is preserved; the M-ADD-RULE entry uses 'r' (see the
+		// case below).
 		if m.ops == nil {
 			return m, nil
 		}
 		return m, nav.PushCmd(addkey.New(m.ops, m.chrootRoot, m.username))
+	case "r":
+		// Plan 04-05: 'r' (mnemonic: rule) pushes M-ADD-RULE pre-filled
+		// with this screen's username. Factory-injected at bootstrap
+		// so this package doesn't import internal/tui/screens/firewallrule
+		// (avoiding the cycle).
+		if addRuleFactory != nil {
+			screen := addRuleFactory(m.username)
+			if screen != nil {
+				return m, nav.PushCmd(screen)
+			}
+		}
+		return m, nil
 	case "d":
 		return m, m.startDeleteSelectedKey()
 	case "p":
@@ -419,7 +458,7 @@ func (m *Model) View() string {
 		b.WriteString("no authorized_keys file yet — press [a] to add the first key")
 		b.WriteString("\n\n")
 		b.WriteString(styles.Dim.Render(
-			"a·add key   p·set password   esc·back"))
+			"a·add key   r·add rule   p·set password   esc·back"))
 		if ts := m.toast.View(); ts != "" {
 			b.WriteString("\n")
 			b.WriteString(ts)
@@ -470,7 +509,7 @@ func (m *Model) View() string {
 
 	b.WriteString("\n")
 	b.WriteString(styles.Dim.Render(
-		"↑↓·move   a·add key   d·delete key   p·set password   c·copy fp   esc·back"))
+		"↑↓·move   a·add key   r·add rule   d·delete key   p·set password   c·copy fp   esc·back"))
 
 	if ts := m.toast.View(); ts != "" {
 		b.WriteString("\n")
@@ -507,6 +546,7 @@ func wrapModal(content string) string {
 type KeyMap struct {
 	Back     nav.KeyBinding
 	AddKey   nav.KeyBinding
+	AddRule  nav.KeyBinding // Plan 04-05: 'r' = M-ADD-RULE for this user
 	Delete   nav.KeyBinding
 	Password nav.KeyBinding
 	Copy     nav.KeyBinding
@@ -517,6 +557,7 @@ func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		Back:     nav.KeyBinding{Keys: []string{"esc", "q"}, Help: "back"},
 		AddKey:   nav.KeyBinding{Keys: []string{"a"}, Help: "add key (M-ADD-KEY)"},
+		AddRule:  nav.KeyBinding{Keys: []string{"r"}, Help: "add firewall rule (M-ADD-RULE)"},
 		Delete:   nav.KeyBinding{Keys: []string{"d"}, Help: "delete selected key"},
 		Password: nav.KeyBinding{Keys: []string{"p"}, Help: "set password"},
 		Copy:     nav.KeyBinding{Keys: []string{"c"}, Help: "copy fingerprint via OSC 52"},
@@ -525,13 +566,13 @@ func DefaultKeyMap() KeyMap {
 
 // ShortHelp implements nav.KeyMap.
 func (k KeyMap) ShortHelp() []nav.KeyBinding {
-	return []nav.KeyBinding{k.Back, k.AddKey, k.Delete, k.Password, k.Copy}
+	return []nav.KeyBinding{k.Back, k.AddKey, k.AddRule, k.Delete, k.Password, k.Copy}
 }
 
 // FullHelp implements nav.KeyMap.
 func (k KeyMap) FullHelp() [][]nav.KeyBinding {
 	return [][]nav.KeyBinding{
 		{k.Back, k.Copy},
-		{k.AddKey, k.Delete, k.Password},
+		{k.AddKey, k.AddRule, k.Delete, k.Password},
 	}
 }
