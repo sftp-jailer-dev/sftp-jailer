@@ -9,7 +9,11 @@
 //   - PerUserBreakdown     — LOG-06 per-user tier counts + last login.
 //   - LastLoginPerUser     — USER-01 last-login column for the user list.
 //
-// Threat model (PLAN.md §threat_model T-OBS-01):
+// Phase 4 plan 04-03 adds the FW-08 derived-cache writer surface:
+//   - RebuildUserIPs       — TRUNCATE + bulk INSERT per Enumerate output.
+//   - UserIPs              — read-back per username for S-USERS allowlist.
+//
+// Threat model (PLAN.md §threat_model T-OBS-01 + T-04-03-04):
 //
 //	All filter-string fields flow through `?` placeholders. The
 //	queries_test.go injection test asserts that a payload of
@@ -23,19 +27,29 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 )
 
-// Queries holds the reader pool reference. Construct via NewQueries(*Store).
-// Treat Queries as long-lived: the TUI should share a single instance
-// across screens so the connection pool is reused.
+// Queries holds the reader pool + single-conn writer references.
+// Construct via NewQueries(*Store). Treat Queries as long-lived: the TUI
+// should share a single instance across screens so the connection pool
+// is reused.
+//
+// The writer field (w) is unexported and only used by RebuildUserIPs
+// (the FW-08 derived-cache writer) — every other method routes
+// reads through r per the reader-pool/single-writer split documented
+// in store.go.
 type Queries struct {
 	r *sql.DB
+	w *sql.DB
 }
 
-// NewQueries wraps the reader half of the Store. The writer handle is
-// intentionally NOT exposed here — write paths (the observe-run Runner,
-// 02-02) take *Store directly.
-func NewQueries(s *Store) *Queries { return &Queries{r: s.R} }
+// NewQueries wraps the Store's reader + writer halves. The writer is
+// only consumed by RebuildUserIPs (D-FW-04 derived-cache rebuild);
+// every read path goes through r as before.
+func NewQueries(s *Store) *Queries { return &Queries{r: s.R, w: s.W} }
 
 // StatusRow drives the D-08 status display in S-LOGS:
 //
@@ -270,6 +284,130 @@ func (q *Queries) LastLoginPerUser(ctx context.Context) ([]UserLastLogin, error)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("queries.LastLoginPerUser rows.Err: %w", err)
+	}
+	return out, nil
+}
+
+// ----------------------------------------------------------------------------
+// Phase 4 plan 04-03 — FW-08 derived-cache mirror (D-FW-04).
+//
+// The user_ips table is a DERIVED CACHE rebuilt from `ufw status numbered`
+// Enumerate output. The firewall comments (sftpj:v=1:user=<name>) are the
+// AUTHORITATIVE store; this mirror is a belt-and-suspenders recovery path
+// only. Pitfall C3 (dual-source-of-truth) is retired by treating the
+// firewall as the source-of-truth and rebuilding this table from it on
+// every relevant event (see 04-CONTEXT.md D-FW-04 for the rebuild surfaces).
+// ----------------------------------------------------------------------------
+
+// UserIP is the typed shape of one row in the user_ips mirror table.
+type UserIP struct {
+	User           string
+	Source         string
+	Proto          string // "v4" | "v6"
+	Port           string
+	LastSeenUnixNs int64
+}
+
+// rebuildUserIPsInsertSQL is the insert statement template for RebuildUserIPs.
+// The ON CONFLICT clause covers the case where the caller's input contains
+// duplicate (user, source, proto, port) tuples in a single rebuild — later
+// rows update the timestamp rather than crashing the transaction. This
+// preserves the "single rebuild = idempotent" contract.
+const rebuildUserIPsInsertSQL = `
+INSERT INTO user_ips (user, source, proto, port, last_seen_unix_ns)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(user, source, proto, port)
+DO UPDATE SET last_seen_unix_ns = excluded.last_seen_unix_ns
+`
+
+// RebuildUserIPs replaces the user_ips table with one row per
+// sftpj-decoded rule. Per D-FW-04 the table is a derived cache —
+// never authority. Single transaction (DELETE + bulk INSERT) so a
+// mid-rebuild crash leaves the prior contents intact; SQLite's
+// implicit rollback on tx.Rollback() handles partial failures.
+//
+// Inputs:
+//   - rules: from firewall.Enumerate. We filter to those with
+//     User != "" AND ParseErr == nil (sftpj v=1 rules). Foreign rules
+//     (ErrNotOurs), forward-compat (ErrBadVersion), and any rule with
+//     an empty User are skipped per the forward-compat invariant
+//     documented in internal/ufwcomment.
+//   - nowFn: supplies the timestamp for last_seen_unix_ns. Pass nil
+//     to use time.Now() (production callers don't have to thread a
+//     clock through; tests inject a frozen clock for determinism).
+//
+// Performance: BeginTx pre-paid pragmas (WAL/synchronous=NORMAL).
+// PROJECT.md targets 20-100 users — even 1000 rows fits in a single
+// tx in <100ms on dev hardware. T-04-03-03 (DoS at 10k rows) accepted.
+//
+// Threat model (T-04-03-04): every value is parameterized via `?`
+// placeholders. No fmt.Sprintf into SQL.
+func (q *Queries) RebuildUserIPs(ctx context.Context, rules []firewall.Rule, nowFn func() time.Time) error {
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	nowNs := nowFn().UnixNano()
+
+	tx, err := q.w.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("queries.RebuildUserIPs BeginTx: %w", err)
+	}
+	defer func() {
+		// If Commit succeeded, Rollback returns sql.ErrTxDone — ignored.
+		_ = tx.Rollback()
+	}()
+
+	if _, err := tx.ExecContext(ctx, "DELETE FROM user_ips"); err != nil {
+		return fmt.Errorf("queries.RebuildUserIPs DELETE: %w", err)
+	}
+
+	for _, r := range rules {
+		if r.User == "" || r.ParseErr != nil {
+			continue // skip foreign rules + ErrBadVersion forward-compat
+		}
+		if _, err := tx.ExecContext(ctx, rebuildUserIPsInsertSQL,
+			r.User, r.Source, r.Proto, r.Port, nowNs); err != nil {
+			return fmt.Errorf("queries.RebuildUserIPs INSERT user=%s source=%s: %w", r.User, r.Source, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("queries.RebuildUserIPs Commit: %w", err)
+	}
+	return nil
+}
+
+const userIPsSelectSQL = `
+SELECT user, source, proto, port, last_seen_unix_ns
+FROM user_ips
+WHERE user = ?
+ORDER BY source ASC
+`
+
+// UserIPs returns all rows in the user_ips mirror for a given username.
+// Returns an empty slice (NOT nil) on no match — callers can range
+// over the result without nil-checking. Read-only — uses the pooled
+// reader.
+//
+// Threat model (T-04-03-04): username flows through a `?` placeholder.
+// No fmt.Sprintf into SQL.
+func (q *Queries) UserIPs(ctx context.Context, username string) ([]UserIP, error) {
+	rows, err := q.r.QueryContext(ctx, userIPsSelectSQL, username)
+	if err != nil {
+		return nil, fmt.Errorf("queries.UserIPs query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []UserIP{}
+	for rows.Next() {
+		var u UserIP
+		if err := rows.Scan(&u.User, &u.Source, &u.Proto, &u.Port, &u.LastSeenUnixNs); err != nil {
+			return nil, fmt.Errorf("queries.UserIPs scan: %w", err)
+		}
+		out = append(out, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("queries.UserIPs rows.Err: %w", err)
 	}
 	return out, nil
 }

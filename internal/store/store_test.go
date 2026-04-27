@@ -108,7 +108,8 @@ func TestMigrate_applies_001_init_and_002_indexes(t *testing.T) {
 
 	var version int
 	require.NoError(t, s.R.QueryRow("PRAGMA user_version").Scan(&version))
-	require.Equal(t, 2, version, "migrations 001+002 must advance user_version to 2")
+	// Phase 4 plan 04-03 adds 003_user_ips.sql → expected version is now 3.
+	require.Equal(t, 3, version, "migrations 001+002+003 must advance user_version to 3")
 
 	tables := map[string]bool{}
 	rows, err := s.R.Query("SELECT name FROM sqlite_master WHERE type='table'")
@@ -147,7 +148,7 @@ func TestMigrate_applies_001_init_and_002_indexes(t *testing.T) {
 }
 
 // TestMigrate_idempotent verifies that calling Migrate a second time after
-// a successful run is a no-op (no error, version still 2).
+// a successful run is a no-op (no error, version still ExpectedSchemaVersion).
 func TestMigrate_idempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 	s, err := store.Open(path)
@@ -160,7 +161,7 @@ func TestMigrate_idempotent(t *testing.T) {
 
 	var version int
 	require.NoError(t, s.R.QueryRow("PRAGMA user_version").Scan(&version))
-	require.Equal(t, 2, version)
+	require.Equal(t, store.ExpectedSchemaVersion, version)
 }
 
 // TestPeekUserVersion_freshDB verifies that PeekUserVersion of an
@@ -187,7 +188,8 @@ func TestPeekUserVersion_postMigrate(t *testing.T) {
 
 	v, err := store.PeekUserVersion(context.Background(), path)
 	require.NoError(t, err)
-	require.Equal(t, 2, v, "post-migrate DB must report user_version=2")
+	require.Equal(t, store.ExpectedSchemaVersion, v,
+		"post-migrate DB must report user_version=ExpectedSchemaVersion")
 }
 
 // TestPeekUserVersion_nonexistent_path verifies that pointing PeekUserVersion

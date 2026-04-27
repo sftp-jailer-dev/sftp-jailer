@@ -188,7 +188,8 @@ func TestLogsScreen_LoadStatusForTest_schema_drift(t *testing.T) {
 	m.LoadEventsForTest([]store.Event{{ID: 1, User: "alice"}}, nil)
 	v := m.View()
 	require.Contains(t, v, "Schema v99")
-	require.Contains(t, v, "binary expects v2")
+	// Phase 4 plan 04-03 bumps ExpectedSchemaVersion 2 → 3 (003_user_ips.sql).
+	require.Contains(t, v, "binary expects v3")
 	require.Contains(t, v, "observer disabled")
 	require.Contains(t, v, "apt upgrade sftp-jailer")
 }
