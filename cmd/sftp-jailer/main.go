@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/revert"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sshdcfg"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/store"
@@ -21,11 +22,13 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 	doctorscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/doctor"
 	firewallscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewall"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewallrule"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/home"
 	logsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/logs"
 	observerunscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/observerun"
 	settingsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/settings"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/splash"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/userdetail"
 	usersscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/wire"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
@@ -36,6 +39,13 @@ import (
 // declare a ChrootDirectory we recognise. Same default M-APPLY-SETUP uses
 // (plan 03-06) so the canonical-config path stays consistent.
 const defaultChrootRoot = "/srv/sftp-jailer"
+
+// defaultSFTPPort is the literal that M-ADD-RULE renders into the
+// proposed `ufw insert 1 allow proto tcp from <src> to any port <port>`
+// command. Phase 4 v1 hard-codes "22" — sftp-jailer assumes the standard
+// OpenSSH port. Future phases (D-FW-PORT) may parse Port from
+// sshd_config.d/*.conf, at which point this becomes a fallback.
+const defaultSFTPPort = "22"
 
 // resolveChrootRoot scans /etc/ssh/sshd_config.d/*.conf for a Match-block
 // ChrootDirectory directive, strips the per-user expansion suffix
@@ -193,6 +203,11 @@ var observerCursorPath = "/var/lib/sftp-jailer/observer.cursor"
 //   - 02-06 adds home.SetLogsFactory(...)    (also captures `p` for goroutine Send)
 //   - 02-07 adds home.SetSettingsFactory(...)
 //   - 02-08 wires logsscreen.SetObserveRunFactory(...) (different shape)
+//   - 04-05 adds firewallscreen.SetAddRuleFactory(...) and
+//     userdetail.SetAddRuleFactory(...) — both inject an M-ADD-RULE
+//     constructor that captures the per-process *revert.Watcher (D-S04-04
+//     singleton: exactly one Watcher per TUI process so the 3-min revert
+//     state is shared across modals).
 func runTUI(cmd *cobra.Command, args []string) error {
 	// Pitfall E2: recovery script for unclean exits. Path printed to stderr
 	// BEFORE program.Run() so it's in scrollback even on a SIGKILL.
@@ -258,13 +273,31 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// modal having to re-parse sshd_config.d/*.conf.
 	chrootRoot := resolveChrootRoot(cmd.Context(), ops)
 
+	// Phase 4 plan 04-04 + 04-05: SAFE-04 revert state is owned by exactly
+	// ONE *revert.Watcher per TUI process so the 3-min revert window is
+	// shared across all FW-mutation modals (M-ADD-RULE today; M-DELETE-RULE
+	// in 04-06; S-LOCKDOWN commit in 04-08). The watcher's on-disk pointer
+	// at /var/lib/sftp-jailer/revert.json survives crashes — the Restore
+	// flow on next launch will reload pending revert state.
+	revertWatcher := revert.New(ops)
+
 	// Factory injections — sorted alphabetically by screen name so future
 	// wave plans can insert their own line without merge conflict noise.
+	firewallscreen.SetAddRuleFactory(func() nav.Screen {
+		m := firewallrule.New(ops, revertWatcher, defaultSFTPPort, "")
+		m.SetStore(queries)
+		return m
+	})
 	home.SetDoctorFactory(func() nav.Screen { return doctorscreen.New(doctorSvc) })
 	home.SetFirewallFactory(func() nav.Screen { return firewallscreen.New(ops) })
 	home.SetLogsFactory(func() nav.Screen { return logsscreen.New(queries, ops) })
 	home.SetSettingsFactory(func() nav.Screen { return settingsscreen.New(ops, configFilePath, usersEnum, chrootRoot) })
 	home.SetUsersFactory(func() nav.Screen { return usersscreen.NewWithConfig(usersEnum, &usersCfg, ops, chrootRoot) })
+	userdetail.SetAddRuleFactory(func(username string) nav.Screen {
+		m := firewallrule.New(ops, revertWatcher, defaultSFTPPort, username)
+		m.SetStore(queries)
+		return m
+	})
 
 	// Construct the App with the splash as the initial screen. The splash
 	// will auto-dismiss after 2s and ReplaceMsg itself with a home screen
