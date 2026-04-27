@@ -411,3 +411,83 @@ func (q *Queries) UserIPs(ctx context.Context, username string) ([]UserIP, error
 	}
 	return out, nil
 }
+
+// ----------------------------------------------------------------------------
+// Phase 4 plan 04-07 — LOCK-02 proposal generator read surface.
+//
+// LockdownObservation is one (user, source_ip, tier) bucket within the
+// proposal-window cutoff, with the per-bucket observation count and
+// most-recent timestamp. The internal/lockdown.Generator pivots these
+// rows into per-user Proposal structs.
+//
+// Threat model (T-04-07-01 / T-OBS-01): all values flow through `?`
+// placeholders. No fmt.Sprintf into SQL.
+// ----------------------------------------------------------------------------
+
+// LockdownObservation is the typed result of one row from the
+// LockdownObservations query — a (user, source_ip, tier) aggregate within
+// the proposal window.
+type LockdownObservation struct {
+	User       string
+	SourceIP   string
+	ConnCount  int
+	LastSeenNs int64
+	Tier       string
+}
+
+// lockdownObservationsSQL groups observations by (user, source_ip, tier)
+// within the cutoff window. Per D-L0204-02 the default inclusion is
+// tier='success' only; the includeTargeted flag broadens to
+// tier='targeted' (1) or excludes it (0).
+//
+// NULL-vs-empty: the Phase 2 schema declares `user TEXT NOT NULL DEFAULT ''`
+// so user is never NULL in production. We still guard against IS NOT NULL
+// defensively in case a future migration relaxes the constraint — costs
+// nothing on a NOT NULL column. The user != '' filter is the load-bearing
+// guard; LOCK-02 doesn't propose IPs for "the empty user" (unmatched events).
+//
+// ORDER BY user ASC, conn_count DESC: stable ordering for deterministic
+// pivot output downstream (Generator does an in-memory sort by user ASC
+// after the pivot, so this ORDER BY is mainly for the per-user IP
+// ordering — most-active IP first).
+const lockdownObservationsSQL = `
+SELECT user, source_ip, COUNT(*) AS conn_count, MAX(ts_unix_ns) AS last_seen, tier
+FROM observations
+WHERE user IS NOT NULL AND user != ''
+  AND ts_unix_ns > ?
+  AND (tier = 'success' OR (? = 1 AND tier = 'targeted'))
+GROUP BY user, source_ip, tier
+ORDER BY user ASC, conn_count DESC
+`
+
+// LockdownObservations returns one row per (user, source_ip, tier) bucket
+// for observations newer than cutoffUnixNs. When includeTargeted is true,
+// tier='targeted' rows are included alongside tier='success'; otherwise
+// only tier='success' rows are returned (D-L0204-02).
+//
+// Used by internal/lockdown.Generator to build per-user IP-allowlist
+// proposals (LOCK-02). Read-only — uses the pooled reader.
+func (q *Queries) LockdownObservations(ctx context.Context, cutoffUnixNs int64, includeTargeted bool) ([]LockdownObservation, error) {
+	includeFlag := 0
+	if includeTargeted {
+		includeFlag = 1
+	}
+	rows, err := q.r.QueryContext(ctx, lockdownObservationsSQL, cutoffUnixNs, includeFlag)
+	if err != nil {
+		return nil, fmt.Errorf("queries.LockdownObservations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := []LockdownObservation{}
+	for rows.Next() {
+		var o LockdownObservation
+		if err := rows.Scan(&o.User, &o.SourceIP, &o.ConnCount, &o.LastSeenNs, &o.Tier); err != nil {
+			return nil, fmt.Errorf("queries.LockdownObservations scan: %w", err)
+		}
+		out = append(out, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("queries.LockdownObservations rows.Err: %w", err)
+	}
+	return out, nil
+}
