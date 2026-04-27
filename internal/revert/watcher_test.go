@@ -32,7 +32,6 @@ func setUp(t *testing.T) (*sysops.Fake, *Watcher) {
 }
 
 func TestWatcher_Set_writes_pointer_and_records_state(t *testing.T) {
-	t.Parallel()
 	f, w := setUp(t)
 	deadline := time.Date(2026, 4, 27, 12, 5, 0, 0, time.UTC)
 	require.NoError(t, w.Set(context.Background(), "sftpj-revert-1.service", deadline, []string{"ufw delete 1"}))
@@ -55,7 +54,6 @@ func TestWatcher_Set_writes_pointer_and_records_state(t *testing.T) {
 }
 
 func TestWatcher_Clear_removes_pointer_and_state(t *testing.T) {
-	t.Parallel()
 	f, w := setUp(t)
 	require.NoError(t, w.Set(context.Background(), "sftpj-revert-1.service", time.Now().Add(3*time.Minute), nil))
 	require.NotNil(t, w.Get())
@@ -67,7 +65,6 @@ func TestWatcher_Clear_removes_pointer_and_state(t *testing.T) {
 }
 
 func TestWatcher_Clear_idempotent_when_nothing_armed(t *testing.T) {
-	t.Parallel()
 	_, w := setUp(t)
 	require.NoError(t, w.Clear(context.Background()))
 	require.NoError(t, w.Clear(context.Background()))
@@ -75,7 +72,6 @@ func TestWatcher_Clear_idempotent_when_nothing_armed(t *testing.T) {
 }
 
 func TestWatcher_Restore_no_pointer_returns_clean(t *testing.T) {
-	t.Parallel()
 	_, w := setUp(t)
 	fired, err := w.Restore(context.Background())
 	require.NoError(t, err)
@@ -84,7 +80,6 @@ func TestWatcher_Restore_no_pointer_returns_clean(t *testing.T) {
 }
 
 func TestWatcher_Restore_pointer_active_unit_restores_state(t *testing.T) {
-	t.Parallel()
 	f, w := setUp(t)
 	require.NoError(t, w.Set(context.Background(), "sftpj-revert-1.service", time.Now().Add(3*time.Minute), nil))
 	// Drop in-process state to simulate a TUI restart.
@@ -99,7 +94,6 @@ func TestWatcher_Restore_pointer_active_unit_restores_state(t *testing.T) {
 }
 
 func TestWatcher_Restore_pointer_inactive_unit_fired_clears_pointer(t *testing.T) {
-	t.Parallel()
 	f, w := setUp(t)
 	require.NoError(t, w.Set(context.Background(), "sftpj-revert-1.service", time.Now().Add(3*time.Minute), nil))
 	// Simulate TUI restart + unit fired
@@ -117,7 +111,6 @@ func TestWatcher_Restore_pointer_inactive_unit_fired_clears_pointer(t *testing.T
 }
 
 func TestWatcher_Restore_corrupt_pointer_returns_fired_true(t *testing.T) {
-	t.Parallel()
 	f, w := setUp(t)
 	// Write garbage directly to the pointer.
 	require.NoError(t, f.AtomicWriteFile(context.Background(), PointerPath(), []byte("not-json"), 0o600))
@@ -130,7 +123,6 @@ func TestWatcher_Restore_corrupt_pointer_returns_fired_true(t *testing.T) {
 }
 
 func TestWatcher_Get_returns_defensive_copy(t *testing.T) {
-	t.Parallel()
 	_, w := setUp(t)
 	require.NoError(t, w.Set(context.Background(), "sftpj-revert-1.service", time.Now().Add(3*time.Minute), nil))
 	s1 := w.Get()
@@ -140,7 +132,6 @@ func TestWatcher_Get_returns_defensive_copy(t *testing.T) {
 }
 
 func TestWatcher_ReverseCommands_returns_defensive_copy(t *testing.T) {
-	t.Parallel()
 	_, w := setUp(t)
 	original := []string{"ufw --force delete 1", "ufw reload"}
 	require.NoError(t, w.Set(context.Background(), "sftpj-revert-1.service", time.Now().Add(3*time.Minute), original))
@@ -154,7 +145,6 @@ func TestWatcher_ReverseCommands_returns_defensive_copy(t *testing.T) {
 }
 
 func TestWatcher_satisfies_txn_RevertWatcher_interface(t *testing.T) {
-	t.Parallel()
 	// Compile-time check: *Watcher implements the txn.RevertWatcher adapter
 	// shape (Plan 04-02). We don't import internal/txn here (to avoid the
 	// cycle the adapter interface exists to prevent), so we re-state the

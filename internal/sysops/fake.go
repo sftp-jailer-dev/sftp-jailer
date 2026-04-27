@@ -560,10 +560,30 @@ func (f *Fake) MkdirAll(_ context.Context, path string, mode fs.FileMode) error 
 	return f.MkdirAllError
 }
 
-// RemoveAll implements [SystemOps.RemoveAll] (Fake).
+// RemoveAll implements [SystemOps.RemoveAll] (Fake). On the success path
+// (RemoveAllError is nil) it also removes path from f.Files so subsequent
+// ReadFile round-trips on the same path return fs.ErrNotExist — parity
+// with os.RemoveAll's filesystem semantics. Files whose key has `path/`
+// as a prefix are removed too (directory-removal parity). Error path
+// returns BEFORE state mutation (parity with AtomicWriteFile fake).
 func (f *Fake) RemoveAll(_ context.Context, path string) error {
 	f.record("RemoveAll", path)
-	return f.RemoveAllError
+	if f.RemoveAllError != nil {
+		return f.RemoveAllError
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Files != nil {
+		delete(f.Files, path)
+		// Directory-removal parity: also drop anything under path/.
+		prefix := path + "/"
+		for k := range f.Files {
+			if strings.HasPrefix(k, prefix) {
+				delete(f.Files, k)
+			}
+		}
+	}
+	return nil
 }
 
 // WriteAuthorizedKeys implements [SystemOps.WriteAuthorizedKeys] (Fake).
