@@ -174,6 +174,58 @@ type Fake struct {
 	// from SshdDumpConfig.
 	SshdDumpConfigError error
 
+	// ----------------------------------------------------------------
+	// Phase 4 additions — scripted-response mirrors of the new ufw /
+	// systemd-run / systemctl / ip mutation methods. Each *Error field,
+	// if non-nil, is returned from the corresponding method AFTER the
+	// call is recorded (parity with AtomicWriteError convention). Result
+	// fields default to the zero value so a fresh Fake reports
+	// HasPublicIPv6=(false,nil) and SystemctlIsActive=(false,nil).
+	// ----------------------------------------------------------------
+
+	// UfwAllowError, if non-nil, is returned from UfwAllow after recording.
+	UfwAllowError error
+
+	// UfwInsertError, if non-nil, is returned from UfwInsert after recording.
+	UfwInsertError error
+
+	// UfwDeleteError, if non-nil, is returned from UfwDelete after recording.
+	UfwDeleteError error
+
+	// UfwReloadError, if non-nil, is returned from UfwReload after recording.
+	UfwReloadError error
+
+	// HasPublicIPv6Result is returned as the bool result from HasPublicIPv6.
+	// Default false. Pair with HasPublicIPv6Error for failure paths.
+	HasPublicIPv6Result bool
+
+	// HasPublicIPv6Error, if non-nil, is returned as the err result from
+	// HasPublicIPv6 (Result is also returned but typically false on err).
+	HasPublicIPv6Error error
+
+	// RewriteUfwIPV6Error, if non-nil, is returned from RewriteUfwIPV6
+	// after recording.
+	RewriteUfwIPV6Error error
+
+	// SystemdRunError, if non-nil, is returned from SystemdRunOnActive
+	// after recording. Tests typically assert on f.Calls argv to verify
+	// the inline /bin/sh -c '<reverse>' shell-script body — the Fake
+	// records the FULL Command string verbatim per D-S04-08.
+	SystemdRunError error
+
+	// SystemctlStopError, if non-nil, is returned from SystemctlStop after
+	// recording.
+	SystemctlStopError error
+
+	// SystemctlIsActiveResult is returned as the bool result from
+	// SystemctlIsActive. Default false (parity with the inactive/not-loaded
+	// state on a clean test fixture).
+	SystemctlIsActiveResult bool
+
+	// SystemctlIsActiveError, if non-nil, is returned as the err result
+	// from SystemctlIsActive.
+	SystemctlIsActiveError error
+
 	// Calls is a recording of every method invocation in call order, with
 	// args serialized to the argv Args field.
 	Calls []FakeCall
@@ -592,4 +644,94 @@ func (f *Fake) Tar(_ context.Context, opts TarOpts) error {
 		"source="+opts.SourceDir,
 	)
 	return f.TarError
+}
+
+// ============================================================================
+// Phase 4 Fake methods. Each records the call into f.Calls (under f.mu in
+// record()), then consults the matching scripted-error / result field. Argv
+// is the typed-string representation pinned by plan 04-01 — exactly mirrors
+// the test expectations to keep the contract evident.
+//
+// Critical: SystemdRunOnActive records the FULL opts.Command string verbatim
+// in the recorded args. Tests golden-file the reverse-ufw shell-script body
+// against this entry per CONTEXT.md "Test strategy."
+// ============================================================================
+
+// UfwAllow implements [SystemOps.UfwAllow] (Fake).
+func (f *Fake) UfwAllow(_ context.Context, opts UfwAllowOpts) error {
+	f.record("UfwAllow",
+		"proto="+opts.Proto,
+		"src="+opts.Source,
+		"port="+opts.Port,
+		"comment="+opts.Comment,
+	)
+	return f.UfwAllowError
+}
+
+// UfwInsert implements [SystemOps.UfwInsert] (Fake).
+func (f *Fake) UfwInsert(_ context.Context, position int, opts UfwAllowOpts) error {
+	f.record("UfwInsert",
+		fmt.Sprintf("pos=%d", position),
+		"proto="+opts.Proto,
+		"src="+opts.Source,
+		"port="+opts.Port,
+		"comment="+opts.Comment,
+	)
+	return f.UfwInsertError
+}
+
+// UfwDelete implements [SystemOps.UfwDelete] (Fake).
+func (f *Fake) UfwDelete(_ context.Context, ruleID int) error {
+	f.record("UfwDelete", fmt.Sprintf("id=%d", ruleID))
+	return f.UfwDeleteError
+}
+
+// UfwReload implements [SystemOps.UfwReload] (Fake).
+func (f *Fake) UfwReload(_ context.Context) error {
+	f.record("UfwReload")
+	return f.UfwReloadError
+}
+
+// HasPublicIPv6 implements [SystemOps.HasPublicIPv6] (Fake). Returns the
+// scripted (HasPublicIPv6Result, HasPublicIPv6Error) pair. Default zero
+// value is (false, nil) — appropriate for tests that don't care about v6
+// detection.
+func (f *Fake) HasPublicIPv6(_ context.Context) (bool, error) {
+	f.record("HasPublicIPv6")
+	return f.HasPublicIPv6Result, f.HasPublicIPv6Error
+}
+
+// RewriteUfwIPV6 implements [SystemOps.RewriteUfwIPV6] (Fake).
+func (f *Fake) RewriteUfwIPV6(_ context.Context, value string) error {
+	f.record("RewriteUfwIPV6", "value="+value)
+	return f.RewriteUfwIPV6Error
+}
+
+// SystemdRunOnActive implements [SystemOps.SystemdRunOnActive] (Fake).
+//
+// Critical recording invariant (D-S04-08): the verbatim opts.Command string
+// is recorded in args as `cmd=<verbatim>`. Tests assert this against
+// golden-file ExecStart bodies for representative SAFE-04 batches.
+func (f *Fake) SystemdRunOnActive(_ context.Context, opts SystemdRunOpts) error {
+	f.record("SystemdRunOnActive",
+		"on-active="+opts.OnActive.String(),
+		"unit="+opts.UnitName,
+		"cmd="+opts.Command,
+	)
+	return f.SystemdRunError
+}
+
+// SystemctlStop implements [SystemOps.SystemctlStop] (Fake).
+func (f *Fake) SystemctlStop(_ context.Context, unitName string) error {
+	f.record("SystemctlStop", "unit="+unitName)
+	return f.SystemctlStopError
+}
+
+// SystemctlIsActive implements [SystemOps.SystemctlIsActive] (Fake). Returns
+// the scripted (SystemctlIsActiveResult, SystemctlIsActiveError) pair.
+// Default zero value is (false, nil) — parity with the systemctl exit-3
+// "inactive" state on a fresh fixture.
+func (f *Fake) SystemctlIsActive(_ context.Context, unitName string) (bool, error) {
+	f.record("SystemctlIsActive", "unit="+unitName)
+	return f.SystemctlIsActiveResult, f.SystemctlIsActiveError
 }
