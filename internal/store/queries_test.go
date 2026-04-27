@@ -9,10 +9,13 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/store"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/ufwcomment"
 )
 
 // newSeededDB opens + migrates a tmp DB and returns the Store + a Queries
@@ -89,7 +92,8 @@ func TestQueries_StatusRow_seeded(t *testing.T) {
 
 	got, err := q.StatusRow(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, 2, got.SchemaVersion)
+	// Phase 4 plan 04-03 bumps ExpectedSchemaVersion 2 → 3 with 003_user_ips.sql.
+	require.Equal(t, 3, got.SchemaVersion)
 	require.Equal(t, int64(5), got.DetailCount)
 	require.Equal(t, int64(2), got.CounterCount)
 	require.Equal(t, ts, got.LastSuccessNs)
@@ -268,4 +272,130 @@ func TestQueries_FilterEvents_parameterized_no_injection(t *testing.T) {
 	var n int
 	require.NoError(t, s.R.QueryRow(`SELECT COUNT(*) FROM observations`).Scan(&n))
 	require.Equal(t, 10, n, "observations table must NOT have been dropped by injection payload")
+}
+
+// ------ FW-08 SQLite mirror (Phase 4 plan 04-03) ------
+
+// TestExpectedSchemaVersion_is_3 pins the Phase 4 schema bump from 2 → 3.
+// Migration 003_user_ips.sql lands the user_ips table; ExpectedSchemaVersion
+// must equal the highest migration prefix.
+func TestExpectedSchemaVersion_is_3(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, 3, store.ExpectedSchemaVersion)
+}
+
+// TestRebuildUserIPs_replaces_table_in_single_tx pins the D-FW-04 contract:
+// RebuildUserIPs is a derived-cache writer (TRUNCATE + bulk INSERT in a
+// single transaction). Foreign rules (ParseErr != nil) are skipped per the
+// forward-compat invariant from internal/ufwcomment.
+func TestRebuildUserIPs_replaces_table_in_single_tx(t *testing.T) {
+	t.Parallel()
+	s, q := newSeededDB(t)
+	_ = s
+
+	rules := []firewall.Rule{
+		{ID: 1, User: "alice", Source: "203.0.113.7/32", Proto: "v4", Port: "22"},
+		{ID: 2, User: "alice", Source: "203.0.113.8/32", Proto: "v4", Port: "22"},
+		{ID: 3, User: "bob", Source: "203.0.113.9/32", Proto: "v4", Port: "22"},
+		// Foreign rule — ParseErr != nil → MUST be skipped.
+		{ID: 4, RawComment: "foreign", ParseErr: ufwcomment.ErrNotOurs},
+		// v=2 forward-compat rule — ParseErr=ErrBadVersion + User=="" → skipped.
+		{ID: 5, RawComment: "sftpj:v=2:user=carol", ParseErr: ufwcomment.ErrBadVersion},
+	}
+	frozen := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	nowFn := func() time.Time { return frozen }
+	require.NoError(t, q.RebuildUserIPs(context.Background(), rules, nowFn))
+
+	aliceIPs, err := q.UserIPs(context.Background(), "alice")
+	require.NoError(t, err)
+	require.Len(t, aliceIPs, 2)
+	require.Equal(t, frozen.UnixNano(), aliceIPs[0].LastSeenUnixNs)
+
+	bobIPs, err := q.UserIPs(context.Background(), "bob")
+	require.NoError(t, err)
+	require.Len(t, bobIPs, 1)
+
+	// Carol is the v=2 forward-compat rule's user — it MUST NOT have leaked
+	// into the mirror because ParseErr was ErrBadVersion (and User was "").
+	carolIPs, err := q.UserIPs(context.Background(), "carol")
+	require.NoError(t, err)
+	require.Empty(t, carolIPs)
+
+	// Rebuild with empty input wipes the table (truncate semantics).
+	require.NoError(t, q.RebuildUserIPs(context.Background(), nil, nowFn))
+	aliceIPs2, err := q.UserIPs(context.Background(), "alice")
+	require.NoError(t, err)
+	require.Empty(t, aliceIPs2)
+}
+
+// TestRebuildUserIPs_skips_rules_with_empty_user pins that User=="" rules
+// (legacy v=0 with no user, or any malformed decode) are excluded from
+// the mirror.
+func TestRebuildUserIPs_skips_rules_with_empty_user(t *testing.T) {
+	t.Parallel()
+	s, q := newSeededDB(t)
+	_ = s
+
+	rules := []firewall.Rule{
+		{ID: 1, User: "", Source: "203.0.113.7/32", Proto: "v4", Port: "22"}, // skipped
+	}
+	require.NoError(t, q.RebuildUserIPs(context.Background(), rules, nil))
+
+	// nil-user query: just confirm no leakage occurred under any name.
+	got, err := q.UserIPs(context.Background(), "")
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
+// TestRebuildUserIPs_default_now_when_nil pins that nowFn=nil falls back
+// to time.Now() — production callers don't have to thread a clock through.
+func TestRebuildUserIPs_default_now_when_nil(t *testing.T) {
+	t.Parallel()
+	s, q := newSeededDB(t)
+	_ = s
+
+	before := time.Now().UnixNano()
+	rules := []firewall.Rule{
+		{ID: 1, User: "alice", Source: "203.0.113.7/32", Proto: "v4", Port: "22"},
+	}
+	require.NoError(t, q.RebuildUserIPs(context.Background(), rules, nil))
+	after := time.Now().UnixNano()
+
+	ips, err := q.UserIPs(context.Background(), "alice")
+	require.NoError(t, err)
+	require.Len(t, ips, 1)
+	require.GreaterOrEqual(t, ips[0].LastSeenUnixNs, before)
+	require.LessOrEqual(t, ips[0].LastSeenUnixNs, after)
+}
+
+// TestUserIPs_returns_empty_slice_not_nil_on_no_match pins the contract
+// that callers can range over the result without nil-checking.
+func TestUserIPs_returns_empty_slice_not_nil_on_no_match(t *testing.T) {
+	t.Parallel()
+	_, q := newSeededDB(t)
+	got, err := q.UserIPs(context.Background(), "nobody")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Len(t, got, 0)
+}
+
+// TestRebuildUserIPs_idempotent_repeat_call pins that calling RebuildUserIPs
+// twice in a row with identical input yields identical output (no PRIMARY
+// KEY collision crashes; the ON CONFLICT clause covers a same-rebuild race).
+func TestRebuildUserIPs_idempotent_repeat_call(t *testing.T) {
+	t.Parallel()
+	s, q := newSeededDB(t)
+	_ = s
+
+	rules := []firewall.Rule{
+		{ID: 1, User: "alice", Source: "203.0.113.7/32", Proto: "v4", Port: "22"},
+	}
+	frozen := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	nowFn := func() time.Time { return frozen }
+	require.NoError(t, q.RebuildUserIPs(context.Background(), rules, nowFn))
+	require.NoError(t, q.RebuildUserIPs(context.Background(), rules, nowFn))
+
+	ips, err := q.UserIPs(context.Background(), "alice")
+	require.NoError(t, err)
+	require.Len(t, ips, 1)
 }

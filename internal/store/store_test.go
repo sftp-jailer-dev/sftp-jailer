@@ -63,8 +63,9 @@ func TestReader_pool_sized(t *testing.T) {
 
 // TestMigrate_advances_to_expected_version replaces the Phase-1
 // "empty migrations" no-op test. With Phase 2's 001+002 migrations
-// landed, a fresh DB MUST advance to ExpectedSchemaVersion (2) on Migrate.
-// The detailed table+index assertions live in
+// and Phase 4 plan 04-03's 003_user_ips.sql landed, a fresh DB MUST
+// advance to ExpectedSchemaVersion (currently 3) on Migrate. The
+// detailed table+index assertions live in
 // TestMigrate_applies_001_init_and_002_indexes.
 func TestMigrate_advances_to_expected_version(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
@@ -201,9 +202,10 @@ func TestPeekUserVersion_nonexistent_path(t *testing.T) {
 }
 
 // TestExpectedSchemaVersion_constant verifies the exported constant matches
-// the highest-numbered migration this binary ships (currently 2).
+// the highest-numbered migration this binary ships (currently 3 — Phase 4
+// plan 04-03 added 003_user_ips.sql for the FW-08 derived cache mirror).
 func TestExpectedSchemaVersion_constant(t *testing.T) {
-	require.Equal(t, 2, store.ExpectedSchemaVersion, "ExpectedSchemaVersion must equal 2 (highest migration)")
+	require.Equal(t, 3, store.ExpectedSchemaVersion, "ExpectedSchemaVersion must equal 3 (highest migration)")
 }
 
 // TestSchema_observations_columns verifies the observations table schema
