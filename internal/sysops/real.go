@@ -50,6 +50,7 @@ type Real struct {
 	// Phase 4 — FW-06 IPv6 detection + SAFE-04 transient-unit revert.
 	binIp         string // `ip -6 addr show scope global` (HasPublicIPv6)
 	binSystemdRun string // `systemd-run --on-active=<dur> --unit=<n> /bin/sh -c '<cmd>'`
+	binWho        string // `who am i` — LOCK-03 admin-IP detection fallback (D-L0204-05)
 
 	// defaultTimeout applies to Exec() calls whose context has no deadline.
 	// Bounds T-01-07 (unbounded subprocess hang).
@@ -78,6 +79,7 @@ func NewReal() SystemOps {
 	// Phase 4 binaries.
 	r.binIp, _ = exec.LookPath("ip")
 	r.binSystemdRun, _ = exec.LookPath("systemd-run")
+	r.binWho, _ = exec.LookPath("who")
 	return r
 }
 
@@ -168,6 +170,7 @@ func (r *Real) Exec(ctx context.Context, name string, args ...string) (ExecResul
 			// Phase 4 — FW-06 detection + SAFE-04 transient unit.
 			"ip":          r.binIp,         // Phase 4 — HasPublicIPv6
 			"systemd-run": r.binSystemdRun, // Phase 4 — SAFE-04 transient unit
+			"who":         r.binWho,        // Phase 4 — LOCK-03 admin-IP fallback (D-L0204-05)
 			// chpasswd is INTENTIONALLY excluded from this allow map: it
 			// has its own non-Exec wrapper (chpasswd.go) for the stdin
 			// pipe per pitfall E3 (password never on argv).
