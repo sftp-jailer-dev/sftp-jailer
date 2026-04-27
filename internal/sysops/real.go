@@ -47,6 +47,10 @@ type Real struct {
 	binChage    string
 	binTar      string
 
+	// Phase 4 — FW-06 IPv6 detection + SAFE-04 transient-unit revert.
+	binIp         string // `ip -6 addr show scope global` (HasPublicIPv6)
+	binSystemdRun string // `systemd-run --on-active=<dur> --unit=<n> /bin/sh -c '<cmd>'`
+
 	// defaultTimeout applies to Exec() calls whose context has no deadline.
 	// Bounds T-01-07 (unbounded subprocess hang).
 	defaultTimeout time.Duration
@@ -71,6 +75,9 @@ func NewReal() SystemOps {
 	r.binChpasswd, _ = exec.LookPath("chpasswd")
 	r.binChage, _ = exec.LookPath("chage")
 	r.binTar, _ = exec.LookPath("tar")
+	// Phase 4 binaries.
+	r.binIp, _ = exec.LookPath("ip")
+	r.binSystemdRun, _ = exec.LookPath("systemd-run")
 	return r
 }
 
@@ -158,6 +165,9 @@ func (r *Real) Exec(ctx context.Context, name string, args ...string) (ExecResul
 			"gpasswd": r.binGpasswd,
 			"chage":   r.binChage,
 			"tar":     r.binTar,
+			// Phase 4 — FW-06 detection + SAFE-04 transient unit.
+			"ip":          r.binIp,         // Phase 4 — HasPublicIPv6
+			"systemd-run": r.binSystemdRun, // Phase 4 — SAFE-04 transient unit
 			// chpasswd is INTENTIONALLY excluded from this allow map: it
 			// has its own non-Exec wrapper (chpasswd.go) for the stdin
 			// pipe per pitfall E3 (password never on argv).
@@ -564,6 +574,222 @@ func (r *Real) Tar(ctx context.Context, opts TarOpts) error {
 			opts.ArchivePath, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
 	}
 	return nil
+}
+
+// ----------------------------------------------------------------------------
+// Phase 4 mutation methods — see internal/sysops/sysops.go for the
+// interface contract. These follow the Phase 3 Useradd / SshdT /
+// SshdDumpConfig wrapper shape: binary-missing fast-fail, build args,
+// exec via r.Exec (allowlist + timeout), interpret ExitCode → typed
+// error. Architectural invariant: every Phase 4 ufw / systemd-run /
+// systemctl / ip callsite lives in this file. CI guard
+// scripts/check-no-exec-outside-sysops.sh enforces.
+// ----------------------------------------------------------------------------
+
+// UfwAllow implements [SystemOps.UfwAllow] (D-FW-01).
+func (r *Real) UfwAllow(ctx context.Context, opts UfwAllowOpts) error {
+	if r.binUfw == "" {
+		return fmt.Errorf("sysops: ufw not installed")
+	}
+	args := []string{"allow"}
+	if opts.Proto != "" {
+		args = append(args, "proto", opts.Proto)
+	}
+	args = append(args, "from", opts.Source, "to", "any", "port", opts.Port)
+	if opts.Comment != "" {
+		args = append(args, "comment", opts.Comment)
+	}
+	res, err := r.Exec(ctx, "ufw", args...)
+	if err != nil {
+		return fmt.Errorf("sysops.UfwAllow src=%s: %w", opts.Source, err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("sysops.UfwAllow src=%s: exit %d: %s",
+			opts.Source, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
+// UfwInsert implements [SystemOps.UfwInsert] — `ufw insert <position> allow …`
+// (D-FW-02 always position 1 in production).
+func (r *Real) UfwInsert(ctx context.Context, position int, opts UfwAllowOpts) error {
+	if r.binUfw == "" {
+		return fmt.Errorf("sysops: ufw not installed")
+	}
+	args := []string{"insert", strconv.Itoa(position), "allow"}
+	if opts.Proto != "" {
+		args = append(args, "proto", opts.Proto)
+	}
+	args = append(args, "from", opts.Source, "to", "any", "port", opts.Port)
+	if opts.Comment != "" {
+		args = append(args, "comment", opts.Comment)
+	}
+	res, err := r.Exec(ctx, "ufw", args...)
+	if err != nil {
+		return fmt.Errorf("sysops.UfwInsert pos=%d src=%s: %w", position, opts.Source, err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("sysops.UfwInsert pos=%d src=%s: exit %d: %s",
+			position, opts.Source, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
+// UfwDelete implements [SystemOps.UfwDelete] — `ufw --force delete <ruleID>`
+// (D-FW-07). The --force flag is mandatory: `ufw delete N` prompts y/N
+// when stdin is not a TTY (which it never is in a sysops invocation), so
+// without --force the subprocess would block until ctx timeout.
+func (r *Real) UfwDelete(ctx context.Context, ruleID int) error {
+	if r.binUfw == "" {
+		return fmt.Errorf("sysops: ufw not installed")
+	}
+	res, err := r.Exec(ctx, "ufw", "--force", "delete", strconv.Itoa(ruleID))
+	if err != nil {
+		return fmt.Errorf("sysops.UfwDelete id=%d: %w", ruleID, err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("sysops.UfwDelete id=%d: exit %d: %s",
+			ruleID, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
+// UfwReload implements [SystemOps.UfwReload] (D-FW-04). Comments survive
+// across `ufw reload` per RESEARCH §scripts/smoke-ufw.sh.
+func (r *Real) UfwReload(ctx context.Context) error {
+	if r.binUfw == "" {
+		return fmt.Errorf("sysops: ufw not installed")
+	}
+	res, err := r.Exec(ctx, "ufw", "reload")
+	if err != nil {
+		return fmt.Errorf("sysops.UfwReload: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("sysops.UfwReload: exit %d: %s",
+			res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
+// HasPublicIPv6 implements [SystemOps.HasPublicIPv6] — parses
+// `ip -6 addr show scope global` and returns true when at least one
+// non-link-local non-loopback IPv6 address is bound (D-FW-03 step 2).
+// Empty output = no public v6 = (false, nil).
+func (r *Real) HasPublicIPv6(ctx context.Context) (bool, error) {
+	if r.binIp == "" {
+		return false, fmt.Errorf("sysops: ip not installed")
+	}
+	res, err := r.Exec(ctx, "ip", "-6", "addr", "show", "scope", "global")
+	if err != nil {
+		return false, fmt.Errorf("sysops.HasPublicIPv6: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return false, fmt.Errorf("sysops.HasPublicIPv6: exit %d: %s",
+			res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	sc := bufio.NewScanner(bytes.NewReader(res.Stdout))
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		// `inet6 2001:db8::1/64 scope global …` — match scope global lines.
+		if strings.HasPrefix(line, "inet6 ") && strings.Contains(line, "scope global") {
+			return true, nil
+		}
+	}
+	if scErr := sc.Err(); scErr != nil {
+		return false, fmt.Errorf("sysops.HasPublicIPv6 scan: %w", scErr)
+	}
+	return false, nil
+}
+
+// RewriteUfwIPV6 implements [SystemOps.RewriteUfwIPV6] (D-FW-03 step 3).
+// Reads /etc/default/ufw, replaces (or appends) the `IPV6=<value>` line,
+// and atomic-writes via AtomicWriteFile. All other lines pass through
+// byte-for-byte. The path /etc/default/ufw must be on the AtomicWriteFile
+// allowlist (sysops/atomic.go).
+func (r *Real) RewriteUfwIPV6(ctx context.Context, value string) error {
+	const path = "/etc/default/ufw"
+	prior, err := r.ReadFile(ctx, path)
+	if err != nil {
+		return fmt.Errorf("sysops.RewriteUfwIPV6 read %s: %w", path, err)
+	}
+	// Replace the first IPV6= line in place (any leading whitespace
+	// preserved is fine — we match the line key only). If the line is
+	// missing, append it. Comments (#) and blank lines pass through
+	// verbatim.
+	lines := strings.Split(string(prior), "\n")
+	out := make([]string, 0, len(lines)+1)
+	replaced := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Match shell-style assignment prefix only.
+		if !replaced && strings.HasPrefix(trimmed, "IPV6=") {
+			out = append(out, "IPV6="+value)
+			replaced = true
+			continue
+		}
+		out = append(out, line)
+	}
+	if !replaced {
+		out = append(out, "IPV6="+value)
+	}
+	return r.AtomicWriteFile(ctx, path, []byte(strings.Join(out, "\n")), 0o644)
+}
+
+// SystemdRunOnActive implements [SystemOps.SystemdRunOnActive]
+// (D-S04-04 + D-S04-08). Composes argv:
+//
+//	systemd-run --on-active=<N>sec --unit=<UnitName> /bin/sh -c <Command>
+//
+// The verbatim `<Command>` string is NOT shell-escaped here — callers MUST
+// pre-validate every embedded value (ufwcomment.Encode regex + net.ParseCIDR).
+func (r *Real) SystemdRunOnActive(ctx context.Context, opts SystemdRunOpts) error {
+	if r.binSystemdRun == "" {
+		return fmt.Errorf("sysops: systemd-run not installed")
+	}
+	// Map duration to a format systemd-run accepts; integer seconds is the
+	// portable lowest common denominator (`<N>sec`).
+	durSpec := fmt.Sprintf("%dsec", int(opts.OnActive.Seconds()))
+	res, err := r.Exec(ctx, "systemd-run",
+		"--on-active="+durSpec,
+		"--unit="+opts.UnitName,
+		"/bin/sh", "-c", opts.Command,
+	)
+	if err != nil {
+		return fmt.Errorf("sysops.SystemdRunOnActive unit=%s: %w", opts.UnitName, err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("sysops.SystemdRunOnActive unit=%s: exit %d: %s",
+			opts.UnitName, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
+// SystemctlStop implements [SystemOps.SystemctlStop]. Non-zero exit is
+// surfaced as a wrapped error; the caller (NewCancelRevertStep /
+// revert.Watcher.Clear) decides whether non-existent-unit / already-stopped
+// states are non-fatal.
+func (r *Real) SystemctlStop(ctx context.Context, unitName string) error {
+	res, err := r.Exec(ctx, "systemctl", "stop", unitName)
+	if err != nil {
+		return fmt.Errorf("sysops.SystemctlStop %s: %w", unitName, err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("sysops.SystemctlStop %s: exit %d: %s",
+			unitName, res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
+// SystemctlIsActive implements [SystemOps.SystemctlIsActive]. systemctl
+// is-active exits 0 for active, 3 for inactive, 4 for not-loaded. The
+// non-zero exits are normal "not active" states — map to (false, nil).
+// Only ctx errors / exec failures surface as Go errors.
+func (r *Real) SystemctlIsActive(ctx context.Context, unitName string) (bool, error) {
+	res, err := r.Exec(ctx, "systemctl", "is-active", unitName)
+	if err != nil {
+		return false, fmt.Errorf("sysops.SystemctlIsActive %s: %w", unitName, err)
+	}
+	return res.ExitCode == 0, nil
 }
 
 // SshdDumpConfig parses `sshd -T` output into a map[directive][]values.

@@ -17,6 +17,10 @@ func TestAtomicWriteFile_creates_file_with_mode(t *testing.T) {
 	require.True(t, ok)
 
 	dir := t.TempDir()
+	// The Phase 4 path allowlist rejects arbitrary tmpdirs — extend it for the test.
+	SetAtomicWriteAllowlistForTest([]string{dir + "/"})
+	t.Cleanup(ResetAtomicWriteAllowlistForTest)
+
 	path := filepath.Join(dir, "out.yaml")
 	data := make([]byte, 100)
 	for i := range data {
@@ -41,6 +45,9 @@ func TestAtomicWriteFile_overwrites_existing_atomically(t *testing.T) {
 	require.True(t, ok)
 
 	dir := t.TempDir()
+	SetAtomicWriteAllowlistForTest([]string{dir + "/"})
+	t.Cleanup(ResetAtomicWriteAllowlistForTest)
+
 	path := filepath.Join(dir, "exists.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("old contents"), 0o600))
 
@@ -71,8 +78,12 @@ func TestAtomicWriteFile_cleanup_on_write_error(t *testing.T) {
 	r, ok := NewReal().(*Real)
 	require.True(t, ok)
 
+	dir := t.TempDir()
+	SetAtomicWriteAllowlistForTest([]string{dir + "/"})
+	t.Cleanup(ResetAtomicWriteAllowlistForTest)
+
 	// A directory that does not exist — CreateTemp will fail in the parent dir.
-	bogus := filepath.Join(t.TempDir(), "nonexistent-subdir-xyz", "file.yaml")
+	bogus := filepath.Join(dir, "nonexistent-subdir-xyz", "file.yaml")
 	err := r.AtomicWriteFile(context.Background(), bogus, []byte("ignored"), 0o644)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "AtomicWriteFile")
@@ -91,6 +102,9 @@ func TestAtomicWriteFile_tmp_in_same_dir(t *testing.T) {
 	require.True(t, ok)
 
 	dir := t.TempDir()
+	SetAtomicWriteAllowlistForTest([]string{dir + "/"})
+	t.Cleanup(ResetAtomicWriteAllowlistForTest)
+
 	path := filepath.Join(dir, "settings.yaml")
 
 	require.NoError(t, r.AtomicWriteFile(context.Background(), path, []byte("ok"), 0o600))
