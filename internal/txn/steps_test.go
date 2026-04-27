@@ -3,6 +3,7 @@ package txn
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"reflect"
@@ -778,4 +779,414 @@ func TestAllConstructors_return_non_nil_steps(t *testing.T) {
 
 	_ = reflect.TypeOf
 	_ = fs.ModeSetuid // ensure fs import is used somewhere if needed
+}
+
+// ============================================================================
+// Phase 4 Plan 02 — 9 new Step constructors (FW + SAFE-04 wrapper pair)
+// ============================================================================
+
+// containsCall reports whether f.Calls contains an entry with the given
+// method name and (optionally) all of `wantArgs` as substrings of any of the
+// entry's args. Helpful for asserting argv shape without coupling tests to
+// the exact arg-ordering of the Fake's typed-string format.
+func containsCall(calls []sysops.FakeCall, method string, wantArgs ...string) bool {
+	for _, c := range calls {
+		if c.Method != method {
+			continue
+		}
+		all := true
+		for _, w := range wantArgs {
+			found := false
+			for _, a := range c.Args {
+				if strings.Contains(a, w) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				all = false
+				break
+			}
+		}
+		if all {
+			return true
+		}
+	}
+	return false
+}
+
+func TestNewUfwAllowStep_apply_calls_UfwAllow_compensate_is_noop(t *testing.T) {
+	t.Parallel()
+	opts := sysops.UfwAllowOpts{
+		Proto: "tcp", Source: "203.0.113.7/32", Port: "22",
+		Comment: "sftpj:v=1:user=alice",
+	}
+	f := sysops.NewFake()
+	step := NewUfwAllowStep(opts)
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	// Apply records UfwAllow with the verbatim opts.
+	require.True(t, containsCall(f.Calls, "UfwAllow", "src=203.0.113.7/32", "comment=sftpj:v=1:user=alice"),
+		"Apply must record UfwAllow with src + comment")
+
+	callsBefore := len(f.Calls)
+	require.NoError(t, step.Compensate(ctx, f))
+	// Compensate is intentionally a no-op (relies on SAFE-04 revert window).
+	require.Equal(t, callsBefore, len(f.Calls), "Compensate must be a no-op")
+}
+
+func TestNewUfwInsertStep_apply_calls_UfwInsert_at_position_1(t *testing.T) {
+	t.Parallel()
+	opts := sysops.UfwAllowOpts{
+		Proto: "tcp", Source: "203.0.113.7/32", Port: "22",
+		Comment: "sftpj:v=1:user=alice",
+	}
+	f := sysops.NewFake()
+	step := NewUfwInsertStep(opts)
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	// Apply records UfwInsert with pos=1 per D-FW-02.
+	require.True(t, containsCall(f.Calls, "UfwInsert", "pos=1", "src=203.0.113.7/32"),
+		"Apply must record UfwInsert at position 1")
+
+	// Without SetAssignedID, Compensate is a no-op.
+	callsBefore := len(f.Calls)
+	require.NoError(t, step.Compensate(ctx, f))
+	require.Equal(t, callsBefore, len(f.Calls), "Compensate without assignedID must be a no-op")
+}
+
+func TestNewUfwInsertStep_compensate_with_assigned_id_calls_UfwDelete(t *testing.T) {
+	t.Parallel()
+	opts := sysops.UfwAllowOpts{
+		Proto: "tcp", Source: "203.0.113.7/32", Port: "22",
+		Comment: "sftpj:v=1:user=alice",
+	}
+	f := sysops.NewFake()
+	step := NewUfwInsertStep(opts)
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	// SetAssignedID populates the captured ID; Compensate then calls UfwDelete.
+	concrete, ok := step.(*ufwInsertStep)
+	require.True(t, ok, "NewUfwInsertStep must return *ufwInsertStep concrete")
+	concrete.SetAssignedID(7)
+
+	require.NoError(t, step.Compensate(ctx, f))
+	require.True(t, containsCall(f.Calls, "UfwDelete", "id=7"),
+		"Compensate with assignedID=7 must call UfwDelete with id=7")
+}
+
+func TestNewUfwInsertStep_compensate_treats_rule_not_found_as_success(t *testing.T) {
+	t.Parallel()
+	opts := sysops.UfwAllowOpts{
+		Proto: "tcp", Source: "203.0.113.7/32", Port: "22",
+		Comment: "sftpj:v=1:user=alice",
+	}
+	f := sysops.NewFake()
+	f.UfwDeleteError = errors.New("ERROR: Could not delete non-existent rule")
+	step := NewUfwInsertStep(opts).(*ufwInsertStep)
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+	step.SetAssignedID(99)
+
+	// Idempotent: "Could not delete" maps to nil per W-04 idempotent-Compensate.
+	require.NoError(t, step.Compensate(ctx, f))
+}
+
+func TestNewUfwDeleteStep_apply_calls_UfwDelete_compensate_is_noop(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	step := NewUfwDeleteStep(3)
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	require.True(t, containsCall(f.Calls, "UfwDelete", "id=3"),
+		"Apply must record UfwDelete with id=3")
+
+	callsBefore := len(f.Calls)
+	require.NoError(t, step.Compensate(ctx, f))
+	// Intentional no-op per D-S04-05 / D-FW-07 — once a rule is deleted at the
+	// tool layer the SAFE-04 revert window is the only recovery path.
+	require.Equal(t, callsBefore, len(f.Calls), "Compensate must be a no-op")
+}
+
+func TestNewUfwReloadStep_apply_and_compensate_both_call_UfwReload(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	step := NewUfwReloadStep()
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+	require.NoError(t, step.Compensate(ctx, f))
+
+	// Both Apply and Compensate re-issue UfwReload — same op as compensator.
+	var reloads int
+	for _, c := range f.Calls {
+		if c.Method == "UfwReload" {
+			reloads++
+		}
+	}
+	require.Equal(t, 2, reloads, "Apply + Compensate must each issue UfwReload exactly once")
+}
+
+func TestNewWriteUfwIPV6Step_apply_captures_prior_compensate_restores(t *testing.T) {
+	t.Parallel()
+	const ufwDefault = "/etc/default/ufw"
+	priorBytes := []byte("IPV6=no\nFOO=bar\n")
+
+	// Allow writes to the default ufw path AND any tmpdir for atomic-write
+	// path-allowlist parity (the Fake doesn't actually use the allowlist, but
+	// this matches the Real-world contract).
+	f := sysops.NewFake()
+	f.Files[ufwDefault] = priorBytes
+
+	step := NewWriteUfwIPV6Step("yes", frozenNow())
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	// Apply reads prior bytes, then calls RewriteUfwIPV6 with value=yes.
+	require.True(t, containsCall(f.Calls, "ReadFile", ufwDefault),
+		"Apply must read prior bytes via ReadFile")
+	require.True(t, containsCall(f.Calls, "RewriteUfwIPV6", "value=yes"),
+		"Apply must call RewriteUfwIPV6 with value=yes")
+
+	require.NoError(t, step.Compensate(ctx, f))
+	// Compensate writes the prior bytes back via AtomicWriteFile.
+	require.True(t, containsCall(f.Calls, "AtomicWriteFile", ufwDefault),
+		"Compensate must restore prior bytes via AtomicWriteFile")
+	require.Equal(t, priorBytes, f.Files[ufwDefault],
+		"Compensate must leave /etc/default/ufw byte-identical to the prior content")
+}
+
+func TestNewWriteUfwIPV6Step_apply_with_no_prior_compensate_removes(t *testing.T) {
+	t.Parallel()
+	const ufwDefault = "/etc/default/ufw"
+	f := sysops.NewFake()
+	// no prior file at /etc/default/ufw
+	step := NewWriteUfwIPV6Step("yes", frozenNow())
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	// RewriteUfwIPV6 was still called — the "prior" capture is best-effort.
+	require.True(t, containsCall(f.Calls, "RewriteUfwIPV6", "value=yes"))
+
+	require.NoError(t, step.Compensate(ctx, f))
+	// With no prior, Compensate calls RemoveAll on the path.
+	require.True(t, containsCall(f.Calls, "RemoveAll", ufwDefault),
+		"Compensate without prior content must RemoveAll the path")
+}
+
+func TestNewBackupDefaultUfwStep_and_NewRewriteUfwIPV6Step_are_aliases(t *testing.T) {
+	t.Parallel()
+	// Both alias constructors must return non-nil Steps with stable Names.
+	a := NewBackupDefaultUfwStep(frozenNow())
+	b := NewRewriteUfwIPV6Step("yes", frozenNow())
+	require.NotNil(t, a)
+	require.NotNil(t, b)
+	require.NotEmpty(t, a.Name())
+	require.NotEmpty(t, b.Name())
+}
+
+func TestNewSystemctlRestartUfwStep_apply_and_compensate_call_systemctl_restart_ufw(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	// Script the systemctl restart ufw response (Exec fake demands a scripted
+	// response by exact-match key).
+	f.ExecResponses = map[string]sysops.ExecResult{
+		"systemctl restart ufw": {ExitCode: 0},
+	}
+	step := NewSystemctlRestartUfwStep()
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+	require.NoError(t, step.Compensate(ctx, f))
+
+	// Both Apply and Compensate dispatch via Exec("systemctl", "restart", "ufw").
+	var execs int
+	for _, c := range f.Calls {
+		if c.Method != "Exec" {
+			continue
+		}
+		// Args[0] is the binary name; remaining args are the argv tail.
+		if len(c.Args) >= 3 && c.Args[0] == "systemctl" && c.Args[1] == "restart" && c.Args[2] == "ufw" {
+			execs++
+		}
+	}
+	require.Equal(t, 2, execs, "Apply + Compensate must each issue `systemctl restart ufw` once")
+}
+
+// ---- SAFE-04 wrapper pair tests (Task 2 — written together with Task 1
+// to keep the file's test-block contiguous; the SAFE-04 helpers + impls
+// land in Task 2's commit).
+// ----------------------------------------------------------------------
+
+// fakeRevertWatcher implements the txn.RevertWatcher adapter interface for
+// testing without pulling internal/revert (Plan 04-04) into the dep tree.
+type fakeRevertWatcher struct {
+	setCalled   bool
+	setUnit     string
+	setDeadline time.Time
+	setCmds     []string
+	clearCalled bool
+	setErr      error
+	clearErr    error
+}
+
+func (w *fakeRevertWatcher) Set(_ context.Context, unit string, dl time.Time, cmds []string) error {
+	w.setCalled = true
+	w.setUnit = unit
+	w.setDeadline = dl
+	w.setCmds = append([]string(nil), cmds...)
+	return w.setErr
+}
+
+func (w *fakeRevertWatcher) Clear(_ context.Context) error {
+	w.clearCalled = true
+	return w.clearErr
+}
+
+func TestNewScheduleRevertStep_unit_name_uses_unix_ns_format(t *testing.T) {
+	t.Parallel()
+	frozen := time.Date(2026, 4, 27, 12, 0, 0, 123_456_789, time.UTC)
+	nowFn := func() time.Time { return frozen }
+	f := sysops.NewFake()
+	w := &fakeRevertWatcher{}
+	step := NewScheduleRevertStep(
+		[]string{"ufw delete 1", "ufw reload"},
+		frozen.Add(3*time.Minute),
+		w, nowFn,
+	)
+	require.NoError(t, step.Apply(context.Background(), f))
+
+	// Unit name: sftpj-revert-<unix-ns>.service per D-S04-04.
+	concrete, ok := step.(*scheduleRevertStep)
+	require.True(t, ok, "NewScheduleRevertStep must return *scheduleRevertStep")
+	wantUnit := fmt.Sprintf("sftpj-revert-%d.service", frozen.UnixNano())
+	require.Equal(t, wantUnit, concrete.UnitName())
+
+	// SystemdRunOnActive recorded with verbatim cmd ("ufw delete 1; ufw reload").
+	require.True(t, containsCall(f.Calls, "SystemdRunOnActive", "cmd=ufw delete 1; ufw reload"),
+		"SystemdRunOnActive must record verbatim joined cmd")
+	require.True(t, containsCall(f.Calls, "SystemdRunOnActive", "unit="+wantUnit),
+		"SystemdRunOnActive must record unit=<expected>")
+
+	// Watcher.Set called exactly once with the assigned unit + deadline.
+	require.True(t, w.setCalled, "watcher.Set must be called during Apply")
+	require.Equal(t, wantUnit, w.setUnit)
+	require.Equal(t, frozen.Add(3*time.Minute), w.setDeadline)
+}
+
+func TestNewScheduleRevertStep_compensate_stops_unit_and_clears_watcher(t *testing.T) {
+	t.Parallel()
+	frozen := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	nowFn := func() time.Time { return frozen }
+	f := sysops.NewFake()
+	w := &fakeRevertWatcher{}
+	step := NewScheduleRevertStep(
+		[]string{"ufw delete 1", "ufw reload"},
+		frozen.Add(3*time.Minute),
+		w, nowFn,
+	)
+	ctx := context.Background()
+	require.NoError(t, step.Apply(ctx, f))
+
+	require.NoError(t, step.Compensate(ctx, f))
+	// Compensate calls SystemctlStop on the assigned unit.
+	concrete := step.(*scheduleRevertStep)
+	require.True(t, containsCall(f.Calls, "SystemctlStop", "unit="+concrete.UnitName()),
+		"Compensate must SystemctlStop the assigned unit")
+	// Compensate also clears the watcher pointer.
+	require.True(t, w.clearCalled, "Compensate must call watcher.Clear")
+}
+
+func TestNewScheduleRevertStep_rejects_empty_reverse_cmds(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	step := NewScheduleRevertStep(
+		[]string{},
+		time.Now().Add(3*time.Minute),
+		nil, nil,
+	)
+	err := step.Apply(context.Background(), f)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no reverse commands",
+		"Apply must reject empty reverseCmds")
+}
+
+func TestNewScheduleRevertStep_rejects_past_deadline(t *testing.T) {
+	t.Parallel()
+	frozen := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
+	nowFn := func() time.Time { return frozen }
+	f := sysops.NewFake()
+	step := NewScheduleRevertStep(
+		[]string{"ufw delete 1"},
+		frozen.Add(-1*time.Minute), // past!
+		nil, nowFn,
+	)
+	err := step.Apply(context.Background(), f)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "deadline",
+		"Apply must reject past deadlines (T-04-02-02 mitigation)")
+}
+
+func TestNewScheduleRevertStep_compensate_before_apply_is_noop(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	w := &fakeRevertWatcher{}
+	step := NewScheduleRevertStep(
+		[]string{"ufw delete 1"},
+		time.Now().Add(3*time.Minute),
+		w, nil,
+	)
+	// Apply NEVER ran — Compensate must be a no-op (no unit assigned).
+	require.NoError(t, step.Compensate(context.Background(), f))
+	require.False(t, w.clearCalled,
+		"Compensate before Apply must not touch the watcher")
+}
+
+func TestNewCancelRevertStep_apply_stops_unit_and_clears_watcher(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	w := &fakeRevertWatcher{}
+	step := NewCancelRevertStep("sftpj-revert-1.service", w)
+	require.NoError(t, step.Apply(context.Background(), f))
+
+	require.True(t, containsCall(f.Calls, "SystemctlStop", "unit=sftpj-revert-1.service"),
+		"Apply must SystemctlStop the named unit")
+	require.True(t, w.clearCalled, "Apply must call watcher.Clear")
+}
+
+func TestNewCancelRevertStep_compensate_is_intentional_noop(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	w := &fakeRevertWatcher{}
+	step := NewCancelRevertStep("sftpj-revert-1.service", w)
+	require.NoError(t, step.Apply(context.Background(), f))
+	callsBefore := len(f.Calls)
+
+	// Compensate is intentional no-op per D-S04-05.
+	require.NoError(t, step.Compensate(context.Background(), f))
+	require.Equal(t, callsBefore, len(f.Calls),
+		"Compensate must not touch sysops at all (D-S04-05 irreversible by design)")
+}
+
+func TestNewCancelRevertStep_unit_not_loaded_is_idempotent(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	f.SystemctlStopError = errors.New(
+		"Failed to stop sftpj-revert-X.service: Unit sftpj-revert-X.service not loaded")
+	w := &fakeRevertWatcher{}
+	step := NewCancelRevertStep("sftpj-revert-X.service", w)
+	// Idempotent: "not loaded" maps to nil, watcher.Clear still runs.
+	require.NoError(t, step.Apply(context.Background(), f))
+	require.True(t, w.clearCalled,
+		"Apply must still call watcher.Clear when the unit was already stopped")
+}
+
+func TestRevertWatcher_interface_satisfied_by_fakeRevertWatcher(t *testing.T) {
+	t.Parallel()
+	// Compile-time verification that the test fake satisfies the production
+	// adapter interface. Plan 04-04's *revert.Watcher must satisfy this same
+	// shape so NewScheduleRevertStep accepts it without import cycle.
+	var _ RevertWatcher = (*fakeRevertWatcher)(nil)
 }
