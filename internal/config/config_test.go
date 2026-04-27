@@ -246,6 +246,65 @@ func TestConfig_PasswordAging_defaults_and_validate(t *testing.T) {
 	})
 }
 
+// TestConfig_LockdownProposalWindowDays_default_90: D-L0204-01 sets the
+// proposal-window default to 90 days (independent of detail_retention_days).
+// Defaults() MUST populate the field, and a Validate-clean Defaults() MUST
+// remain Validate-clean after the new field is added.
+func TestConfig_LockdownProposalWindowDays_default_90(t *testing.T) {
+	d := config.Defaults()
+	require.Equal(t, 90, d.LockdownProposalWindowDays,
+		"Defaults().LockdownProposalWindowDays must be 90 (D-L0204-01)")
+
+	require.Empty(t, config.Validate(d),
+		"Defaults() must remain Validate-clean after the new knob lands")
+}
+
+// TestConfig_LockdownProposalWindowDays_validate_range: range is [1, 3650]
+// (10 years cap to bound T-04-07-06 "absurd-input" DoS). 0 / -1 / 3651 fail;
+// 1 / 90 / 3650 pass.
+func TestConfig_LockdownProposalWindowDays_validate_range(t *testing.T) {
+	for _, bad := range []int{0, -1, 3651, 999999} {
+		s := config.Defaults()
+		s.LockdownProposalWindowDays = bad
+		errs := config.Validate(s)
+		require.NotEmpty(t, errs, "LockdownProposalWindowDays=%d must fail", bad)
+	}
+	for _, good := range []int{1, 30, 90, 365, 3650} {
+		s := config.Defaults()
+		s.LockdownProposalWindowDays = good
+		errs := config.Validate(s)
+		require.Empty(t, errs, "LockdownProposalWindowDays=%d must pass: %v", good, errs)
+	}
+}
+
+// TestConfig_LockdownProposalWindowDays_load_overlays_default: a config
+// file that omits lockdown.proposal_window_days must overlay the default
+// 90 (mirrors the existing PasswordAgingDays / PasswordStaleDays test).
+func TestConfig_LockdownProposalWindowDays_load_overlays_default(t *testing.T) {
+	f := sysops.NewFake()
+	f.Files[settingsPath] = []byte("detail_retention_days: 60\n")
+	got, err := config.Load(context.Background(), f, settingsPath)
+	require.NoError(t, err)
+	require.Equal(t, 90, got.LockdownProposalWindowDays,
+		"absent lockdown.proposal_window_days must overlay to 90")
+}
+
+// TestConfig_LockdownProposalWindowDays_load_explicit_value: when the
+// config file sets the koanf-nested key explicitly, Load must read it
+// back faithfully. The koanf tag is `lockdown.proposal_window_days`,
+// which marshals as a nested YAML block:
+//
+//	lockdown:
+//	  proposal_window_days: 30
+func TestConfig_LockdownProposalWindowDays_load_explicit_value(t *testing.T) {
+	f := sysops.NewFake()
+	f.Files[settingsPath] = []byte("lockdown:\n  proposal_window_days: 30\n")
+	got, err := config.Load(context.Background(), f, settingsPath)
+	require.NoError(t, err)
+	require.Equal(t, 30, got.LockdownProposalWindowDays,
+		"explicit lockdown.proposal_window_days must be read back faithfully")
+}
+
 // TestValidate_returns_all_errors_not_just_first: every failing rule
 // contributes its own error so the TUI can render them as a list.
 //

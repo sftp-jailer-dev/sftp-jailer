@@ -582,6 +582,95 @@ func TestSettings_pwAuth_row_does_NOT_enter_edit_mode_via_e(t *testing.T) {
 		"WantsRawKeys must stay false on the pwAuth row (no textinput active)")
 }
 
+// --- Phase 4 LOCK-04: lockdown.proposal_window_days dispatch row ----------
+
+// TestSettings_view_renders_lockdownWindow_row — the new row must render
+// the field label ("lockdown.proposal_window_days"), the current value
+// (90), and the "days" hint, all inside the same View() pass.
+func TestSettings_view_renders_lockdownWindow_row(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	loaded := config.Defaults()
+	loaded.LockdownProposalWindowDays = 90
+	m.LoadSettingsForTest(loaded)
+	out := m.View()
+	require.Contains(t, out, "lockdown.proposal_window_days",
+		"View must include the lockdown.proposal_window_days row label")
+	require.Contains(t, out, "90",
+		"View must render the LockdownProposalWindowDays value (90)")
+}
+
+// TestSettings_lockdownWindow_save_succeeds_writes_atomically — moving the
+// cursor to the lockdown-window row, entering edit mode, typing a new
+// valid value, and pressing Enter must trigger config.Save (which writes
+// via AtomicWriteFile). The savedMsg drained from the cmd must update the
+// in-model settings to the new value.
+func TestSettings_lockdownWindow_save_succeeds_writes_atomically(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	loaded := config.Defaults()
+	m.LoadSettingsForTest(loaded)
+
+	// Move cursor to the lockdown-window row.
+	m.SetCursorForTest(settingsscreen.LockdownWindowRowIndexForTest)
+
+	// Enter edit mode and type "30".
+	_, _ = m.Update(keyPress("e"))
+	require.True(t, m.WantsRawKeys(), "edit mode must engage")
+	for _, r := range "30" {
+		_, _ = m.Update(keyPress(string(r)))
+	}
+	// Save.
+	_, cmd := m.Update(keyPress("enter"))
+	if msg := drainCmd(cmd); msg != nil {
+		_, _ = m.Update(msg)
+	}
+
+	require.False(t, m.WantsRawKeys(), "successful save must exit edit mode")
+
+	// AtomicWriteFile must have been called exactly once on the configPath.
+	var writeCalls int
+	for _, c := range ops.Calls {
+		if c.Method == "AtomicWriteFile" {
+			writeCalls++
+			require.Equal(t, configPath, c.Args[0])
+		}
+	}
+	require.Equal(t, 1, writeCalls,
+		"AtomicWriteFile must be called exactly once on lockdown-window save")
+
+	// View should now show "30" and a toast for the saved field.
+	out := m.View()
+	require.Contains(t, out, "30", "View must show the updated lockdown-window value")
+	require.Contains(t, out, "saved lockdown.proposal_window_days",
+		"Toast must announce the saved field by its koanf name")
+}
+
+// TestSettings_lockdownWindow_save_validates_first_rejects_zero — entering
+// edit mode and typing "0" must surface an inline error and NOT write.
+// This pins the Validate-first contract for the new field.
+func TestSettings_lockdownWindow_save_validates_first_rejects_zero(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	m.SetCursorForTest(settingsscreen.LockdownWindowRowIndexForTest)
+
+	_, _ = m.Update(keyPress("e"))
+	for _, r := range "0" {
+		_, _ = m.Update(keyPress(string(r)))
+	}
+	_, _ = m.Update(keyPress("enter"))
+
+	require.True(t, m.WantsRawKeys(), "validation failure keeps edit mode")
+	for _, c := range ops.Calls {
+		require.NotEqual(t, "AtomicWriteFile", c.Method,
+			"validation failure must NOT call AtomicWriteFile")
+	}
+}
+
 // --- helpers ---------------------------------------------------------------
 
 func flattenHelp(b []nav.KeyBinding) []nav.KeyBinding { return b }
