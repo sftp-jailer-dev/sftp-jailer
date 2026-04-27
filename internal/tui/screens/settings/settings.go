@@ -11,6 +11,12 @@
 //
 // UI per UI-SPEC §S-SETTINGS (lines 453-493):
 //   - Three editable rows: detail_retention_days, db_max_size_mb, compact_after_days
+//   - Plus one Phase 3 dispatch row (USER-13): password_authentication.
+//     Unlike the editable rows, this row's value lives in
+//     /etc/ssh/sshd_config.d/50-sftp-jailer.conf (NOT config.yaml) and
+//     pressing Enter pushes M-DISABLE-PWAUTH onto the nav stack rather
+//     than entering inline-edit mode (D-16: the safety rail is in the
+//     modal's preflight + override gate, not in a free-text edit).
 //   - Cursor row prefixed with `> `; non-cursor rows prefixed with `  `
 //   - Edit mode: cursor row renders `> name [value▌]` with the textinput focused
 //   - Save toast: `saved <field-name>` (e.g. `saved db_max_size_mb`)
@@ -39,13 +45,23 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/pwauthdisable"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/styles"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 )
 
-// fieldKind enumerates the three editable retention rows. Order matches
-// UI-SPEC §S-SETTINGS — the cursor cycle goes top-to-bottom from
-// detail_retention_days to compact_after_days.
+// fieldKind enumerates the editable retention rows plus the Phase 3 USER-13
+// dispatch row. Order matches UI-SPEC §S-SETTINGS — the cursor cycle goes
+// top-to-bottom from detail_retention_days through password_authentication.
+//
+// Editable rows live in /etc/sftp-jailer/config.yaml and route through
+// inline edit-mode → config.Save. The dispatch row (fieldPasswordAuthN)
+// is fundamentally different: its value lives in
+// /etc/ssh/sshd_config.d/50-sftp-jailer.conf, so pressing Enter on it
+// pushes M-DISABLE-PWAUTH instead of entering inline-edit mode (D-16:
+// the modal carries the preflight + override gate; this row is just the
+// entry point).
 type fieldKind int
 
 const (
@@ -55,6 +71,13 @@ const (
 	fieldDBMax
 	// fieldCompact is the compact_after_days knob (default = detail_retention_days).
 	fieldCompact
+	// fieldPasswordAuthN is the Phase 3 USER-13 dispatch row. Pressing
+	// Enter here pushes M-DISABLE-PWAUTH onto the nav stack with an
+	// Action chosen from m.pwAuthCurrent (yes → ActionDisable, no →
+	// ActionEnable, unknown → ActionDisable as the safest default since
+	// the modal's preflight will surface the lockout risk before any
+	// write).
+	fieldPasswordAuthN
 
 	// fieldKindCount is the modulus sentinel for cursor wrap math; place
 	// new fields BEFORE this constant.
@@ -71,6 +94,8 @@ func (k fieldKind) name() string {
 		return "db_max_size_mb"
 	case fieldCompact:
 		return "compact_after_days"
+	case fieldPasswordAuthN:
+		return "password_authentication"
 	}
 	return "unknown"
 }
@@ -84,9 +109,12 @@ func (k fieldKind) hint() string {
 		return "(default 500)"
 	case fieldCompact:
 		return "(must be ≤ detail_retention_days)"
+	case fieldPasswordAuthN:
+		return "(globally allow / disallow password auth — managed users without keys block disable)"
 	}
 	return ""
 }
+
 
 // settingsLoadedMsg carries the config.Load result from Init's goroutine
 // back into Update.
@@ -102,6 +130,16 @@ type savedMsg struct {
 	settings config.Settings
 	field    fieldKind
 	err      error
+}
+
+// pwAuthLoadedMsg (Phase 3 / USER-13) carries the live sshd -T value of
+// passwordauthentication back from the Init's async dump. value is one of
+// "yes", "no", or "unknown" (the latter when SshdDumpConfig errors or the
+// directive is absent — both of which mean we cannot pre-compute the modal
+// Action and must fall back to the safer ActionDisable when the admin
+// presses Enter).
+type pwAuthLoadedMsg struct {
+	value string
 }
 
 // Model is the S-SETTINGS Bubble Tea v2 model.
@@ -121,37 +159,56 @@ type Model struct {
 	errInline string // either validation Warn copy or Critical save-error copy
 	errFatal  bool   // true when errInline should render in Critical (save-error)
 
+	// Phase 3 USER-13 — dependencies + cached live state for the
+	// fieldPasswordAuthN dispatch row. usersEnum + chrootRoot are passed
+	// straight through to pwauthdisable.New on Push; pwAuthCurrent is
+	// populated by Init's async sshd -T branch.
+	usersEnum     *users.Enumerator
+	chrootRoot    string
+	pwAuthCurrent string // "yes" | "no" | "unknown"
+
 	// Toast (save confirmation) and key bindings.
 	toast widgets.Toast
 	keys  KeyMap
 	width int
 }
 
-// New constructs the screen wired to ops + the absolute config-file path.
-// ops may be nil in unit tests that drive the screen via LoadSettingsForTest;
-// path is required even in tests because the View shows it.
-func New(ops sysops.SystemOps, path string) *Model {
+// New constructs the screen wired to ops + the absolute config-file path
+// + the Phase 3 dependencies needed by the fieldPasswordAuthN dispatch
+// row (M-DISABLE-PWAUTH preflight enumerates sftp-group users via
+// usersEnum and walks per-user authorized_keys under chrootRoot).
+//
+// ops may be nil in unit tests that drive the screen via
+// LoadSettingsForTest; path is required even in tests because the View
+// shows it. usersEnum / chrootRoot may be nil/"" in tests that do not
+// exercise the fieldPasswordAuthN dispatch path.
+func New(ops sysops.SystemOps, path string, usersEnum *users.Enumerator, chrootRoot string) *Model {
 	ti := textinput.New()
 	ti.Prompt = ""
 	ti.CharLimit = 8 // 99999999 — way more than any retention or MB knob.
 	return &Model{
-		ops:     ops,
-		path:    path,
-		loading: true,
-		ti:      ti,
-		keys:    DefaultKeyMap(),
+		ops:           ops,
+		path:          path,
+		loading:       true,
+		ti:            ti,
+		keys:          DefaultKeyMap(),
+		usersEnum:     usersEnum,
+		chrootRoot:    chrootRoot,
+		pwAuthCurrent: "unknown", // until pwAuthLoadedMsg arrives
 	}
 }
 
-// Init kicks off the async config.Load. If ops is nil (test path), Init
-// returns nil — the test is expected to call LoadSettingsForTest before
+// Init kicks off the async config.Load PLUS the Phase 3 sshd -T dump that
+// surfaces the live PasswordAuthentication value into the dispatch row.
+// If ops is nil (test path), Init returns nil — the test is expected to
+// call LoadSettingsForTest (and optionally feed pwAuthLoadedMsg) before
 // any View().
 func (m *Model) Init() tea.Cmd {
 	ops, path := m.ops, m.path
 	if ops == nil {
 		return nil
 	}
-	return func() tea.Msg {
+	loadCmd := func() tea.Msg {
 		// Generous timeout — config.Load reads a tiny YAML file via the
 		// sysops seam. 30s mirrors the doctor / users defensive bound.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -159,6 +216,28 @@ func (m *Model) Init() tea.Cmd {
 		s, err := config.Load(ctx, ops, path)
 		return settingsLoadedMsg{settings: s, err: err}
 	}
+	pwAuthCmd := func() tea.Msg {
+		// `sshd -T` (no -C) reports global directives only — exactly what
+		// we need for the top-level PasswordAuthentication value. Any
+		// error or absent key collapses to "unknown" so the row still
+		// renders something the admin can act on.
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		cfg, err := ops.SshdDumpConfig(ctx)
+		if err != nil {
+			return pwAuthLoadedMsg{value: "unknown"}
+		}
+		vals, ok := cfg["passwordauthentication"]
+		if !ok || len(vals) == 0 {
+			return pwAuthLoadedMsg{value: "unknown"}
+		}
+		v := strings.ToLower(strings.TrimSpace(vals[0]))
+		if v != "yes" && v != "no" {
+			return pwAuthLoadedMsg{value: "unknown"}
+		}
+		return pwAuthLoadedMsg{value: v}
+	}
+	return tea.Batch(loadCmd, pwAuthCmd)
 }
 
 // LoadSettingsForTest bypasses Init and sets the loaded state directly.
@@ -168,6 +247,47 @@ func (m *Model) LoadSettingsForTest(s config.Settings) {
 	m.loadErr = ""
 	m.settings = s
 }
+
+// SetPwAuthCurrentForTest pokes the cached sshd -T value of
+// passwordauthentication so tests can drive the fieldPasswordAuthN
+// dispatch row without staging a Fake SshdConfigResponse + waiting on
+// the async pwAuthLoadedMsg. Accepted: "yes", "no", "unknown" — any
+// other value is normalised to "unknown" (matching pwAuthLoadedMsg's
+// own clamp in Init).
+func (m *Model) SetPwAuthCurrentForTest(value string) {
+	switch value {
+	case "yes", "no", "unknown":
+		m.pwAuthCurrent = value
+	default:
+		m.pwAuthCurrent = "unknown"
+	}
+}
+
+// PwAuthCurrentForTest exposes the cached value for assertions.
+func (m *Model) PwAuthCurrentForTest() string { return m.pwAuthCurrent }
+
+// CursorForTest exposes the cursor index as an int so tests in the _test
+// package can drive the row selection without leaking the private
+// fieldKind type.
+func (m *Model) CursorForTest() int { return int(m.cursor) }
+
+// SetCursorForTest pokes the cursor to a specific row index. Bounded to
+// the legal range; out-of-range values clamp to fieldDetail (0).
+func (m *Model) SetCursorForTest(idx int) {
+	if idx < 0 || fieldKind(idx) >= fieldKindCount {
+		m.cursor = fieldDetail
+		return
+	}
+	m.cursor = fieldKind(idx)
+}
+
+// PasswordAuthNRowIndexForTest exposes the field-row index for
+// fieldPasswordAuthN so tests can SetCursor + assert without depending on
+// the enum's iota position drifting in a future refactor.
+const PasswordAuthNRowIndexForTest = int(fieldPasswordAuthN)
+
+// EditingForTest exposes the inline-edit-mode flag for assertions.
+func (m *Model) EditingForTest() bool { return m.editing }
 
 // Title implements nav.Screen.
 func (m *Model) Title() string { return "settings" }
@@ -197,6 +317,13 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 			return m, nil
 		}
 		m.settings = msg.settings
+		return m, nil
+
+	case pwAuthLoadedMsg:
+		// Phase 3 USER-13 — cache the live value for the dispatch row.
+		// "unknown" is a legal terminal value (caller handles the
+		// fall-back to ActionDisable inside handleNavKey).
+		m.pwAuthCurrent = msg.value
 		return m, nil
 
 	case savedMsg:
@@ -246,6 +373,25 @@ func (m *Model) handleNavKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		}
 		return m, nil
 	case "e", "enter":
+		// Phase 3 USER-13 — fieldPasswordAuthN dispatches to
+		// M-DISABLE-PWAUTH instead of entering inline-edit mode. The
+		// modal carries its own preflight + override gate (D-16); we
+		// just pick the Action based on the cached live value.
+		//
+		// Action selection:
+		//   "yes" → ActionDisable (the typical USER-13 path)
+		//   "no"  → ActionEnable  (re-enable; no preflight gate per D-16)
+		//   "unknown" → ActionDisable as the safe default — the modal's
+		//               preflight will surface lockout risk before any
+		//               write so even a wrongly-guessed direction still
+		//               cannot lock users out without the override.
+		if m.cursor == fieldPasswordAuthN {
+			action := pwauthdisable.ActionDisable
+			if m.pwAuthCurrent == "no" {
+				action = pwauthdisable.ActionEnable
+			}
+			return m, nav.PushCmd(pwauthdisable.New(m.ops, m.usersEnum, m.chrootRoot, action))
+		}
 		// Enter edit mode — focus the textinput. The current value is
 		// rendered as the textinput's placeholder so the admin sees what
 		// they're replacing; pressing keys appends to an empty input. This
@@ -363,16 +509,33 @@ func (m *Model) View() string {
 	b.WriteString(styles.Primary.Render("settings — retention"))
 	b.WriteString("\n\n")
 
-	// Render the three field rows.
+	// Render the field rows. Editable rows render their numeric value via
+	// valueFor; the Phase 3 dispatch row (fieldPasswordAuthN) renders the
+	// cached sshd -T value with a Dim/Warn/Success colour cue and never
+	// shows the textinput (m.editing is false-by-construction for it
+	// because the dispatch path skips the inline edit-mode toggle).
 	for k := fieldDetail; k < fieldKindCount; k++ {
 		marker := "  "
 		if k == m.cursor {
 			marker = "> "
 		}
 		var valStr string
-		if k == m.cursor && m.editing {
+		switch {
+		case k == fieldPasswordAuthN:
+			// Dispatch row — render the cached sshd -T value with a
+			// directional colour cue: yes=Warn (an open footgun), no=Success
+			// (the safe state), unknown=Dim (we couldn't tell).
+			switch m.pwAuthCurrent {
+			case "yes":
+				valStr = styles.Warn.Render("yes")
+			case "no":
+				valStr = styles.Success.Render("no")
+			default:
+				valStr = styles.Dim.Render("unknown")
+			}
+		case k == m.cursor && m.editing:
 			valStr = "[" + m.ti.View() + "]"
-		} else {
+		default:
 			valStr = strconv.Itoa(m.valueFor(k))
 		}
 		row := fmt.Sprintf("%s%-22s %-12s %s",

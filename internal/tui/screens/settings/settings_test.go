@@ -7,6 +7,7 @@
 package settingsscreen_test
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/pwauthdisable"
 	settingsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/settings"
 )
 
@@ -57,7 +59,7 @@ const configPath = "/etc/sftp-jailer/config.yaml"
 // satisfies nav.Screen plus runtime checks on Title / KeyMap / WantsRawKeys.
 func TestSettingsScreen_implements_nav_Screen(t *testing.T) {
 	ops := sysops.NewFake()
-	var s nav.Screen = settingsscreen.New(ops, configPath)
+	var s nav.Screen = settingsscreen.New(ops, configPath, nil, "")
 	require.Equal(t, "settings", s.Title())
 	require.False(t, s.WantsRawKeys(), "WantsRawKeys must be false in the default (non-editing) state")
 	km := s.KeyMap()
@@ -69,25 +71,33 @@ func TestSettingsScreen_implements_nav_Screen(t *testing.T) {
 // TestSettingsScreen_loading_state — initial View shows the loading copy.
 func TestSettingsScreen_loading_state(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	require.Contains(t, m.View(), "loading config…")
 }
 
 // --- LoadSettingsForTest seam + render --------------------------------------
 
-// TestSettingsScreen_LoadSettingsForTest_renders_three_fields — feeding
-// settings via the test seam bypasses Init; View must render every field name
-// and the corresponding value per UI-SPEC §S-SETTINGS.
-func TestSettingsScreen_LoadSettingsForTest_renders_three_fields(t *testing.T) {
+// TestSettingsScreen_LoadSettingsForTest_renders_all_field_rows — feeding
+// settings via the test seam bypasses Init; View must render every field
+// name (the three editable retention rows from Phase 2 plus the Phase 3
+// USER-13 password_authentication dispatch row) AND the corresponding
+// numeric values where applicable. The pwAuthCurrent string default of
+// "unknown" is asserted under TestSettings_view_renders_pwAuth_row_with_*.
+func TestSettingsScreen_LoadSettingsForTest_renders_all_field_rows(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	m.LoadSettingsForTest(config.Settings{
 		DetailRetentionDays: 90,
 		DBMaxSizeMB:         500,
 		CompactAfterDays:    90,
 	})
 	out := m.View()
-	for _, label := range []string{"detail_retention_days", "db_max_size_mb", "compact_after_days"} {
+	for _, label := range []string{
+		"detail_retention_days",
+		"db_max_size_mb",
+		"compact_after_days",
+		"password_authentication", // Phase 3 USER-13 dispatch row
+	} {
 		require.Contains(t, out, label, "View must include field label %q", label)
 	}
 	for _, value := range []string{"90", "500"} {
@@ -99,7 +109,7 @@ func TestSettingsScreen_LoadSettingsForTest_renders_three_fields(t *testing.T) {
 // config file path so admins know where the rewritten file lives.
 func TestSettingsScreen_renders_config_path(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	m.LoadSettingsForTest(config.Defaults())
 	require.Contains(t, m.View(), configPath)
 }
@@ -111,7 +121,7 @@ func TestSettingsScreen_renders_config_path(t *testing.T) {
 // textinput rather than acting on global `q`).
 func TestSettingsScreen_e_enters_edit_mode(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	m.LoadSettingsForTest(config.Defaults())
 
 	require.False(t, m.WantsRawKeys(), "precondition: not editing")
@@ -123,7 +133,7 @@ func TestSettingsScreen_e_enters_edit_mode(t *testing.T) {
 // for `e` when not editing (per UI-SPEC §S-SETTINGS line 470).
 func TestSettingsScreen_enter_on_field_enters_edit_mode(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	m.LoadSettingsForTest(config.Defaults())
 
 	_, _ = m.Update(keyPress("enter"))
@@ -134,7 +144,7 @@ func TestSettingsScreen_enter_on_field_enters_edit_mode(t *testing.T) {
 // returns false so global `q` quits cleanly.
 func TestSettingsScreen_WantsRawKeys_false_when_not_editing(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	m.LoadSettingsForTest(config.Defaults())
 	require.False(t, m.WantsRawKeys())
 }
@@ -146,7 +156,7 @@ func TestSettingsScreen_WantsRawKeys_false_when_not_editing(t *testing.T) {
 // remains unchanged in m.settings.
 func TestSettingsScreen_esc_in_edit_cancels(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	original := config.Settings{DetailRetentionDays: 90, DBMaxSizeMB: 500, CompactAfterDays: 90}
 	m.LoadSettingsForTest(original)
 
@@ -179,7 +189,7 @@ func TestSettingsScreen_esc_in_edit_cancels(t *testing.T) {
 // AND surfaces an inline error AND does NOT write.
 func TestSettingsScreen_save_validates_first_and_keeps_edit_on_failure(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	m.LoadSettingsForTest(config.Settings{DetailRetentionDays: 90, DBMaxSizeMB: 500, CompactAfterDays: 90})
 
 	// Move cursor to db_max_size_mb (field index 1).
@@ -219,7 +229,7 @@ func TestSettingsScreen_save_validates_first_and_keeps_edit_on_failure(t *testin
 // + exit edit mode) is unchanged.
 func TestSettingsScreen_save_succeeds_writes_atomically(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	// Build on Defaults() so password-age threshold validation (added 02-11)
 	// is satisfied; the original three knobs are then explicitly set.
 	loaded := config.Defaults()
@@ -266,7 +276,7 @@ func TestSettingsScreen_save_succeeds_writes_atomically(t *testing.T) {
 // expose movement, edit, and back bindings.
 func TestSettingsScreen_keymap_bindings_default(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	km := m.KeyMap()
 	short := km.ShortHelp()
 	flat := flattenHelp(short)
@@ -286,7 +296,7 @@ func TestSettingsScreen_keymap_bindings_default(t *testing.T) {
 // k moves up.
 func TestSettingsScreen_j_k_move_cursor(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	m.LoadSettingsForTest(config.Defaults())
 
 	// Default cursor on field 0 — `> detail_retention_days`.
@@ -310,7 +320,7 @@ func TestSettingsScreen_j_k_move_cursor(t *testing.T) {
 // the nav.PopCmd intent (so the parent App pops this screen off the stack).
 func TestSettingsScreen_esc_outside_edit_pops(t *testing.T) {
 	ops := sysops.NewFake()
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	m.LoadSettingsForTest(config.Defaults())
 
 	_, cmd := m.Update(keyPress("esc"))
@@ -330,10 +340,21 @@ func TestSettingsScreen_init_loads_via_config_Load(t *testing.T) {
 	ops := sysops.NewFake()
 	// File missing → config.Load returns Defaults() with nil err. We just
 	// assert that the cmd executes ReadFile via ops.
-	m := settingsscreen.New(ops, configPath)
+	m := settingsscreen.New(ops, configPath, nil, "")
 	cmd := m.Init()
 	require.NotNil(t, cmd, "Init must return a non-nil tea.Cmd")
-	_ = cmd() // execute the goroutine body so ReadFile is recorded
+
+	// Phase 3 USER-13: Init now returns tea.Batch(configLoadCmd,
+	// pwAuthDumpCmd). Drain the batch so the inner ReadFile (the config
+	// load cmd) gets exercised against the Fake.
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, sub := range batch {
+			if sub != nil {
+				_ = sub()
+			}
+		}
+	}
 
 	// Drain Calls to find ReadFile on the configPath.
 	var found bool
@@ -344,6 +365,221 @@ func TestSettingsScreen_init_loads_via_config_Load(t *testing.T) {
 		}
 	}
 	require.True(t, found, "Init's tea.Cmd must call ops.ReadFile(configPath); calls: %v", ops.Calls)
+}
+
+// --- Phase 3 USER-13: fieldPasswordAuthN dispatch row ---------------------
+
+// TestSettings_pwAuth_loaded_msg_populates_current — Init's pwAuthLoadedMsg
+// updates m.pwAuthCurrent. Drives the message synthetically because the
+// real Init goroutine path is exercised by the integration test pin
+// (TestSettings_init_loads_pw_auth_via_sshd_dump).
+func TestSettings_pwAuth_loaded_msg_populates_current(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	require.Equal(t, "unknown", m.PwAuthCurrentForTest(),
+		"pre-load default must be 'unknown' (until pwAuthLoadedMsg arrives)")
+
+	// Synthesize the message via SetPwAuthCurrentForTest (the message itself
+	// is unexported — the seam lets us pin the post-message state without
+	// reaching into the model's internals).
+	m.SetPwAuthCurrentForTest("yes")
+	require.Equal(t, "yes", m.PwAuthCurrentForTest())
+
+	m.SetPwAuthCurrentForTest("no")
+	require.Equal(t, "no", m.PwAuthCurrentForTest())
+
+	// Defensive: anything outside {yes, no, unknown} clamps to "unknown".
+	m.SetPwAuthCurrentForTest("maybe")
+	require.Equal(t, "unknown", m.PwAuthCurrentForTest())
+}
+
+// TestSettings_init_loads_pw_auth_via_sshd_dump — the Init batch's second
+// branch calls ops.SshdDumpConfig and produces a pwAuthLoadedMsg; we drain
+// the batch, deliver the message, and assert m.pwAuthCurrent reflects the
+// scripted value.
+func TestSettings_init_loads_pw_auth_via_sshd_dump(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	ops.SshdConfigResponse = map[string][]string{"passwordauthentication": {"no"}}
+
+	m := settingsscreen.New(ops, configPath, nil, "")
+	cmd := m.Init()
+	require.NotNil(t, cmd)
+
+	// Drain the batch and feed every produced msg back into the model so
+	// pwAuthLoadedMsg lands in Update.
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	require.True(t, ok, "Init must return tea.Batch (config-load + pw-auth dump)")
+	for _, sub := range batch {
+		if sub == nil {
+			continue
+		}
+		if subMsg := sub(); subMsg != nil {
+			_, _ = m.Update(subMsg)
+		}
+	}
+
+	require.Equal(t, "no", m.PwAuthCurrentForTest(),
+		"Init's pwAuthDumpCmd must populate pwAuthCurrent from the Fake's scripted SshdConfigResponse")
+
+	// Sysops.SshdDumpConfig must have been recorded (proof the Init
+	// branch went through the seam, not a raw subprocess).
+	var dumpCalls int
+	for _, c := range ops.Calls {
+		if c.Method == "SshdDumpConfig" {
+			dumpCalls++
+		}
+	}
+	require.Equal(t, 1, dumpCalls, "Init must call ops.SshdDumpConfig exactly once")
+}
+
+// TestSettings_init_pw_auth_dump_error_collapses_to_unknown — when
+// SshdDumpConfig errors (sshd not installed, root not satisfied, etc.) the
+// row collapses to "unknown" rather than disappearing or panicking.
+func TestSettings_init_pw_auth_dump_error_collapses_to_unknown(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	ops.SshdDumpConfigError = errors.New("simulated sshd -T failure")
+
+	m := settingsscreen.New(ops, configPath, nil, "")
+	cmd := m.Init()
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	require.True(t, ok)
+	for _, sub := range batch {
+		if sub == nil {
+			continue
+		}
+		if subMsg := sub(); subMsg != nil {
+			_, _ = m.Update(subMsg)
+		}
+	}
+	require.Equal(t, "unknown", m.PwAuthCurrentForTest(),
+		"SshdDumpConfig error must collapse pwAuthCurrent to 'unknown'")
+}
+
+// TestSettings_enter_on_pwAuth_pushes_modal_with_disable_when_current_is_yes
+// — cursor on the dispatch row, pwAuthCurrent=yes, Enter must push
+// *pwauthdisable.Model with Action=Disable. We introspect the resulting
+// nav.Msg via cmd().
+func TestSettings_enter_on_pwAuth_pushes_modal_with_disable_when_current_is_yes(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	m.SetPwAuthCurrentForTest("yes")
+	m.SetCursorForTest(settingsscreen.PasswordAuthNRowIndexForTest)
+
+	_, cmd := m.Update(keyPress("enter"))
+	require.NotNil(t, cmd, "Enter on pwAuth row must emit a tea.Cmd (the nav.PushCmd)")
+
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent, "Enter on pwAuth row must Push (not Pop or None)")
+	require.NotNil(t, nm.Screen)
+
+	pushed, ok := nm.Screen.(*pwauthdisable.Model)
+	require.True(t, ok, "expected *pwauthdisable.Model, got %T", nm.Screen)
+	require.Equal(t, "disable password authentication", pushed.Title(),
+		"yes-current must dispatch ActionDisable (Title proves Action — disable label)")
+}
+
+// TestSettings_enter_on_pwAuth_pushes_modal_with_enable_when_current_is_no
+// — symmetric to the above: pwAuthCurrent=no must dispatch ActionEnable.
+func TestSettings_enter_on_pwAuth_pushes_modal_with_enable_when_current_is_no(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	m.SetPwAuthCurrentForTest("no")
+	m.SetCursorForTest(settingsscreen.PasswordAuthNRowIndexForTest)
+
+	_, cmd := m.Update(keyPress("enter"))
+	require.NotNil(t, cmd)
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok)
+	require.Equal(t, nav.Push, nm.Intent)
+
+	pushed, ok := nm.Screen.(*pwauthdisable.Model)
+	require.True(t, ok, "expected *pwauthdisable.Model, got %T", nm.Screen)
+	require.Equal(t, "enable password authentication", pushed.Title(),
+		"no-current must dispatch ActionEnable (Title proves Action — enable label)")
+}
+
+// TestSettings_enter_on_pwAuth_pushes_modal_with_disable_when_current_is_unknown
+// — fall-back path: when sshd -T failed at startup, the row still works;
+// the modal's preflight will surface lockout risk so even ActionDisable
+// against an unknown live state is safe.
+func TestSettings_enter_on_pwAuth_pushes_modal_with_disable_when_current_is_unknown(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	// pwAuthCurrent left at default "unknown".
+	m.SetCursorForTest(settingsscreen.PasswordAuthNRowIndexForTest)
+
+	_, cmd := m.Update(keyPress("enter"))
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok)
+	require.Equal(t, nav.Push, nm.Intent)
+
+	pushed, ok := nm.Screen.(*pwauthdisable.Model)
+	require.True(t, ok)
+	require.Equal(t, "disable password authentication", pushed.Title(),
+		"unknown-current must dispatch ActionDisable as the safer default — modal preflight surfaces lockout risk")
+}
+
+// TestSettings_view_renders_pwAuth_row_with_current_value — the row must
+// display the cached value (yes/no/unknown) so admins can see the live
+// state at a glance before pressing Enter.
+func TestSettings_view_renders_pwAuth_row_with_current_value(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+
+	m.SetPwAuthCurrentForTest("no")
+	out := m.View()
+	require.Contains(t, out, "password_authentication",
+		"View must include the password_authentication row label")
+	require.Contains(t, out, "no",
+		"View must render the cached pwAuthCurrent value (no)")
+
+	m.SetPwAuthCurrentForTest("yes")
+	require.Contains(t, m.View(), "yes",
+		"View must update to render the cached pwAuthCurrent value (yes)")
+
+	m.SetPwAuthCurrentForTest("unknown")
+	require.Contains(t, m.View(), "unknown",
+		"View must render 'unknown' when sshd -T value couldn't be loaded")
+}
+
+// TestSettings_pwAuth_row_does_NOT_enter_edit_mode_via_e — the dispatch
+// row must skip inline edit-mode (the modal is the entire interaction).
+// Pressing 'e' on the row pushes the modal AND m.editing stays false.
+func TestSettings_pwAuth_row_does_NOT_enter_edit_mode_via_e(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	m.SetPwAuthCurrentForTest("yes")
+	m.SetCursorForTest(settingsscreen.PasswordAuthNRowIndexForTest)
+
+	require.False(t, m.EditingForTest())
+	require.False(t, m.WantsRawKeys())
+
+	_, cmd := m.Update(keyPress("e"))
+	require.NotNil(t, cmd, "'e' on pwAuth row must still emit a Push cmd (dispatch shape)")
+	require.False(t, m.EditingForTest(),
+		"pwAuth row must NOT enter inline edit mode — dispatch path bypasses the textinput-toggle entirely")
+	require.False(t, m.WantsRawKeys(),
+		"WantsRawKeys must stay false on the pwAuth row (no textinput active)")
 }
 
 // --- helpers ---------------------------------------------------------------

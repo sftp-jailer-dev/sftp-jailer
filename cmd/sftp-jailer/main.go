@@ -263,7 +263,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	home.SetDoctorFactory(func() nav.Screen { return doctorscreen.New(doctorSvc) })
 	home.SetFirewallFactory(func() nav.Screen { return firewallscreen.New(ops) })
 	home.SetLogsFactory(func() nav.Screen { return logsscreen.New(queries, ops) })
-	home.SetSettingsFactory(func() nav.Screen { return settingsscreen.New(ops, configFilePath) })
+	home.SetSettingsFactory(func() nav.Screen { return settingsscreen.New(ops, configFilePath, usersEnum, chrootRoot) })
 	home.SetUsersFactory(func() nav.Screen { return usersscreen.NewWithConfig(usersEnum, &usersCfg, ops, chrootRoot) })
 
 	// Construct the App with the splash as the initial screen. The splash
