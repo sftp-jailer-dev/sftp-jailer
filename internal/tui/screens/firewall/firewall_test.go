@@ -211,3 +211,53 @@ func TestFirewallScreen_default_view_is_flat(t *testing.T) {
 	}, nil)
 	require.Contains(t, m.View(), "view: flat")
 }
+
+// stubScreen is a tiny nav.Screen used by the factory-injection tests.
+type stubScreen struct{ name string }
+
+func (s *stubScreen) Init() tea.Cmd                            { return nil }
+func (s *stubScreen) Update(tea.Msg) (nav.Screen, tea.Cmd)     { return s, nil }
+func (s *stubScreen) View() string                             { return s.name }
+func (s *stubScreen) Title() string                            { return s.name }
+func (s *stubScreen) KeyMap() nav.KeyMap                       { return stubKeyMap{} }
+func (s *stubScreen) WantsRawKeys() bool                       { return false }
+
+type stubKeyMap struct{}
+
+func (stubKeyMap) ShortHelp() []nav.KeyBinding   { return nil }
+func (stubKeyMap) FullHelp() [][]nav.KeyBinding  { return nil }
+
+// TestSFirewall_a_pushes_addrule_when_factory_set — pressing 'a' on
+// S-FIREWALL must emit a nav.Push carrying whatever the registered
+// AddRuleFactory returns. Plan 04-05 Task 3 wires this so the home
+// screen's bootstrap can register the M-ADD-RULE constructor without
+// the firewall package importing internal/tui/screens/firewallrule
+// (factory-injection avoids the cycle).
+func TestSFirewall_a_pushes_addrule_when_factory_set(t *testing.T) {
+	defer firewallscreen.SetAddRuleFactory(nil) // cleanup global
+
+	stub := &stubScreen{name: "M-ADD-RULE"}
+	firewallscreen.SetAddRuleFactory(func() nav.Screen { return stub })
+
+	m := firewallscreen.New(nil)
+	m.LoadRulesForTest([]firewall.Rule{{ID: 1}}, nil)
+	_, cmd := m.Update(keyPress("a"))
+	require.NotNil(t, cmd, "'a' with factory set must emit a non-nil tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Same(t, nav.Screen(stub), nm.Screen,
+		"pushed screen must be the factory's return value")
+}
+
+// TestSFirewall_a_noop_when_factory_nil — pressing 'a' with no factory
+// registered is a clean no-op (no panic, no cmd).
+func TestSFirewall_a_noop_when_factory_nil(t *testing.T) {
+	firewallscreen.SetAddRuleFactory(nil)
+
+	m := firewallscreen.New(nil)
+	m.LoadRulesForTest([]firewall.Rule{{ID: 1}}, nil)
+	_, cmd := m.Update(keyPress("a"))
+	require.Nil(t, cmd, "'a' without factory must be a no-op")
+}

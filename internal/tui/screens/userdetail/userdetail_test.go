@@ -509,3 +509,90 @@ func TestUserDetail_errors_compile(t *testing.T) {
 	t.Parallel()
 	_ = errors.New
 }
+
+// stubScreen is a tiny nav.Screen used by the factory-injection tests
+// for the M-ADD-RULE 'r' keybind (Plan 04-05 Task 3).
+type stubScreen struct {
+	name      string
+	username  string // captured by the AddRuleFactory closure
+}
+
+func (s *stubScreen) Init() tea.Cmd                        { return nil }
+func (s *stubScreen) Update(tea.Msg) (nav.Screen, tea.Cmd) { return s, nil }
+func (s *stubScreen) View() string                         { return s.name }
+func (s *stubScreen) Title() string                        { return s.name }
+func (s *stubScreen) KeyMap() nav.KeyMap                   { return stubKeyMap{} }
+func (s *stubScreen) WantsRawKeys() bool                   { return false }
+
+type stubKeyMap struct{}
+
+func (stubKeyMap) ShortHelp() []nav.KeyBinding  { return nil }
+func (stubKeyMap) FullHelp() [][]nav.KeyBinding { return nil }
+
+// TestSUserDetail_r_pushes_addrule_with_user_prefill — pressing 'r' on
+// S-USER-DETAIL must emit nav.Push carrying the M-ADD-RULE modal
+// pre-filled with this screen's username. Wired via the package-level
+// AddRuleFactory + SetAddRuleFactory seam (analogous to the home
+// screen's factory pattern). The factory MUST receive the screen's
+// username so the modal locks the user pre-fill.
+func TestSUserDetail_r_pushes_addrule_with_user_prefill(t *testing.T) {
+	defer userdetail.SetAddRuleFactory(nil) // cleanup global
+
+	var capturedUsername string
+	stub := &stubScreen{name: "M-ADD-RULE"}
+	userdetail.SetAddRuleFactory(func(username string) nav.Screen {
+		capturedUsername = username
+		stub.username = username
+		return stub
+	})
+
+	f := sysops.NewFake()
+	m := userdetail.New(f, testChrootRoot, testUsername)
+	m.LoadEmptyForTest()
+
+	_, cmd := m.Update(keyPress("r"))
+	require.NotNil(t, cmd, "pressing 'r' with factory set must emit a non-nil tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Same(t, nav.Screen(stub), nm.Screen,
+		"pushed screen must be the factory's return value")
+	require.Equal(t, testUsername, capturedUsername,
+		"AddRuleFactory must be called with this screen's username")
+}
+
+// TestSUserDetail_r_noop_when_factory_nil — pressing 'r' with no
+// factory registered is a clean no-op.
+func TestSUserDetail_r_noop_when_factory_nil(t *testing.T) {
+	userdetail.SetAddRuleFactory(nil)
+
+	f := sysops.NewFake()
+	m := userdetail.New(f, testChrootRoot, testUsername)
+	m.LoadEmptyForTest()
+	_, cmd := m.Update(keyPress("r"))
+	require.Nil(t, cmd, "'r' without factory must be a no-op")
+}
+
+// TestSUserDetail_a_still_pushes_addkey_after_phase4 — W-03 regression
+// guard. The Phase 3 'a' = add-SSH-key wiring must NOT be replaced by
+// the M-ADD-RULE keybind. Phase 4 uses 'r' (mnemonic: rule) instead to
+// preserve Phase 3's UAT-validated muscle memory.
+func TestSUserDetail_a_still_pushes_addkey_after_phase4(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	m := userdetail.New(f, testChrootRoot, testUsername)
+	m.LoadEmptyForTest()
+
+	_, cmd := m.Update(keyPress("a"))
+	require.NotNil(t, cmd,
+		"W-03 regression guard: 'a' must STILL push M-ADD-KEY (not be replaced)")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	_, isAddKey := nm.Screen.(*addkey.Model)
+	require.True(t, isAddKey,
+		"W-03 regression: 'a' must STILL push *addkey.Model (Phase 3 behaviour preserved); got %T",
+		nm.Screen)
+}
