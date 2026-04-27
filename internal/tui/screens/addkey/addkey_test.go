@@ -362,6 +362,98 @@ func TestAddKey_attemptParse_file_path_reads_via_ops_ReadFile_then_parses(t *tes
 	require.Equal(t, "/etc/keys/alice.pub", m.ReviewRowForTest(0).SourceLabel)
 }
 
+// CR-01: file: source MUST refuse path-traversal segments before any I/O.
+// The tool runs as root (SAFE-01); without this guard an admin who pastes
+// `~/../../../etc/shadow` would read shadow contents into memory and (on
+// parse failure) leak verbatim shadow line bytes into the modal's error UI.
+func TestAddKey_attemptParse_file_path_rejects_dotdot_traversal_CR_01(t *testing.T) {
+	t.Parallel()
+	for _, in := range []string{
+		"/srv/sftp-jailer/alice/../../../etc/shadow",
+		"~/../../../etc/shadow",
+		"../../etc/shadow",
+		"/var/lib/sftp-jailer/../../etc/sudoers",
+	} {
+		t.Run(in, func(t *testing.T) {
+			t.Parallel()
+			f := sysops.NewFake()
+			m := addkey.New(f, testChrootRoot, testUsername)
+			m.SetTextareaForTest(in)
+			_, cmd := m.Update(keyPress("enter"))
+			require.NotNil(t, cmd)
+			driveBatch(cmd, func(msg tea.Msg) { _, _ = m.Update(msg) })
+
+			require.Equal(t, "error", m.PhaseForTest(),
+				"path with .. must land in error phase BEFORE any ReadFile")
+			require.Contains(t, m.ErrInlineForTest(), "..",
+				"error must mention the traversal pattern")
+			// Must never have called ReadFile — Fake records all calls.
+			for _, c := range f.Calls {
+				require.NotEqual(t, "ReadFile", c.Method,
+					"CR-01: traversal path must be rejected BEFORE any ReadFile call")
+			}
+		})
+	}
+}
+
+// CR-01: file: source MUST refuse a known-sensitive system path even if the
+// admin types it directly (no traversal). Closes the leak surface where a
+// rogue / bored admin could exfiltrate shadow / sudoers via the error UI.
+func TestAddKey_attemptParse_file_path_rejects_sensitive_system_paths_CR_01(t *testing.T) {
+	t.Parallel()
+	for _, in := range []string{
+		"/etc/shadow",
+		"/etc/gshadow",
+		"/etc/sudoers",
+		"/etc/sudoers.d/99-something",
+		"/root/.ssh/id_ed25519",
+		"/proc/1/environ",
+		"/sys/class/dmi/id/board_serial",
+	} {
+		t.Run(in, func(t *testing.T) {
+			t.Parallel()
+			f := sysops.NewFake()
+			m := addkey.New(f, testChrootRoot, testUsername)
+			m.SetTextareaForTest(in)
+			_, cmd := m.Update(keyPress("enter"))
+			require.NotNil(t, cmd)
+			driveBatch(cmd, func(msg tea.Msg) { _, _ = m.Update(msg) })
+
+			require.Equal(t, "error", m.PhaseForTest(),
+				"sensitive path must land in error phase BEFORE any ReadFile")
+			require.Contains(t, strings.ToLower(m.ErrInlineForTest()), "refused",
+				"error must say 'refused' so the admin understands intent")
+			for _, c := range f.Calls {
+				require.NotEqual(t, "ReadFile", c.Method,
+					"CR-01: sensitive system path must be rejected BEFORE any ReadFile call")
+			}
+		})
+	}
+}
+
+// CR-01: when keys.Parse rejects file contents the error message must NOT
+// echo the file's literal bytes back into the modal UI. Defends against a
+// path-traversal-bypass scenario where a non-blocked path nonetheless
+// contained sensitive material.
+func TestAddKey_file_path_parse_failure_does_not_leak_file_contents_CR_01(t *testing.T) {
+	t.Parallel()
+	const sensitiveLine = "secret-password-DO-NOT-LEAK-9f3a"
+	f := sysops.NewFake()
+	f.Files["/tmp/not-a-key.txt"] = []byte(sensitiveLine + "\n")
+
+	m := addkey.New(f, testChrootRoot, testUsername)
+	m.SetTextareaForTest("/tmp/not-a-key.txt")
+	_, cmd := m.Update(keyPress("enter"))
+	require.NotNil(t, cmd)
+	driveBatch(cmd, func(msg tea.Msg) { _, _ = m.Update(msg) })
+
+	require.Equal(t, "error", m.PhaseForTest())
+	require.NotContains(t, m.ErrInlineForTest(), sensitiveLine,
+		"CR-01: parse-failure error MUST NOT echo verbatim file content into UI")
+	require.NotContains(t, m.View(), sensitiveLine,
+		"CR-01: parse-failure View() MUST NOT echo verbatim file content into UI")
+}
+
 // 11. Space toggles the cursor row's selection.
 func TestAddKey_review_space_toggles_row_selection(t *testing.T) {
 	t.Parallel()
