@@ -281,14 +281,12 @@ func TestDeleteModel_post_commit_enumerate_runs(t *testing.T) {
 
 	// Count `ufw status numbered` invocations — there should be at least
 	// 1 from the post-commit Enumerate that feeds RebuildUserIPs (W2).
+	// Fake.Exec records argv as separate args: ["ufw", "status", "numbered"].
 	var enumCount int
 	for _, c := range f.Calls {
-		if c.Method == "Exec" {
-			for _, a := range c.Args {
-				if a == "argv=[ufw status numbered]" {
-					enumCount++
-				}
-			}
+		if c.Method == "Exec" && len(c.Args) >= 3 &&
+			c.Args[0] == "ufw" && c.Args[1] == "status" && c.Args[2] == "numbered" {
+			enumCount++
 		}
 	}
 	require.GreaterOrEqual(t, enumCount, 1,
