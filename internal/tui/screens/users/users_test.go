@@ -624,3 +624,105 @@ func TestUsersScreen_n_and_p_keybindings_still_route_to_newuser_and_password(t *
 	_, isPW := nm2.Screen.(*password.Model)
 	require.True(t, isPW, "W-03: 'p' pushed screen must STILL be *password.Model")
 }
+
+// --- Plan 04-06: M-DELETE-RULE keybind tests --------------------------------
+
+// usersStubScreen is a tiny nav.Screen for the factory-injection tests.
+type usersStubScreen struct{ name string }
+
+func (s *usersStubScreen) Init() tea.Cmd                        { return nil }
+func (s *usersStubScreen) Update(tea.Msg) (nav.Screen, tea.Cmd) { return s, nil }
+func (s *usersStubScreen) View() string                         { return s.name }
+func (s *usersStubScreen) Title() string                        { return s.name }
+func (s *usersStubScreen) KeyMap() nav.KeyMap                   { return usersStubKeyMap{} }
+func (s *usersStubScreen) WantsRawKeys() bool                   { return false }
+
+type usersStubKeyMap struct{}
+
+func (usersStubKeyMap) ShortHelp() []nav.KeyBinding  { return nil }
+func (usersStubKeyMap) FullHelp() [][]nav.KeyBinding { return nil }
+
+// TestSUsers_D_pushes_deleterule_byuser_factory_set — pressing 'D'
+// (uppercase) on a real-row selection must invoke the
+// deleteUserFwRulesFactory with the selected username. The W1 keybind
+// deviation (lowercase 'd' = delete user account from Phase 3 03-08a;
+// uppercase 'D' = delete all firewall rules for user, this plan 04-06)
+// must be honored.
+func TestSUsers_D_pushes_deleterule_byuser_factory_set(t *testing.T) {
+	defer usersscreen.SetDeleteUserFwRulesFactory(nil) // cleanup global
+
+	var capturedUser string
+	stub := &usersStubScreen{name: "M-DELETE-RULE-byUser"}
+	usersscreen.SetDeleteUserFwRulesFactory(func(username string) nav.Screen {
+		capturedUser = username
+		return stub
+	})
+
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{
+		{Username: "alice", UID: 1001, ChrootPath: "/srv/sftp-jailer/alice", HomePath: "/srv/sftp-jailer/alice"},
+	}, nil)
+
+	_, cmd := m.Update(keyPress("D"))
+	require.NotNil(t, cmd, "'D' on selected row with factory set must emit non-nil tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Same(t, nav.Screen(stub), nm.Screen)
+	require.Equal(t, "alice", capturedUser,
+		"deleteUserFwRulesFactory must be invoked with the selected username")
+}
+
+// TestSUsers_D_noop_when_factory_nil — pressing 'D' with no factory
+// registered is a clean no-op.
+func TestSUsers_D_noop_when_factory_nil(t *testing.T) {
+	usersscreen.SetDeleteUserFwRulesFactory(nil)
+
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{
+		{Username: "alice", UID: 1001},
+	}, nil)
+	_, cmd := m.Update(keyPress("D"))
+	require.Nil(t, cmd, "'D' without factory must be a no-op")
+}
+
+// TestSUsers_d_still_pushes_deleteuser_modal_phase3_preserved — W-03
+// regression guard for the Phase 3 03-08a contract: lowercase 'd' on
+// S-USERS still pushes M-DELETE-USER (delete user account), NOT
+// M-DELETE-RULE. The W1 keybind deviation in 04-06 reserves uppercase
+// 'D' for the new firewall-rule path so muscle memory is preserved.
+func TestSUsers_d_still_pushes_deleteuser_modal_phase3_preserved(t *testing.T) {
+	defer usersscreen.SetDeleteUserFwRulesFactory(nil) // ensure no leak from other tests
+
+	// Even if the FW-rule factory is set, lowercase 'd' must NOT route to it.
+	var fwFactoryCalled bool
+	usersscreen.SetDeleteUserFwRulesFactory(func(_ string) nav.Screen {
+		fwFactoryCalled = true
+		return &usersStubScreen{name: "should-not-push"}
+	})
+
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{
+		{Username: "alice", UID: 1001, ChrootPath: "/srv/sftp-jailer/alice", HomePath: "/srv/sftp-jailer/alice"},
+	}, nil)
+
+	_, cmd := m.Update(keyPress("d"))
+	require.NotNil(t, cmd, "W-03: lowercase 'd' must STILL push M-DELETE-USER (Phase 3 03-08a)")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok)
+	require.Equal(t, nav.Push, nm.Intent)
+	_, isDU := nm.Screen.(*deleteuser.Model)
+	require.True(t, isDU,
+		"W-03: lowercase 'd' on S-USERS must STILL push *deleteuser.Model (Phase 3 contract); got %T",
+		nm.Screen)
+	require.False(t, fwFactoryCalled,
+		"W1 keybind deviation: lowercase 'd' must NOT invoke the FW-rule factory")
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 	firewallscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewall"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewallrule"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/ufwcomment"
 )
 
@@ -260,4 +261,131 @@ func TestSFirewall_a_noop_when_factory_nil(t *testing.T) {
 	m.LoadRulesForTest([]firewall.Rule{{ID: 1}}, nil)
 	_, cmd := m.Update(keyPress("a"))
 	require.Nil(t, cmd, "'a' without factory must be a no-op")
+}
+
+// --- Plan 04-06: M-DELETE-RULE keybind tests --------------------------------
+
+// TestSFirewall_d_pushes_deleterule_for_sftpj_rule — pressing 'd' on a
+// selected sftpj rule (ParseErr == nil, User != "") must invoke the
+// deleteRuleFactory with ModeByID + the selected rule, and push the
+// returned screen.
+func TestSFirewall_d_pushes_deleterule_for_sftpj_rule(t *testing.T) {
+	defer firewallscreen.SetDeleteRuleFactory(nil) // cleanup global
+
+	var capturedMode firewallrule.DeleteMode
+	var capturedPayload interface{}
+	stub := &stubScreen{name: "M-DELETE-RULE-byID"}
+	firewallscreen.SetDeleteRuleFactory(func(mode firewallrule.DeleteMode, payload interface{}) nav.Screen {
+		capturedMode = mode
+		capturedPayload = payload
+		return stub
+	})
+
+	m := firewallscreen.New(nil)
+	rule := firewall.Rule{
+		ID: 5, Proto: "v4", Port: "22", Source: "203.0.113.7",
+		Action: "ALLOW IN", RawComment: "sftpj:v=1:user=alice", User: "alice",
+	}
+	m.LoadRulesForTest([]firewall.Rule{rule}, nil)
+
+	_, cmd := m.Update(keyPress("d"))
+	require.NotNil(t, cmd, "'d' with factory set + sftpj rule must emit a non-nil tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Same(t, nav.Screen(stub), nm.Screen)
+
+	require.Equal(t, firewallrule.ModeByID, capturedMode,
+		"factory must be invoked with ModeByID")
+	gotRule, ok := capturedPayload.(firewall.Rule)
+	require.True(t, ok, "ModeByID payload must be firewall.Rule, got %T", capturedPayload)
+	require.Equal(t, 5, gotRule.ID, "selected rule ID must round-trip")
+	require.Equal(t, "alice", gotRule.User)
+}
+
+// TestSFirewall_d_noop_on_foreign_rule — pressing 'd' on a row whose
+// ParseErr != nil (e.g. ErrNotOurs / ErrBadVersion) must NOT invoke the
+// factory. Foreign rules are not safely round-trippable.
+func TestSFirewall_d_noop_on_foreign_rule(t *testing.T) {
+	defer firewallscreen.SetDeleteRuleFactory(nil)
+
+	var factoryCalled bool
+	firewallscreen.SetDeleteRuleFactory(func(_ firewallrule.DeleteMode, _ interface{}) nav.Screen {
+		factoryCalled = true
+		return &stubScreen{name: "should-not-push"}
+	})
+
+	m := firewallscreen.New(nil)
+	m.LoadRulesForTest([]firewall.Rule{
+		// Foreign rule: empty User + non-nil ParseErr.
+		{ID: 8, Proto: "v4", Port: "22", Source: "10.0.0.5",
+			Action: "ALLOW IN", RawComment: "some-other-comment",
+			ParseErr: ufwcomment.ErrNotOurs},
+	}, nil)
+
+	_, cmd := m.Update(keyPress("d"))
+	if cmd != nil {
+		// Defensive: even if a cmd was emitted, it must not be a nav.Push.
+		msg := cmd()
+		if nm, ok := msg.(nav.Msg); ok {
+			require.NotEqual(t, nav.Push, nm.Intent,
+				"'d' on a foreign rule must NOT push M-DELETE-RULE")
+		}
+	}
+	require.False(t, factoryCalled,
+		"deleteRuleFactory must NOT be called for ParseErr != nil rules")
+}
+
+// TestSFirewall_s_pushes_deleterule_modeBySource — pressing 's' must
+// invoke the factory with ModeBySource. Payload format is the source
+// CIDR string; v1 ships with an empty payload (the modal's
+// ModeBySource path itself surfaces the no-matches state when source
+// is "" — but the test pins the factory was reached with the right
+// mode).
+func TestSFirewall_s_pushes_deleterule_modeBySource(t *testing.T) {
+	defer firewallscreen.SetDeleteRuleFactory(nil)
+
+	var capturedMode firewallrule.DeleteMode
+	stub := &stubScreen{name: "M-DELETE-RULE-bySource"}
+	firewallscreen.SetDeleteRuleFactory(func(mode firewallrule.DeleteMode, _ interface{}) nav.Screen {
+		capturedMode = mode
+		return stub
+	})
+
+	m := firewallscreen.New(nil)
+	m.LoadRulesForTest([]firewall.Rule{{ID: 1}}, nil)
+	_, cmd := m.Update(keyPress("s"))
+	require.NotNil(t, cmd, "'s' with factory set must emit a non-nil tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Same(t, nav.Screen(stub), nm.Screen)
+	require.Equal(t, firewallrule.ModeBySource, capturedMode,
+		"factory must be invoked with ModeBySource")
+}
+
+// TestSFirewall_d_noop_when_factory_nil — pressing 'd' with no factory
+// registered is a clean no-op (no panic, no cmd).
+func TestSFirewall_d_noop_when_factory_nil(t *testing.T) {
+	firewallscreen.SetDeleteRuleFactory(nil)
+
+	m := firewallscreen.New(nil)
+	m.LoadRulesForTest([]firewall.Rule{
+		{ID: 1, User: "alice", RawComment: "sftpj:v=1:user=alice"},
+	}, nil)
+	_, cmd := m.Update(keyPress("d"))
+	require.Nil(t, cmd, "'d' without factory must be a no-op")
+}
+
+// TestSFirewall_s_noop_when_factory_nil — pressing 's' with no factory
+// registered is a clean no-op.
+func TestSFirewall_s_noop_when_factory_nil(t *testing.T) {
+	firewallscreen.SetDeleteRuleFactory(nil)
+
+	m := firewallscreen.New(nil)
+	m.LoadRulesForTest([]firewall.Rule{{ID: 1}}, nil)
+	_, cmd := m.Update(keyPress("s"))
+	require.Nil(t, cmd, "'s' without factory must be a no-op")
 }
