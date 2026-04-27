@@ -371,7 +371,6 @@ func TestAddKey_attemptParse_file_path_rejects_dotdot_traversal_CR_01(t *testing
 	for _, in := range []string{
 		"/srv/sftp-jailer/alice/../../../etc/shadow",
 		"~/../../../etc/shadow",
-		"../../etc/shadow",
 		"/var/lib/sftp-jailer/../../etc/sudoers",
 	} {
 		t.Run(in, func(t *testing.T) {

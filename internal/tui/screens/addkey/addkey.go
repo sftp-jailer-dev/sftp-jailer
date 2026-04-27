@@ -58,6 +58,22 @@ import (
 // Validated client-side BEFORE FetchGitHub to prevent URL-injection.
 var ghUsernameRegex = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
+// forbiddenFilePrefixes blocks the M-ADD-KEY file: source from reading
+// known-sensitive system paths even when the admin types them directly.
+// CR-01 (Phase 3 code review): the tool runs as root (SAFE-01) so without
+// this allowlist `/etc/shadow` etc. would be readable through the UI.
+// Match is exact-or-prefix-with-trailing-slash so `/root` matches both
+// `/root` and `/root/.ssh/id_rsa`.
+var forbiddenFilePrefixes = []string{
+	"/etc/shadow",
+	"/etc/gshadow",
+	"/etc/sudoers",
+	"/etc/sudoers.d",
+	"/root",
+	"/proc",
+	"/sys",
+}
+
 // verifierTimeout bounds the per-step verifier closure run time.
 // chrootcheck + re-parse are filesystem-fast; sshd -t -C is the slow
 // step (~100-500ms on a real box). 10s is generous.
@@ -403,16 +419,36 @@ func (m *Model) resolveAsync(parsed []keys.ParsedKey) tea.Cmd {
 					}
 					path = filepath.Join(home, path[2:])
 				}
-				if ops == nil {
-					return fetchedMsg{err: fmt.Errorf("file %s: ops is nil (test path mis-wired)", path)}
+				// CR-01: refuse `..` segments. The tool runs as root (SAFE-01)
+				// so ReadFile would happily traverse into anything; refusing here
+				// blocks the dangerous `~/../../../etc/shadow`-style path before
+				// any I/O happens.
+				if strings.Contains(p.FilePath, "..") || strings.Contains(path, "..") {
+					return fetchedMsg{err: fmt.Errorf("file %s: path must not contain '..' segments", p.FilePath)}
 				}
-				body, err := ops.ReadFile(ctx, path)
+				// CR-01: refuse known-sensitive system paths. Even without `..`
+				// an admin could type these directly; blocking them keeps the
+				// modal from becoming an arbitrary-file-read surface.
+				cleaned := filepath.Clean(path)
+				for _, deny := range forbiddenFilePrefixes {
+					if cleaned == deny || strings.HasPrefix(cleaned+"/", deny+"/") {
+						return fetchedMsg{err: fmt.Errorf("file %s: refused — sensitive system path", p.FilePath)}
+					}
+				}
+				if ops == nil {
+					return fetchedMsg{err: fmt.Errorf("file %s: ops is nil (test path mis-wired)", cleaned)}
+				}
+				body, err := ops.ReadFile(ctx, cleaned)
 				if err != nil {
-					return fetchedMsg{err: fmt.Errorf("read %s: %w", path, err)}
+					return fetchedMsg{err: fmt.Errorf("read %s: %w", cleaned, err)}
 				}
 				sub, subErrs := keys.Parse(string(body))
 				if len(subErrs) > 0 {
-					return fetchedMsg{err: fmt.Errorf("file %s: %s", path, subErrs[0].Error())}
+					// CR-01: do NOT echo the verbatim parse-failed line back
+					// into the UI. If the file happens to contain sensitive
+					// material that slipped past the prefix allowlist, the
+					// error message would otherwise leak it.
+					return fetchedMsg{err: fmt.Errorf("file %s: line %d failed to parse as an SSH key", cleaned, subErrs[0].Line)}
 				}
 				for _, sp := range sub {
 					rows = append(rows, ReviewRow{
