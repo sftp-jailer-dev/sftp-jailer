@@ -153,6 +153,41 @@ type SshdTContextOpts struct {
 	Addr string // typically "127.0.0.1"
 }
 
+// ----------------------------------------------------------------------------
+// Phase 4 typed-opts structs — argument shapes for the new ufw / systemd-run
+// mutation methods. Grouped before SystemOps for readability.
+// ----------------------------------------------------------------------------
+
+// UfwAllowOpts is the typed argument shape for UfwAllow / UfwInsert
+// (D-FW-01). The Comment field MUST come from ufwcomment.Encode — do NOT
+// pass arbitrary strings here. The ufwcomment regex is the load-bearing
+// safety net for shell-quote-free systemd-run ExecStart per D-S04-08.
+//
+// Source MUST be pre-validated by the caller via net.ParseCIDR strict
+// parsing per the M-ADD-RULE input rules (D-FW-CIDR). Bare IPs are
+// promoted to /32 (v4) or /128 (v6) at the caller layer.
+type UfwAllowOpts struct {
+	Proto   string // "tcp" | "udp" | "" (omit "proto X" entirely)
+	Source  string // CIDR or single IP — pre-validated upstream
+	Port    string // "22" | "22/tcp" | …
+	Comment string // ufwcomment.Encode result (or "" for the catch-all path)
+}
+
+// SystemdRunOpts is the typed argument shape for SystemdRunOnActive
+// (D-S04-04 + D-S04-08). UnitName MUST follow the
+// sftpj-revert-<unix-ns>.service convention so list-units sorting and
+// grep idioms work.
+//
+// Command is the verbatim string handed to /bin/sh -c. Shell-quote
+// safety relies on (a) the ufwcomment regex which already rejects every
+// shell metacharacter and (b) net.ParseCIDR pre-validation of every
+// <src> value. Callers MUST NOT concatenate untrusted strings here.
+type SystemdRunOpts struct {
+	OnActive time.Duration // mapped to --on-active=<dur> (e.g. "3min")
+	UnitName string        // mapped to --unit=<n>
+	Command  string        // mapped to /bin/sh -c '<cmd>'
+}
+
 // SystemOps is the seam between sftp-jailer and the operating system.
 // Phase 1 methods are read-only; Phase 2 introduces AtomicWriteFile + the
 // four subprocess/lock helpers (see package doc).
@@ -310,4 +345,55 @@ type SystemOps interface {
 	// TarCreateGzip to produce /var/lib/sftp-jailer/archive/<user>-<ISO>.tar.gz
 	// before userdel.
 	Tar(ctx context.Context, opts TarOpts) error
+
+	// ------------------------------------------------------------------
+	// Phase 4 mutation methods — ufw CRUD, systemd-run transient unit,
+	// systemctl idempotent stop / is-active, public IPv6 detection,
+	// /etc/default/ufw atomic rewrite. CI guard
+	// scripts/check-no-exec-outside-sysops.sh enforces these are the
+	// ONLY exec callsites for ufw / systemd-run / systemctl / ip.
+	// ------------------------------------------------------------------
+
+	// UfwAllow wraps `ufw allow proto <p> from <src> to any port <p> comment '<c>'`.
+	// Returns a wrapped exit-code error on non-zero ufw exit. (D-FW-01)
+	UfwAllow(ctx context.Context, opts UfwAllowOpts) error
+
+	// UfwInsert wraps `ufw insert <position> allow proto … comment '<c>'`.
+	// Always called with position=1 in production per D-FW-02 (newest at top).
+	UfwInsert(ctx context.Context, position int, opts UfwAllowOpts) error
+
+	// UfwDelete wraps `ufw delete <ruleID>`. Idempotent at the call site —
+	// the caller maps "rule not found" exit to success. (D-FW-07)
+	UfwDelete(ctx context.Context, ruleID int) error
+
+	// UfwReload wraps `ufw reload`. Comments survive across reload per
+	// RESEARCH §scripts/smoke-ufw.sh. (D-FW-04)
+	UfwReload(ctx context.Context) error
+
+	// HasPublicIPv6 parses `ip -6 addr show scope global` and returns
+	// true if any non-link-local non-loopback IPv6 is bound. Used by
+	// FW-06 hard-block (D-FW-03 step 2).
+	HasPublicIPv6(ctx context.Context) (bool, error)
+
+	// RewriteUfwIPV6 atomically rewrites /etc/default/ufw with the
+	// IPV6= line set to value ("yes"/"no"). Preserves all other lines
+	// byte-for-byte (D-FW-03 step 3).
+	RewriteUfwIPV6(ctx context.Context, value string) error
+
+	// SystemdRunOnActive wraps `systemd-run --on-active=<dur> --unit=<n>
+	// /bin/sh -c '<cmd>'` for the SAFE-04 transient-unit revert window
+	// (D-S04-08). The Command string is shell-quoted by /bin/sh —
+	// callers MUST validate every embedded value upstream.
+	SystemdRunOnActive(ctx context.Context, opts SystemdRunOpts) error
+
+	// SystemctlStop wraps `systemctl stop <unit>`. Idempotent on
+	// non-existent / already-stopped units — non-zero exit is mapped to
+	// nil at the caller layer (NewCancelRevertStep + revert.Watcher.Clear).
+	SystemctlStop(ctx context.Context, unitName string) error
+
+	// SystemctlIsActive wraps `systemctl is-active <unit>`. Returns
+	// (true, nil) for active, (false, nil) for inactive/not-loaded
+	// (exit 3 / 4). Returns (false, err) only on actual exec failure
+	// (D-S04-06 watcher restore reads this).
+	SystemctlIsActive(ctx context.Context, unitName string) (bool, error)
 }
