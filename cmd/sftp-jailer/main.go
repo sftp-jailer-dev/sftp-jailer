@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/revert"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sshdcfg"
@@ -208,6 +209,14 @@ var observerCursorPath = "/var/lib/sftp-jailer/observer.cursor"
 //     constructor that captures the per-process *revert.Watcher (D-S04-04
 //     singleton: exactly one Watcher per TUI process so the 3-min revert
 //     state is shared across modals).
+//   - 04-06 adds firewallscreen.SetDeleteRuleFactory(...) and
+//     usersscreen.SetDeleteUserFwRulesFactory(...) — both inject an
+//     M-DELETE-RULE constructor sharing the same *revert.Watcher
+//     singleton. The firewallscreen factory dispatches by mode
+//     (ModeByID for 'd', ModeBySource for 's'); the usersscreen
+//     factory always builds ModeByUser scoped to the selected user
+//     (W1 keybind deviation: uppercase 'D' on S-USERS reserves
+//     lowercase 'd' for Phase 3 03-08a M-DELETE-USER).
 func runTUI(cmd *cobra.Command, args []string) error {
 	// Pitfall E2: recovery script for unclean exits. Path printed to stderr
 	// BEFORE program.Run() so it's in scrollback even on a SIGKILL.
@@ -288,6 +297,29 @@ func runTUI(cmd *cobra.Command, args []string) error {
 		m.SetStore(queries)
 		return m
 	})
+	// Plan 04-06: M-DELETE-RULE factory dispatches by mode. ModeByID
+	// receives the firewall.Rule selected on S-FIREWALL; ModeBySource
+	// receives the source-CIDR string ("" in v1 — modal renders the
+	// no-matches state). ModeByUser is reachable via the per-user
+	// factory below (usersscreen.SetDeleteUserFwRulesFactory).
+	firewallscreen.SetDeleteRuleFactory(func(mode firewallrule.DeleteMode, payload interface{}) nav.Screen {
+		var m *firewallrule.DeleteModel
+		switch mode {
+		case firewallrule.ModeByID:
+			rule, _ := payload.(firewall.Rule)
+			m = firewallrule.NewDeleteByID(ops, revertWatcher, rule)
+		case firewallrule.ModeBySource:
+			source, _ := payload.(string)
+			m = firewallrule.NewDeleteBySource(ops, revertWatcher, source)
+		case firewallrule.ModeByUser:
+			username, _ := payload.(string)
+			m = firewallrule.NewDeleteByUser(ops, revertWatcher, username)
+		default:
+			return nil
+		}
+		m.SetStore(queries)
+		return m
+	})
 	home.SetDoctorFactory(func() nav.Screen { return doctorscreen.New(doctorSvc) })
 	home.SetFirewallFactory(func() nav.Screen { return firewallscreen.New(ops) })
 	home.SetLogsFactory(func() nav.Screen { return logsscreen.New(queries, ops) })
@@ -295,6 +327,14 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	home.SetUsersFactory(func() nav.Screen { return usersscreen.NewWithConfig(usersEnum, &usersCfg, ops, chrootRoot) })
 	userdetail.SetAddRuleFactory(func(username string) nav.Screen {
 		m := firewallrule.New(ops, revertWatcher, defaultSFTPPort, username)
+		m.SetStore(queries)
+		return m
+	})
+	// Plan 04-06: S-USERS 'D' (uppercase) → M-DELETE-RULE in
+	// ModeByUser scoped to the selected user. W1 keybind deviation
+	// preserves Phase 3 03-08a's lowercase 'd' = delete user account.
+	usersscreen.SetDeleteUserFwRulesFactory(func(username string) nav.Screen {
+		m := firewallrule.NewDeleteByUser(ops, revertWatcher, username)
 		m.SetStore(queries)
 		return m
 	})

@@ -51,6 +51,29 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 )
 
+// deleteUserFwRulesFactory is the package-level seam for Plan 04-06 to
+// inject the M-DELETE-RULE-by-user constructor. Mirrors the
+// home.SetXFactory pattern from 02-04 and the firewallrule plan-04-05
+// seam — pressing 'D' (uppercase, W1 keybind deviation) on a selected
+// real row invokes the factory with the username.
+//
+// W1 deviation: lowercase 'd' is reserved for Phase 3 03-08a's
+// M-DELETE-USER (delete user account); uppercase 'D' is the new path
+// for "delete all firewall rules for this user" so muscle memory from
+// the UAT-validated Phase 3 flow is preserved. CONTEXT.md
+// "Integration Points" amended to reflect the resolved keybind.
+//
+// nil-factory path is a no-op (e.g. test paths that don't exercise
+// the FW-rule delete).
+var deleteUserFwRulesFactory func(username string) nav.Screen
+
+// SetDeleteUserFwRulesFactory registers the M-DELETE-RULE-by-user
+// constructor. Called once at TUI bootstrap. Pass nil to clear (test
+// cleanup).
+func SetDeleteUserFwRulesFactory(fn func(username string) nav.Screen) {
+	deleteUserFwRulesFactory = fn
+}
+
 // SortAxis enumerates the columns the `s` cycle rotates through.
 //
 // Order matches UI-SPEC §S-USERS line 214:
@@ -322,6 +345,22 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		}
 		if r := m.selectedRow(); r != nil {
 			return m, nav.PushCmd(deleteuser.New(m.ops, m.chrootRoot, r.Username, r.HomePath))
+		}
+		return m, nil
+	case "D":
+		// Plan 04-06: 'D' (uppercase) pushes M-DELETE-RULE in
+		// ModeByUser for the selected real row. W1 keybind deviation
+		// preserves Phase 3 03-08a's lowercase 'd' = delete user
+		// account contract; uppercase 'D' is the new firewall-rule
+		// path. No-op when no row is selected or factory is nil.
+		if deleteUserFwRulesFactory == nil {
+			return m, nil
+		}
+		if r := m.selectedRow(); r != nil {
+			screen := deleteUserFwRulesFactory(r.Username)
+			if screen != nil {
+				return m, nav.PushCmd(screen)
+			}
 		}
 		return m, nil
 	case "enter":
@@ -707,38 +746,46 @@ type KeyMap struct {
 	// Phase 3 plan 03-08a additions:
 	Keys   nav.KeyBinding // 'k' → push S-USER-DETAIL on selected real row
 	Delete nav.KeyBinding // 'd' → push M-DELETE-USER on selected real row
+	// Plan 04-06 addition (W1 keybind deviation):
+	DeleteFwRules nav.KeyBinding // 'D' → push M-DELETE-RULE-byUser via factory
 }
 
 // DefaultKeyMap returns the canonical S-USERS bindings per UI-SPEC §S-USERS.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
-		Back:        nav.KeyBinding{Keys: []string{"esc", "q"}, Help: "back"},
-		Search:      nav.KeyBinding{Keys: []string{"/"}, Help: "search"},
-		Detail:      nav.KeyBinding{Keys: []string{"enter"}, Help: "detail"},
-		SortCycle:   nav.KeyBinding{Keys: []string{"s"}, Help: "sort"},
-		SortReverse: nav.KeyBinding{Keys: []string{"S"}, Help: "reverse sort"},
-		Copy:        nav.KeyBinding{Keys: []string{"c"}, Help: "copy row"},
-		New:         nav.KeyBinding{Keys: []string{"n"}, Help: "new user"},
-		Password:    nav.KeyBinding{Keys: []string{"p"}, Help: "set password"},
-		Keys:        nav.KeyBinding{Keys: []string{"k"}, Help: "keys (S-USER-DETAIL)"},
-		Delete:      nav.KeyBinding{Keys: []string{"d"}, Help: "delete user"},
+		Back:          nav.KeyBinding{Keys: []string{"esc", "q"}, Help: "back"},
+		Search:        nav.KeyBinding{Keys: []string{"/"}, Help: "search"},
+		Detail:        nav.KeyBinding{Keys: []string{"enter"}, Help: "detail"},
+		SortCycle:     nav.KeyBinding{Keys: []string{"s"}, Help: "sort"},
+		SortReverse:   nav.KeyBinding{Keys: []string{"S"}, Help: "reverse sort"},
+		Copy:          nav.KeyBinding{Keys: []string{"c"}, Help: "copy row"},
+		New:           nav.KeyBinding{Keys: []string{"n"}, Help: "new user"},
+		Password:      nav.KeyBinding{Keys: []string{"p"}, Help: "set password"},
+		Keys:          nav.KeyBinding{Keys: []string{"k"}, Help: "keys (S-USER-DETAIL)"},
+		Delete:        nav.KeyBinding{Keys: []string{"d"}, Help: "delete user"},
+		DeleteFwRules: nav.KeyBinding{Keys: []string{"D"}, Help: "delete all FW rules for user"},
 	}
 }
 
 // ShortHelp surfaces the bindings shown in the footer / `?` overlay's
 // compact mode. Reverse-sort is a power-user flag, kept to FullHelp only.
 func (k KeyMap) ShortHelp() []nav.KeyBinding {
-	return []nav.KeyBinding{k.Back, k.Search, k.Detail, k.SortCycle, k.Copy, k.New, k.Password, k.Keys, k.Delete}
+	return []nav.KeyBinding{
+		k.Back, k.Search, k.Detail, k.SortCycle, k.Copy,
+		k.New, k.Password, k.Keys, k.Delete, k.DeleteFwRules,
+	}
 }
 
-// FullHelp shows four columns: nav row (back/search/detail), action row
-// (sort/reverse-sort/copy), Phase 3 mutation row (new/password), and the
-// per-row mutation row added in plan 03-08a (keys/delete).
+// FullHelp shows five columns: nav row (back/search/detail), action row
+// (sort/reverse-sort/copy), Phase 3 mutation row (new/password), the
+// per-row mutation row from plan 03-08a (keys/delete), and the new
+// FW-rule row added by plan 04-06 (delete-fw-rules).
 func (k KeyMap) FullHelp() [][]nav.KeyBinding {
 	return [][]nav.KeyBinding{
 		{k.Back, k.Search, k.Detail},
 		{k.SortCycle, k.SortReverse, k.Copy},
 		{k.New, k.Password},
 		{k.Keys, k.Delete},
+		{k.DeleteFwRules},
 	}
 }

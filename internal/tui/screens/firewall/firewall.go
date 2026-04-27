@@ -39,6 +39,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewallrule"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/styles"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/ufwcomment"
@@ -57,6 +58,28 @@ var addRuleFactory func() nav.Screen
 // SetAddRuleFactory registers the M-ADD-RULE constructor. Called once
 // at TUI bootstrap. Pass nil to clear (test cleanup).
 func SetAddRuleFactory(fn func() nav.Screen) { addRuleFactory = fn }
+
+// deleteRuleFactory is the package-level seam for Plan 04-06 to inject
+// the M-DELETE-RULE modal constructor. Mirrors addRuleFactory but
+// carries a (mode, payload) pair so the same factory closure handles
+// both the S-FIREWALL `d` (ModeByID + firewall.Rule) and `s`
+// (ModeBySource + source CIDR string) paths.
+//
+// The bootstrap (main.go::runTUI) calls SetDeleteRuleFactory once with
+// a closure that captures ops + watcher + queries. nil-factory path is
+// a no-op (e.g. test paths that don't exercise delete).
+var deleteRuleFactory func(mode firewallrule.DeleteMode, payload interface{}) nav.Screen
+
+// SetDeleteRuleFactory registers the M-DELETE-RULE constructor. Called
+// once at TUI bootstrap. Pass nil to clear (test cleanup). The factory
+// receives the resolution mode (ModeByID / ModeBySource) and a
+// per-mode payload — for ModeByID the payload is firewall.Rule;
+// for ModeBySource the payload is the source CIDR string (empty in
+// v1 — the modal renders the no-matches state until the source-CIDR
+// prompt UI lands as a future enhancement).
+func SetDeleteRuleFactory(fn func(mode firewallrule.DeleteMode, payload interface{}) nav.Screen) {
+	deleteRuleFactory = fn
+}
 
 // ViewMode toggles between flat-rules and per-user-grouped layouts.
 type ViewMode int
@@ -200,6 +223,37 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case "d":
+		// Plan 04-06: push M-DELETE-RULE in ModeByID for the selected
+		// sftpj rule. Foreign rules (ParseErr != nil OR empty User)
+		// are not deletable from this path — the W2 forward-compat
+		// invariant means we don't know how to safely round-trip them
+		// if a future v=2 grammar lands. No-op (silently — admin can
+		// see the rule still has the forward-compat `?` indicator).
+		sel := m.selectedRule()
+		if sel == nil || sel.User == "" || sel.ParseErr != nil {
+			return m, nil
+		}
+		if deleteRuleFactory != nil {
+			screen := deleteRuleFactory(firewallrule.ModeByID, *sel)
+			if screen != nil {
+				return m, nav.PushCmd(screen)
+			}
+		}
+		return m, nil
+	case "s":
+		// Plan 04-06: push M-DELETE-RULE in ModeBySource. The factory
+		// returns the modal which itself renders the empty-source
+		// "No rules found matching <source>" state — a future
+		// enhancement may inline a CIDR-prompt overlay before the
+		// modal push.
+		if deleteRuleFactory != nil {
+			screen := deleteRuleFactory(firewallrule.ModeBySource, "")
+			if screen != nil {
+				return m, nav.PushCmd(screen)
+			}
+		}
+		return m, nil
 	case "/":
 		var cmd tea.Cmd
 		m.search, cmd = m.search.Activate()
@@ -244,6 +298,18 @@ func (m *Model) handleCopy() (nav.Screen, tea.Cmd) {
 	var flashCmd tea.Cmd
 	m.toast, flashCmd = m.toast.Flash("copied rule via OSC 52")
 	return m, tea.Batch(tea.SetClipboard(text), flashCmd)
+}
+
+// selectedRule returns the currently-selected firewall.Rule, or nil if
+// the cursor is out of range / no rules are loaded. Returned pointer
+// references the entry in m.filtered — callers that mutate the
+// returned value see those mutations reflected in subsequent View()
+// calls. (M-DELETE-RULE consumers dereference and copy.)
+func (m *Model) selectedRule() *firewall.Rule {
+	if m.cursor < 0 || m.cursor >= len(m.filtered) {
+		return nil
+	}
+	return &m.filtered[m.cursor]
 }
 
 // ruleAsRawLine reconstructs a ufw-status-style raw line for the rule —
@@ -456,32 +522,42 @@ type KeyMap struct {
 	ToggleGroup nav.KeyBinding
 	Copy        nav.KeyBinding
 	AddRule     nav.KeyBinding // Plan 04-05 — pushes M-ADD-RULE via factory seam
+	// Plan 04-06 — pushes M-DELETE-RULE via factory seam.
+	DeleteRule     nav.KeyBinding // 'd' = ModeByID on selected sftpj rule
+	DeleteBySource nav.KeyBinding // 's' = ModeBySource (CIDR prompt path)
 }
 
 // DefaultKeyMap returns the canonical S-FIREWALL bindings per UI-SPEC
 // §S-FIREWALL footer line.
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
-		Back:        nav.KeyBinding{Keys: []string{"esc", "q"}, Help: "back"},
-		Search:      nav.KeyBinding{Keys: []string{"/"}, Help: "search"},
-		Detail:      nav.KeyBinding{Keys: []string{"enter"}, Help: "detail"},
-		ToggleGroup: nav.KeyBinding{Keys: []string{"g"}, Help: "group"},
-		Copy:        nav.KeyBinding{Keys: []string{"c"}, Help: "copy rule"},
-		AddRule:     nav.KeyBinding{Keys: []string{"a"}, Help: "add rule"},
+		Back:           nav.KeyBinding{Keys: []string{"esc", "q"}, Help: "back"},
+		Search:         nav.KeyBinding{Keys: []string{"/"}, Help: "search"},
+		Detail:         nav.KeyBinding{Keys: []string{"enter"}, Help: "detail"},
+		ToggleGroup:    nav.KeyBinding{Keys: []string{"g"}, Help: "group"},
+		Copy:           nav.KeyBinding{Keys: []string{"c"}, Help: "copy rule"},
+		AddRule:        nav.KeyBinding{Keys: []string{"a"}, Help: "add rule"},
+		DeleteRule:     nav.KeyBinding{Keys: []string{"d"}, Help: "delete rule"},
+		DeleteBySource: nav.KeyBinding{Keys: []string{"s"}, Help: "delete by source"},
 	}
 }
 
 // ShortHelp surfaces the bindings in the footer / `?` overlay's compact
 // mode.
 func (k KeyMap) ShortHelp() []nav.KeyBinding {
-	return []nav.KeyBinding{k.Back, k.Search, k.Detail, k.ToggleGroup, k.Copy, k.AddRule}
+	return []nav.KeyBinding{
+		k.Back, k.Search, k.Detail, k.ToggleGroup, k.Copy,
+		k.AddRule, k.DeleteRule, k.DeleteBySource,
+	}
 }
 
-// FullHelp shows two columns: nav row (back/search/detail) and action
-// row (toggle-group/copy/add-rule).
+// FullHelp shows three columns: nav row (back/search/detail), view
+// row (toggle-group/copy), and the FW-mutation row added by plans
+// 04-05/04-06 (add-rule/delete-rule/delete-by-source).
 func (k KeyMap) FullHelp() [][]nav.KeyBinding {
 	return [][]nav.KeyBinding{
 		{k.Back, k.Search, k.Detail},
-		{k.ToggleGroup, k.Copy, k.AddRule},
+		{k.ToggleGroup, k.Copy},
+		{k.AddRule, k.DeleteRule, k.DeleteBySource},
 	}
 }
