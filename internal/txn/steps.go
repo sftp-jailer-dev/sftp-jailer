@@ -552,3 +552,410 @@ func (s *verifyAuthKeysStep) Apply(ctx context.Context, ops sysops.SystemOps) er
 func (s *verifyAuthKeysStep) Compensate(_ context.Context, _ sysops.SystemOps) error {
 	return nil
 }
+
+// ============================================================================
+// Phase 4 Plan 02 — 9 new Step constructors wrapping the Plan 04-01 sysops
+// mutation surface. Composes into the standard apply+compensate framework.
+// ============================================================================
+
+// RevertWatcher is the txn-package-local view of the on-disk revert pointer
+// manager. The full Watcher type lives in internal/revert (Plan 04-04) but
+// this package cannot import revert (would force a circular package
+// relationship via *revert.Watcher fields on Step structs). This minimal
+// interface keeps the dep direction clean — internal/revert imports
+// internal/txn for the Step contract, and *revert.Watcher will satisfy this
+// interface implicitly.
+//
+// Set arms the on-disk pointer at /var/lib/sftp-jailer/revert.active with
+// (unitName, deadline, reverseCmds) per D-S04-06. Clear removes the pointer
+// + clears in-process state.
+type RevertWatcher interface {
+	Set(ctx context.Context, unitName string, deadline time.Time, reverseCmds []string) error
+	Clear(ctx context.Context) error
+}
+
+// ufwDefaultPath is the path of the file written by NewWriteUfwIPV6Step.
+// Pinned by the AtomicWriteFile path allowlist (Plan 04-01).
+const ufwDefaultPath = "/etc/default/ufw"
+
+// ---- UfwAllow ↔ (no-op compensator — relies on SAFE-04 revert window) -----
+
+// NewUfwAllowStep wraps sysops.UfwAllow ("ufw allow" — no positional insert).
+// Compensate is intentionally a no-op: identifying a freshly-allowed rule by
+// (source, comment) requires a re-Enumerate diff that the bare Step layer
+// does not own. Plan 04-03's firewall.AddRule writer wraps this with the
+// re-Enumerate-and-diff helper for callers that need ID-tracking. Production
+// callers prefer NewUfwInsertStep (deterministic position 1 per D-FW-02);
+// NewUfwAllowStep exists for completeness / catch-all re-add in LOCK-08
+// rollback.
+//
+// Idempotency: nil-Compensate is safe to call on any rollback path.
+func NewUfwAllowStep(opts sysops.UfwAllowOpts) Step {
+	return &ufwAllowStep{opts: opts}
+}
+
+type ufwAllowStep struct {
+	opts sysops.UfwAllowOpts
+}
+
+func (s *ufwAllowStep) Name() string { return "UfwAllow" }
+func (s *ufwAllowStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	return ops.UfwAllow(ctx, s.opts)
+}
+func (s *ufwAllowStep) Compensate(_ context.Context, _ sysops.SystemOps) error {
+	// Best-effort: the SAFE-04 transient-unit revert is the recovery path for
+	// a partially-applied batch that included this Step. Returning nil keeps
+	// downstream compensators in a clean rollback chain.
+	return nil
+}
+
+// ---- UfwInsert (always pos=1) ↔ UfwDelete by captured ID -------------------
+
+// NewUfwInsertStep wraps sysops.UfwInsert at position 1 per D-FW-02 (newest
+// rule lands at top — predictable for admins reading raw `ufw status
+// numbered`). The bare Step does NOT capture the assigned rule ID — Plan
+// 04-03's firewall.AddRule writer is expected to call SetAssignedID after
+// re-Enumerate-and-diff so Compensate can issue UfwDelete on the correct ID.
+//
+// Idempotency: if the rule is already gone (e.g. SAFE-04 timer fired between
+// Apply and Compensate), UfwDelete's "Could not delete" / "rule not found"
+// non-zero exit is treated as success at the call site (W-04 idempotent-
+// Compensate discipline from Phase 3).
+func NewUfwInsertStep(opts sysops.UfwAllowOpts) Step {
+	return &ufwInsertStep{opts: opts}
+}
+
+type ufwInsertStep struct {
+	opts sysops.UfwAllowOpts
+	// populated by SetAssignedID (Plan 04-03 firewall.AddRule writer):
+	assignedID int
+}
+
+func (s *ufwInsertStep) Name() string { return "UfwInsert" }
+func (s *ufwInsertStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	return ops.UfwInsert(ctx, 1, s.opts)
+}
+func (s *ufwInsertStep) Compensate(ctx context.Context, ops sysops.SystemOps) error {
+	if s.assignedID <= 0 {
+		// No ID populated — nothing to delete deterministically. The SAFE-04
+		// revert window is the recovery path for this case.
+		return nil
+	}
+	if err := ops.UfwDelete(ctx, s.assignedID); err != nil {
+		// Idempotent: treat "rule not found" / "Could not delete" as success
+		// (W-04 — see godoc for the discipline rationale).
+		msg := err.Error()
+		if strings.Contains(msg, "Could not delete") || strings.Contains(msg, "not found") {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// SetAssignedID lets the Plan 04-03 firewall.AddRule writer populate the
+// captured rule ID after the post-insert re-Enumerate-and-diff. Internal —
+// not exposed to TUI callers (the writer mediates).
+func (s *ufwInsertStep) SetAssignedID(id int) { s.assignedID = id }
+
+// ---- UfwDelete ↔ (irreversible — relies on SAFE-04 revert window) ---------
+
+// NewUfwDeleteStep wraps sysops.UfwDelete. Compensate is intentionally a
+// no-op (mirrors NewUserdelStep at steps.go:426-439) — once a rule is gone
+// at the tool layer, the SAFE-04 transient-unit revert is the ONLY recovery
+// path. Inside-txn rollback would race with the timer + cannot recover the
+// original (user, source, comment) tuple from a deleted rule.
+//
+// Idempotency: nil-Compensate is safe to call on any path.
+func NewUfwDeleteStep(ruleID int) Step {
+	return &ufwDeleteStep{ruleID: ruleID}
+}
+
+type ufwDeleteStep struct{ ruleID int }
+
+func (s *ufwDeleteStep) Name() string { return "UfwDelete" }
+func (s *ufwDeleteStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	return ops.UfwDelete(ctx, s.ruleID)
+}
+func (s *ufwDeleteStep) Compensate(_ context.Context, _ sysops.SystemOps) error {
+	// Intentional no-op — irreversible by design per D-S04-05 / D-FW-07.
+	return nil
+}
+
+// ---- UfwReload ↔ UfwReload (re-issue) -------------------------------------
+
+// NewUfwReloadStep is the standard reload-style wrapper (model after
+// NewSystemctlReloadStep at steps.go:349-373). Compensate re-issues the same
+// op so a prior file-restore step's compensator returns the running ufw to
+// its prior config.
+func NewUfwReloadStep() Step { return &ufwReloadStep{} }
+
+type ufwReloadStep struct{}
+
+func (s *ufwReloadStep) Name() string { return "UfwReload" }
+func (s *ufwReloadStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	return ops.UfwReload(ctx)
+}
+func (s *ufwReloadStep) Compensate(ctx context.Context, ops sysops.SystemOps) error {
+	return ops.UfwReload(ctx)
+}
+
+// ---- WriteUfwIPV6 ↔ (restore prior /etc/default/ufw bytes) ----------------
+
+// NewWriteUfwIPV6Step is the SAFE-03-style backup+rewrite of
+// /etc/default/ufw to set IPV6=<value>. Apply captures the prior bytes via
+// ops.ReadFile then calls ops.RewriteUfwIPV6 (which uses AtomicWriteFile
+// internally per Plan 04-01). Compensate restores the prior bytes via
+// AtomicWriteFile, or RemoveAll if the prior file did not exist.
+//
+// The single-step shape (subsuming "backup + rewrite") matches the Phase 3
+// NewWriteSshdDropInStep precedent (steps.go:40-92). Aliased constructors
+// NewBackupDefaultUfwStep and NewRewriteUfwIPV6Step are provided for plans
+// that compose explicitly with the more-granular CONTEXT.md vocabulary.
+//
+// Idempotency: rewriting the same prior bytes is a deterministic
+// AtomicWriteFile no-op; RemoveAll treats ErrNotExist as success.
+//
+// The `now` arg is the time-source seam for any future backup-path emission
+// (currently unused — restoration is in-place from priorBytes captured in
+// Apply, no on-disk backup file).
+func NewWriteUfwIPV6Step(value string, now func() time.Time) Step {
+	if now == nil {
+		now = time.Now
+	}
+	return &writeUfwIPV6Step{value: value, now: now}
+}
+
+type writeUfwIPV6Step struct {
+	value string
+	now   func() time.Time
+	// populated by Apply for use in Compensate:
+	priorBytes  []byte
+	priorExists bool
+}
+
+func (s *writeUfwIPV6Step) Name() string { return "WriteUfwIPV6" }
+func (s *writeUfwIPV6Step) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	prior, err := ops.ReadFile(ctx, ufwDefaultPath)
+	if err == nil {
+		s.priorBytes = prior
+		s.priorExists = true
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("WriteUfwIPV6 read prior: %w", err)
+	}
+	if werr := ops.RewriteUfwIPV6(ctx, s.value); werr != nil {
+		return fmt.Errorf("WriteUfwIPV6 rewrite: %w", werr)
+	}
+	return nil
+}
+func (s *writeUfwIPV6Step) Compensate(ctx context.Context, ops sysops.SystemOps) error {
+	if !s.priorExists {
+		return ops.RemoveAll(ctx, ufwDefaultPath)
+	}
+	return ops.AtomicWriteFile(ctx, ufwDefaultPath, s.priorBytes, 0o644)
+}
+
+// NewBackupDefaultUfwStep is the CONTEXT.md alias for the backup-half of the
+// /etc/default/ufw rewrite cycle. In practice it returns the same composite
+// Step as NewWriteUfwIPV6Step("", now) — the backup capture happens inside
+// Apply, atomically with the rewrite. Production callers should use
+// NewWriteUfwIPV6Step directly for clarity.
+func NewBackupDefaultUfwStep(now func() time.Time) Step {
+	return NewWriteUfwIPV6Step("", now)
+}
+
+// NewRewriteUfwIPV6Step is the CONTEXT.md alias for NewWriteUfwIPV6Step.
+// Same constructor, same semantics — distinct name for plans that compose
+// the rewrite cycle in two named conceptual steps.
+func NewRewriteUfwIPV6Step(value string, now func() time.Time) Step {
+	return NewWriteUfwIPV6Step(value, now)
+}
+
+// ---- SystemctlRestartUfw ↔ SystemctlRestartUfw (re-issue) -----------------
+
+// NewSystemctlRestartUfwStep wraps `systemctl restart ufw` after
+// /etc/default/ufw is rewritten (the kernel must reload the IPV6 setting).
+// Compensate re-issues so a prior file-restore returns the kernel to its
+// prior config.
+//
+// Implementation note: this dispatches via ops.Exec("systemctl", "restart",
+// "ufw") — no dedicated typed wrapper exists yet (would require extending
+// sysops). For Phase 4 we accept the bare Exec call through the existing
+// "Useradd uses Exec underneath" precedent — the binary is in the r.Exec
+// allowlist (systemctl is allowlisted by Plan 03-01).
+func NewSystemctlRestartUfwStep() Step {
+	return &systemctlRestartUfwStep{}
+}
+
+type systemctlRestartUfwStep struct{}
+
+func (s *systemctlRestartUfwStep) Name() string { return "SystemctlRestartUfw" }
+func (s *systemctlRestartUfwStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	res, err := ops.Exec(ctx, "systemctl", "restart", "ufw")
+	if err != nil {
+		return fmt.Errorf("SystemctlRestartUfw: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("SystemctlRestartUfw exit %d: %s",
+			res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+func (s *systemctlRestartUfwStep) Compensate(ctx context.Context, ops sysops.SystemOps) error {
+	res, err := ops.Exec(ctx, "systemctl", "restart", "ufw")
+	if err != nil {
+		return err
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("SystemctlRestartUfw compensate exit %d", res.ExitCode)
+	}
+	return nil
+}
+
+// ---- ScheduleRevert (SAFE-04 phase gate) ----------------------------------
+
+// NewScheduleRevertStep arms a 3-min systemd-run --on-active=<dur>
+// --unit=sftpj-revert-<unix-ns>.service transient unit whose ExecStart is
+// `/bin/sh -c '<reverseCmds joined by ;>'` per D-S04-08. Per D-S04-04 the
+// unix-nanosecond unit name is monotonic, sortable in `systemctl
+// list-units`, and conflict-free for human-paced operations.
+//
+// Apply: schedules the unit + writes the on-disk pointer via watcher.Set
+// (D-S04-06).
+//
+// Compensate: stops the unit (idempotent — non-zero exit is mapped to nil at
+// the call site) AND clears the watcher pointer so a downstream rollback
+// doesn't leave the pointer file orphaned (T-04-02-05 mitigation).
+//
+// The SAFE-04 wrapper pair (this Step + NewCancelRevertStep) sandwiches the
+// FW mutation steps in tx.Apply. Cancel is NOT in the txn batch — it runs
+// only after admin Confirm in the countdown UI (see D-S04-09 step 5).
+//
+// Threat-model commitments (T-04-02-01 / T-04-02-02 / T-04-02-03):
+//   - reverseCmds is constructed by Plan 04-08's RenderReverseCommands which
+//     composes from already-validated CIDR (net.ParseCIDR) + already-encoded
+//     comments (ufwcomment.Encode regex). This Step does NO string
+//     concatenation of user-influenced values.
+//   - Apply rejects deadlines < 1 second in the future with explicit error.
+//   - Unit-name uses now().UnixNano() — monotonic; collisions impossible at
+//     human pace.
+func NewScheduleRevertStep(reverseCmds []string, deadline time.Time, watcher RevertWatcher, now func() time.Time) Step {
+	if now == nil {
+		now = time.Now
+	}
+	return &scheduleRevertStep{
+		reverseCmds: reverseCmds,
+		deadline:    deadline,
+		watcher:     watcher,
+		now:         now,
+	}
+}
+
+type scheduleRevertStep struct {
+	reverseCmds []string
+	deadline    time.Time
+	watcher     RevertWatcher
+	now         func() time.Time
+	// populated by Apply for use in Compensate + UnitName():
+	unitName string
+}
+
+func (s *scheduleRevertStep) Name() string { return "ScheduleRevert" }
+
+func (s *scheduleRevertStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	// Compose the verbatim ExecStart body. The trailing `ufw reload` (when
+	// present) is appended by the caller in reverseCmds — this Step doesn't
+	// add it implicitly.
+	cmd := strings.Join(s.reverseCmds, "; ")
+	if cmd == "" {
+		return errors.New("ScheduleRevert: no reverse commands provided")
+	}
+	// OnActive duration = deadline - now (caller-injected time source).
+	onActive := s.deadline.Sub(s.now())
+	if onActive < time.Second {
+		return fmt.Errorf("ScheduleRevert: deadline must be at least 1 second in the future, got %s", onActive)
+	}
+	s.unitName = fmt.Sprintf("sftpj-revert-%d.service", s.now().UnixNano())
+	if err := ops.SystemdRunOnActive(ctx, sysops.SystemdRunOpts{
+		OnActive: onActive,
+		UnitName: s.unitName,
+		Command:  cmd,
+	}); err != nil {
+		return fmt.Errorf("ScheduleRevert systemd-run: %w", err)
+	}
+	if s.watcher != nil {
+		if err := s.watcher.Set(ctx, s.unitName, s.deadline, s.reverseCmds); err != nil {
+			// Try to undo the systemd-run schedule so we don't leave a ghost
+			// timer behind. Best-effort: ignore the stop error (idempotent).
+			_ = ops.SystemctlStop(ctx, s.unitName)
+			return fmt.Errorf("ScheduleRevert watcher.Set: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *scheduleRevertStep) Compensate(ctx context.Context, ops sysops.SystemOps) error {
+	if s.unitName == "" {
+		return nil // Apply never ran or never assigned a unit
+	}
+	// Stop is idempotent: non-zero exit on already-stopped / never-loaded is
+	// mapped to nil here. Surface ctx errors only.
+	_ = ops.SystemctlStop(ctx, s.unitName)
+	if s.watcher != nil {
+		// T-04-02-05 mitigation: clearing is best-effort — a Clear failure
+		// would otherwise cascade through the rollback. Plan 04-04's
+		// Watcher.Restore detects orphan pointers via SystemctlIsActive and
+		// self-cleans on next TUI startup.
+		_ = s.watcher.Clear(ctx)
+	}
+	return nil
+}
+
+// UnitName exposes the assigned unit name for the post-Apply countdown UI.
+// Returns "" before Apply runs.
+func (s *scheduleRevertStep) UnitName() string { return s.unitName }
+
+// ---- CancelRevert (no compensator — D-S04-05 cancellation irreversible) ---
+
+// NewCancelRevertStep stops the named transient unit and clears the watcher
+// pointer. Apply runs only after admin confirmation in the countdown UI
+// (D-S04-09 step 5). Compensate is intentionally a no-op per D-S04-05: once
+// Cancel runs, the rules are permanent. Downstream failures cannot
+// un-permanent-ize them.
+//
+// Idempotency: ops.SystemctlStop on an already-stopped or never-loaded unit
+// returns non-zero exit; we map that to success. Only ctx-level exec errors
+// are surfaced.
+func NewCancelRevertStep(unitName string, watcher RevertWatcher) Step {
+	return &cancelRevertStep{unitName: unitName, watcher: watcher}
+}
+
+type cancelRevertStep struct {
+	unitName string
+	watcher  RevertWatcher
+}
+
+func (s *cancelRevertStep) Name() string { return "CancelRevert" }
+func (s *cancelRevertStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	if err := ops.SystemctlStop(ctx, s.unitName); err != nil {
+		// "Failed to stop … not loaded" → idempotent success.
+		msg := err.Error()
+		if strings.Contains(msg, "not loaded") || strings.Contains(msg, "not found") {
+			// fall through to watcher.Clear
+		} else {
+			return fmt.Errorf("CancelRevert stop: %w", err)
+		}
+	}
+	if s.watcher != nil {
+		if err := s.watcher.Clear(ctx); err != nil {
+			return fmt.Errorf("CancelRevert watcher.Clear: %w", err)
+		}
+	}
+	return nil
+}
+func (s *cancelRevertStep) Compensate(_ context.Context, _ sysops.SystemOps) error {
+	// Intentional no-op per D-S04-05: cancellation is irreversible by
+	// design. Once SystemctlStop succeeds, the SAFE-04 transient unit is
+	// gone — the FW rules just applied are permanent.
+	return nil
+}
