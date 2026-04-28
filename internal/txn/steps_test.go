@@ -1153,7 +1153,50 @@ func TestNewCancelRevertStep_apply_stops_unit_and_clears_watcher(t *testing.T) {
 
 	require.True(t, containsCall(f.Calls, "SystemctlStop", "unit=sftpj-revert-1.service"),
 		"Apply must SystemctlStop the named unit")
+	// BUG-04-D regression guard: systemd-run --on-active creates BOTH a .timer
+	// AND a .service unit per D-S04-04. Stopping only the .service leaves the
+	// .timer ticking; the timer fires the .service again at the original
+	// deadline, undoing the just-confirmed mutation. cancelRevertStep.Apply
+	// MUST stop both. See cmd/uat-04/main.go:645-655 for the canonical pattern.
+	require.True(t, containsCall(f.Calls, "SystemctlStop", "unit=sftpj-revert-1.timer"),
+		"BUG-04-D: Apply must SystemctlStop the .timer unit (not just .service)")
 	require.True(t, w.clearCalled, "Apply must call watcher.Clear")
+}
+
+// TestNewCancelRevertStep_apply_stops_timer_BEFORE_service pins the systemd
+// convention: stop the .timer first so it can't re-arm the .service between
+// the two stops. Mirrors cmd/uat-04/main.go:645-655's helper-side workaround
+// for BUG-04-D. With this ordering, a forgotten .timer stop reliably reveals
+// itself in production (the timer fires after Confirm), but with both stops
+// in the canonical .timer-first order, the SAFE-04 cancellation contract
+// (D-S04-05) holds.
+func TestNewCancelRevertStep_apply_stops_timer_BEFORE_service(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	w := &fakeRevertWatcher{}
+	step := NewCancelRevertStep("sftpj-revert-1700000000.service", w)
+	require.NoError(t, step.Apply(context.Background(), f))
+
+	// Find both call indices and assert ordering.
+	timerIdx, serviceIdx := -1, -1
+	for i, call := range f.Calls {
+		if call.Method != "SystemctlStop" {
+			continue
+		}
+		for _, arg := range call.Args {
+			if arg == "unit=sftpj-revert-1700000000.timer" {
+				timerIdx = i
+			}
+			if arg == "unit=sftpj-revert-1700000000.service" {
+				serviceIdx = i
+			}
+		}
+	}
+	require.NotEqual(t, -1, timerIdx, "BUG-04-D: .timer stop call missing from f.Calls")
+	require.NotEqual(t, -1, serviceIdx, ".service stop call missing from f.Calls")
+	require.Less(t, timerIdx, serviceIdx,
+		"BUG-04-D: .timer stop must come BEFORE .service stop (systemd convention — "+
+			"stopping .timer first prevents the timer re-arming the service between stops)")
 }
 
 func TestNewCancelRevertStep_compensate_is_intentional_noop(t *testing.T) {
@@ -1170,6 +1213,12 @@ func TestNewCancelRevertStep_compensate_is_intentional_noop(t *testing.T) {
 		"Compensate must not touch sysops at all (D-S04-05 irreversible by design)")
 }
 
+// TestNewCancelRevertStep_unit_not_loaded_is_idempotent — also covers the
+// BUG-04-D-fixed two-stop path: the shared f.SystemctlStopError returns
+// "not loaded" for BOTH the .timer and .service stops, and Apply must
+// still return nil (the not-loaded mapping covers both calls) and call
+// watcher.Clear. This pins the idempotency contract under the strengthened
+// two-stop production code.
 func TestNewCancelRevertStep_unit_not_loaded_is_idempotent(t *testing.T) {
 	t.Parallel()
 	f := sysops.NewFake()
