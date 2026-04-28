@@ -222,7 +222,24 @@ func TestDetectAddrFamily_empty_falls_back_to_v4(t *testing.T) {
 	require.Equal(t, "v4", detectAddrFamily("not-a-cidr"))
 }
 
-func TestBuildPendingMutations_emits_one_add_per_ip_plus_catchall_delete_in_OPEN_mode(t *testing.T) {
+// TestBuildPendingMutations_emits_only_OpAdd_in_OPEN_mode_post_BUG_04_A
+// pins the BUG-04-A + BUG-04-C gap-closure refactor: buildPendingMutations
+// no longer emits OpDelete entries for catch-alls. The catch-all-removal
+// responsibility moves to commitCmd's step list via
+// txn.NewUfwDeleteCatchAllByEnumerateStep — a position-independent
+// dual-family-aware step landed by Plan 04-12.
+//
+// Pre-fix shape (the original test name was *_one_add_per_ip_plus_catchall_delete*):
+//   - 2 OpAdd + 1 OpDelete-with-stale-catch-all-id.
+//
+// Post-fix shape:
+//   - 2 OpAdd only. catch-all removal happens at Apply time inside the
+//     new step, not via the muts pipeline.
+//
+// The pre-fix shape suffered BUG-04-A (stale id after position-shift) +
+// BUG-04-C (only one of the v4/v6 catch-alls deleted on dual-family
+// hosts) — both empirically caught by Plan 04-10's UAT.
+func TestBuildPendingMutations_emits_only_OpAdd_in_OPEN_mode_post_BUG_04_A(t *testing.T) {
 	t.Parallel()
 	f := sysops.NewFake()
 	m := New(f, nil, nil, nil, "22", 90)
@@ -237,25 +254,16 @@ func TestBuildPendingMutations_emits_one_add_per_ip_plus_catchall_delete_in_OPEN
 	})
 
 	muts := m.buildPendingMutations()
-	require.Len(t, muts, 3, "2 OpAdd + 1 OpDelete (catch-all)")
+	require.Len(t, muts, 2, "BUG-04-A/C: catch-all delete moved to commitCmd's step list; "+
+		"buildPendingMutations now returns ONLY OpAdd entries")
 
-	addCount, deleteCount := 0, 0
 	for _, mut := range muts {
-		switch mut.Op {
-		case lockdown.OpAdd:
-			addCount++
-			require.Equal(t, "alice", mut.Rule.User)
-			require.Equal(t, "22", mut.Rule.Port)
-			require.Equal(t, "v4", mut.Rule.Proto, "address family detected from CIDR")
-		case lockdown.OpDelete:
-			deleteCount++
-			require.Equal(t, 1, mut.Rule.ID, "catch-all delete by ID=1")
-			require.Equal(t, "", mut.Rule.RawComment, "catch-all has no sftpj comment")
-			require.Equal(t, "Anywhere", mut.Rule.Source)
-		}
+		require.Equal(t, lockdown.OpAdd, mut.Op,
+			"BUG-04-A/C: zero OpDelete entries — catch-all removal handled by NewUfwDeleteCatchAllByEnumerateStep at Apply time")
+		require.Equal(t, "alice", mut.Rule.User)
+		require.Equal(t, "22", mut.Rule.Port)
+		require.Equal(t, "v4", mut.Rule.Proto)
 	}
-	require.Equal(t, 2, addCount)
-	require.Equal(t, 1, deleteCount)
 }
 
 func TestBuildPendingMutations_no_catchall_delete_when_mode_is_LOCKED(t *testing.T) {
@@ -368,4 +376,289 @@ func TestRollbackCmd_calls_RebuildUserIPs_when_store_set(t *testing.T) {
 	require.True(t, ok)
 	require.NoError(t, rb.err)
 	require.Equal(t, 1, store.calls, "rollbackCmd must invoke RebuildUserIPs once on success")
+}
+
+// ---- Plan 04-13 (BUG-04-A + BUG-04-C consumer wiring) ----
+//
+// These tests pin the post-fix commitCmd shape: when m.currentMode is
+// OPEN or STAGING, commitCmd appends txn.NewUfwDeleteCatchAllByEnumerateStep
+// (Plan 04-12) AFTER the per-IP UfwInsert steps and BEFORE the trailing
+// UfwReload step. LOCKED-mode commits do NOT append the step (no catch-
+// all to remove; appending would still be safe-no-op but skipping is
+// cleaner and saves an Enumerate round-trip).
+
+// ufwStatusDualFamilyFixture mirrors Plan 04-12's fixture used in
+// internal/txn tests: a v4 catch-all (id=1) + v6 catch-all (id=2) +
+// sftpj rule (id=3). Models a default Ubuntu 24.04 box (IPV6=yes).
+func ufwStatusDualFamilyFixture() []byte {
+	return []byte(`Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 3] 22/tcp                     ALLOW IN    1.2.3.4                    # sftpj:v=1:user=alice
+`)
+}
+
+// ufwStatusV6OnlyAfterFirstDeleteFixture: ufw renumbered after the v4
+// catch-all was deleted. v6 catch-all is now id=1, sftpj is id=2.
+func ufwStatusV6OnlyAfterFirstDeleteFixture() []byte {
+	return []byte(`Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 2] 22/tcp                     ALLOW IN    1.2.3.4                    # sftpj:v=1:user=alice
+`)
+}
+
+// ufwStatusSftpjOnlyFixture: both catch-alls gone, only sftpj remains.
+func ufwStatusSftpjOnlyFixture() []byte {
+	return []byte(`Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    1.2.3.4                    # sftpj:v=1:user=alice
+`)
+}
+
+// TestCommitCmd_OPEN_mode_appends_NewUfwDeleteCatchAllByEnumerateStep is
+// the headline regression test for BUG-04-A + BUG-04-C — the empirical
+// failure modes from Plan 04-10's UAT. This test PROVES the production
+// commitCmd path emits the dual-family catch-all deletion sequence on a
+// realistic Ubuntu 24.04 fixture.
+//
+// Pre-fix: commitCmd composed [Schedule, UfwInsert × N, UfwDelete(stale-id), Reload].
+//   - Stale id was captured at SetCurrentRulesForTest time (id=1).
+//   - After UfwInsert × N, ufw shifted catch-all to id=2 (position-shift) → BUG-04-A.
+//   - Even with the right id, only ONE of the v4/v6 catch-alls was scheduled for delete → BUG-04-C.
+//
+// Post-fix: commitCmd composes [Schedule, UfwInsert × N, NewUfwDeleteCatchAllByEnumerateStep, Reload].
+//   - The new step re-Enumerates at Apply time → fresh ids → BUG-04-A closed.
+//   - The new step iterates and deletes ALL catch-alls → BUG-04-C closed.
+func TestCommitCmd_OPEN_mode_appends_NewUfwDeleteCatchAllByEnumerateStep(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	// Stateful Enumerate: dual-family on first call (during the new step's
+	// Apply-time re-Enumerate-and-delete loop), v6-only after the first
+	// delete, sftpj-only after the second delete (loop terminates), then
+	// one more for the post-Apply FW-08 mirror-rebuild.
+	// Production order of Enumerate calls during commitCmd:
+	//   - Inside NewUfwDeleteCatchAllByEnumerateStep.Apply (3 calls — see below)
+	//   - Post-Apply FW-08 rebuild (1 call)
+	// Total: 4 scripted responses queued.
+	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
+		{ExitCode: 0, Stdout: ufwStatusDualFamilyFixture()},             // step iter 0: find v4 catch-all id=1 → delete
+		{ExitCode: 0, Stdout: ufwStatusV6OnlyAfterFirstDeleteFixture()}, // step iter 1: find v6 catch-all id=1 → delete
+		{ExitCode: 0, Stdout: ufwStatusSftpjOnlyFixture()},              // step iter 2: no catch-all → return
+		{ExitCode: 0, Stdout: ufwStatusSftpjOnlyFixture()},              // post-Apply rebuild
+	}
+
+	store := &fakeStore{}
+	m := New(f, nil, nil, nil, "22", 90)
+	m.LoadProposalsForTest([]lockdown.Proposal{
+		{User: "alice", IPs: []lockdown.ProposedIP{
+			{Source: "203.0.113.7/32", Tier: "success"},
+			{Source: "203.0.113.8/32", Tier: "success"},
+		}},
+	}, firewall.ModeOpen)
+	m.SetCurrentRulesForTest([]firewall.Rule{
+		{ID: 1, Port: "22", Source: "Anywhere", Action: "ALLOW IN", RawComment: ""},
+		{ID: 2, Port: "22", Proto: "v6", Source: "Anywhere", Action: "ALLOW IN", RawComment: ""},
+	})
+	m.SetStore(store)
+	m.SetNowFnForTest(func() time.Time { return time.Unix(1700000000, 0) })
+
+	cmd := m.commitCmd()
+	require.NotNil(t, cmd)
+	msg := cmd()
+	committed, ok := msg.(committedMsg)
+	require.True(t, ok)
+	require.NoError(t, committed.err, "commitCmd must succeed against the dual-family fixture")
+
+	// Count call types.
+	insertCount, deleteCount, reloadCount, scheduleCount := 0, 0, 0, 0
+	for _, c := range f.Calls {
+		switch c.Method {
+		case "UfwInsert":
+			insertCount++
+		case "UfwDelete":
+			deleteCount++
+		case "UfwReload":
+			reloadCount++
+		case "SystemdRunOnActive":
+			scheduleCount++
+		}
+	}
+	require.Equal(t, 2, insertCount, "two UfwInsert calls (alice's two IPs)")
+	require.Equal(t, 2, deleteCount,
+		"BUG-04-C: dual-family hosts have v4+v6 catch-alls; commitCmd must delete BOTH "+
+			"via NewUfwDeleteCatchAllByEnumerateStep's loop")
+	require.Equal(t, 1, reloadCount, "trailing UfwReload finalizer (W3 dedup)")
+	require.Equal(t, 1, scheduleCount, "SAFE-04 SystemdRunOnActive armed first")
+}
+
+// TestCommitCmd_STAGING_mode_also_appends_catchall_step pins that
+// STAGING → LOCKED (catch-all + sftpj coexist; commit removes catch-all)
+// also routes through the new step. Zero new OpAdds, but the catch-all
+// deletion is still wired.
+func TestCommitCmd_STAGING_mode_also_appends_catchall_step(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
+		{ExitCode: 0, Stdout: ufwStatusV6OnlyAfterFirstDeleteFixture()}, // step iter 0: find v6 catch-all id=1 → delete
+		{ExitCode: 0, Stdout: ufwStatusSftpjOnlyFixture()},              // step iter 1: no catch-all → return
+		{ExitCode: 0, Stdout: ufwStatusSftpjOnlyFixture()},              // post-Apply rebuild
+	}
+
+	store := &fakeStore{}
+	m := New(f, nil, nil, nil, "22", 90)
+	// STAGING-mode: a single re-add IP for alice so that
+	// buildPendingMutations produces ≥1 OpAdd (commitCmd's pre-flight
+	// rejects empty mutation sets). The catch-all removal is the
+	// MODE-changing action; the OpAdd is incidental but realistic.
+	m.LoadProposalsForTest([]lockdown.Proposal{
+		{User: "alice", IPs: []lockdown.ProposedIP{
+			{Source: "203.0.113.7/32", Tier: "success"},
+		}},
+	}, firewall.ModeStaging)
+	m.SetCurrentRulesForTest([]firewall.Rule{
+		{ID: 1, Port: "22", Proto: "v6", Source: "Anywhere", Action: "ALLOW IN", RawComment: ""},
+		{ID: 2, Port: "22", Source: "1.2.3.4/32", Action: "ALLOW IN",
+			RawComment: "sftpj:v=1:user=alice", User: "alice"},
+	})
+	m.SetStore(store)
+	m.SetNowFnForTest(func() time.Time { return time.Unix(1700000000, 0) })
+
+	cmd := m.commitCmd()
+	msg := cmd()
+	committed, ok := msg.(committedMsg)
+	require.True(t, ok)
+	require.NoError(t, committed.err)
+
+	deleteCount, insertCount := 0, 0
+	for _, c := range f.Calls {
+		switch c.Method {
+		case "UfwDelete":
+			deleteCount++
+		case "UfwInsert":
+			insertCount++
+		}
+	}
+	require.Equal(t, 1, insertCount, "STAGING → LOCKED: one new OpAdd from the proposal")
+	require.Equal(t, 1, deleteCount, "STAGING → LOCKED: NewUfwDeleteCatchAllByEnumerateStep "+
+		"removes the single catch-all even when buildPendingMutations only emits OpAdd entries")
+}
+
+// TestCommitCmd_LOCKED_mode_does_NOT_append_catchall_step pins that the
+// step is conditional on currentMode. LOCKED-mode commits (e.g. adding
+// a new per-user IP after lockdown) should NOT append the step (no
+// catch-all to remove; appending would still be safe-no-op but skipping
+// is cleaner and saves an Enumerate round-trip).
+func TestCommitCmd_LOCKED_mode_does_NOT_append_catchall_step(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	// Only ONE Enumerate call expected: the post-Apply FW-08 rebuild.
+	// The step is NOT appended, so its Apply-time Enumerate calls don't happen.
+	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
+		{ExitCode: 0, Stdout: ufwStatusSftpjOnlyFixture()},
+	}
+
+	store := &fakeStore{}
+	m := New(f, nil, nil, nil, "22", 90)
+	m.LoadProposalsForTest([]lockdown.Proposal{
+		{User: "bob", IPs: []lockdown.ProposedIP{{Source: "10.0.0.1/32", Tier: "manual"}}},
+	}, firewall.ModeLocked)
+	m.SetCurrentRulesForTest([]firewall.Rule{
+		{ID: 1, Port: "22", Source: "1.2.3.4/32", Action: "ALLOW IN",
+			RawComment: "sftpj:v=1:user=alice", User: "alice"},
+	})
+	m.SetStore(store)
+	m.SetNowFnForTest(func() time.Time { return time.Unix(1700000000, 0) })
+
+	cmd := m.commitCmd()
+	msg := cmd()
+	committed, ok := msg.(committedMsg)
+	require.True(t, ok)
+	require.NoError(t, committed.err)
+
+	deleteCount := 0
+	for _, c := range f.Calls {
+		if c.Method == "UfwDelete" {
+			deleteCount++
+		}
+	}
+	require.Equal(t, 0, deleteCount, "LOCKED-mode commit: NewUfwDeleteCatchAllByEnumerateStep "+
+		"must NOT be appended (no catch-all to remove)")
+}
+
+// TestCommitCmd_OPEN_mode_position_shift_does_NOT_break_commit is the
+// empirical BUG-04-A scenario. Same setup as
+// TestCommitCmd_OPEN_mode_appends_NewUfwDeleteCatchAllByEnumerateStep
+// but explicitly notes via doc-comment that this would have FAILED in
+// the pre-fix world: the catch-all id captured at SetCurrentRulesForTest
+// time (id=1) was deleted by `ufw insert 1` shifting it to id=2; the
+// OLD UfwDelete(stale-id-1) would have hit the just-inserted alice rule.
+// Post-fix, NewUfwDeleteCatchAllByEnumerateStep re-Enumerates at Apply
+// time and finds the fresh id (whatever it is — id=2 after the inserts,
+// or compacted to id=1 if ufw renumbers eagerly).
+func TestCommitCmd_OPEN_mode_position_shift_does_NOT_break_commit(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	// Same dual-family fixture sequence as above — the test expectation
+	// is structural (no stale id in the txn batch) rather than a
+	// numerical id assertion (which is brittle vs. ufw's renumbering).
+	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
+		{ExitCode: 0, Stdout: ufwStatusDualFamilyFixture()},
+		{ExitCode: 0, Stdout: ufwStatusV6OnlyAfterFirstDeleteFixture()},
+		{ExitCode: 0, Stdout: ufwStatusSftpjOnlyFixture()},
+		{ExitCode: 0, Stdout: ufwStatusSftpjOnlyFixture()},
+	}
+
+	store := &fakeStore{}
+	m := New(f, nil, nil, nil, "22", 90)
+	m.LoadProposalsForTest([]lockdown.Proposal{
+		{User: "alice", IPs: []lockdown.ProposedIP{
+			{Source: "203.0.113.7/32", Tier: "success"},
+			{Source: "203.0.113.8/32", Tier: "success"},
+		}},
+	}, firewall.ModeOpen)
+	m.SetCurrentRulesForTest([]firewall.Rule{
+		{ID: 1, Port: "22", Source: "Anywhere", Action: "ALLOW IN", RawComment: ""},
+		{ID: 2, Port: "22", Proto: "v6", Source: "Anywhere", Action: "ALLOW IN", RawComment: ""},
+	})
+	m.SetStore(store)
+	m.SetNowFnForTest(func() time.Time { return time.Unix(1700000000, 0) })
+
+	cmd := m.commitCmd()
+	msg := cmd()
+	committed, ok := msg.(committedMsg)
+	require.True(t, ok)
+	require.NoError(t, committed.err,
+		"BUG-04-A: pre-fix commit would fail because UfwDelete(stale-id-1) targeted "+
+			"the just-inserted alice rule. Post-fix the new step re-Enumerates → fresh ids "+
+			"→ correct catch-all deleted regardless of position shift.")
+
+	// The deletion path must NOT have targeted any of the alice sftpj
+	// rules — assert by inspecting the recorded UfwDelete calls. The
+	// dual-family fixture's first Enumerate sees alice at id=3; if the
+	// pre-fix code had captured id=1 at SetCurrentRulesForTest time,
+	// after `ufw insert 1` × 2 alice's rule would have shifted to id=3
+	// and the catch-all to id=3 (or id=2 depending on renumbering). The
+	// new step deletes catch-alls only — never sftpj rules.
+	deleteIDs := []string{}
+	for _, c := range f.Calls {
+		if c.Method == "UfwDelete" {
+			deleteIDs = append(deleteIDs, strings.Join(c.Args, " "))
+		}
+	}
+	// Two UfwDelete calls, both targeting catch-all ids surfaced by
+	// re-Enumerate (id=1 then id=1 after the v4 was deleted).
+	require.Len(t, deleteIDs, 2, "exactly two UfwDelete calls (v4 + v6 catch-alls)")
+	require.Equal(t, "id=1", deleteIDs[0],
+		"first delete targets the v4 catch-all at fresh id=1 (NOT the sftpj rule)")
+	require.Equal(t, "id=1", deleteIDs[1],
+		"second delete targets the v6 catch-all at id=1 after ufw renumbering "+
+			"(post-fix re-Enumerate provides the FRESH id; pre-fix would have used a stale capture)")
 }
