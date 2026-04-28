@@ -12,9 +12,11 @@ import (
 	teatest "github.com/charmbracelet/x/exp/teatest/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/app"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/tuitest"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
 )
 
 // testScreen is a minimal nav.Screen used to drive the App under test.
@@ -226,6 +228,66 @@ func TestApp_teatest_renders_screen_view(t *testing.T) {
 	_, _ = io.Copy(buf, out)
 	require.True(t, strings.Contains(buf.String(), "test:home"),
 		"rendered frame must contain the screen's View output; got:\n%s", buf.String())
+}
+
+// -----------------------------------------------------------------------------
+// Phase 4 plan 04-09: ModeBar widget integration into App.View / App.Update.
+// -----------------------------------------------------------------------------
+
+func TestApp_View_includes_modebar_above_screen_body(t *testing.T) {
+	tuitest.ResetResolvers(t)
+	a := app.New("v0", "http://example.com", &testScreen{name: "BODY"})
+	a.SetMode(firewall.ModeOpen, 0, 0)
+	v := a.View()
+	rendered := v.Content
+	require.Contains(t, rendered, "MODE: OPEN")
+	require.Contains(t, rendered, "test:BODY")
+	// Modebar must render BEFORE the screen body in the composed output —
+	// otherwise the global strip is no longer always-visible above the
+	// active screen (D-L0809-03 + D-S04-03).
+	require.Less(t,
+		strings.Index(rendered, "MODE: OPEN"),
+		strings.Index(rendered, "test:BODY"),
+		"modebar must render above screen body; got:\n%s", rendered)
+}
+
+func TestApp_View_modebar_renders_when_stack_empty(t *testing.T) {
+	tuitest.ResetResolvers(t)
+	a := app.New("v0", "http://example.com")
+	a.SetMode(firewall.ModeStaging, 3, 0)
+	v := a.View()
+	require.Contains(t, v.Content, "MODE: STAGING")
+}
+
+func TestApp_Init_returns_modebar_tick_cmd(t *testing.T) {
+	tuitest.ResetResolvers(t)
+	a := app.New("v0", "http://example.com")
+	cmd := a.Init()
+	// Init must return a non-nil cmd carrying the TickCmd batch — without
+	// it the countdown text never updates.
+	require.NotNil(t, cmd, "Init must return a non-nil cmd containing TickCmd")
+}
+
+func TestApp_Update_routes_ModeBarTickMsg_and_re_arms(t *testing.T) {
+	tuitest.ResetResolvers(t)
+	a := app.New("v0", "http://example.com", &testScreen{name: "s"})
+	_, cmd := a.Update(widgets.ModeBarTickMsg{})
+	// Update must re-arm the next tick — without it the cycle dies after
+	// the first tick and the countdown stops updating.
+	require.NotNil(t, cmd, "Update on ModeBarTickMsg must return a re-armed TickCmd")
+}
+
+func TestApp_SetMode_passthrough_updates_modebar_render(t *testing.T) {
+	tuitest.ResetResolvers(t)
+	a := app.New("v0", "http://example.com", &testScreen{name: "s"})
+	// Default render is UNKNOWN.
+	require.Contains(t, a.View().Content, "MODE: UNKNOWN")
+	// SetMode → LOCKED must update the next View() output.
+	a.SetMode(firewall.ModeLocked, 9, 4)
+	got := a.View().Content
+	require.Contains(t, got, "MODE: LOCKED")
+	require.Contains(t, got, "9 allow rules")
+	require.Contains(t, got, "4 users")
 }
 
 // -----------------------------------------------------------------------------
