@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 )
 
@@ -698,6 +699,144 @@ func (s *ufwReloadStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
 }
 func (s *ufwReloadStep) Compensate(ctx context.Context, ops sysops.SystemOps) error {
 	return ops.UfwReload(ctx)
+}
+
+// ---- UfwDeleteCatchAllByEnumerate ↔ (irreversible — relies on SAFE-04) ----
+
+// maxCatchAllIterations bounds NewUfwDeleteCatchAllByEnumerateStep's
+// re-Enumerate-and-delete loop. Real hosts have at most 2 catch-alls
+// (v4 + v6); 4 leaves slack for unusual configs (e.g. admin manually
+// added duplicate rules) without risking a runaway loop on a
+// misbehaving Enumerate parser.
+const maxCatchAllIterations = 4
+
+// NewUfwDeleteCatchAllByEnumerateStep is the position-independent catch-all
+// deletion step that fixes BUG-04-A (P0, stale catch-all ID after
+// `ufw insert 1` shifts positions) and BUG-04-C (P0, only-one-catch-all
+// deleted on dual-family v4+v6 hosts). Both bugs were caught by Plan 04-10's
+// empirical UAT — see 04-10-SUMMARY's "Production bugs discovered" table.
+//
+// Apply's contract:
+//  1. Re-Enumerate via firewall.Enumerate at Apply time (NOT at construction).
+//     This guarantees fresh IDs even after intervening UfwInsert calls
+//     shifted positions.
+//  2. Loop up to maxCatchAllIterations times, deleting the first matching
+//     catch-all (Source=Anywhere, ALLOW, RawComment=="", port matches).
+//     ufw renumbers after each delete; the next Enumerate sees the
+//     compacted state.
+//  3. Terminate cleanly when no more catch-alls are found. Both v4 and v6
+//     catch-alls are deleted in any order they appear (the predicate
+//     doesn't distinguish — Rule.Source equals "Anywhere" for both after
+//     enumerate.go's stripV6Suffix).
+//
+// Idempotency: zero catch-alls present → zero UfwDelete calls → return nil.
+// A "rule not found" / "Could not delete" exit phrase from a UfwDelete call
+// is treated as success (admin or race deleted concurrently); the loop
+// continues to the next iteration.
+//
+// Compensate is intentional no-op per D-FW-07 — once a rule is gone at the
+// tool layer, the SAFE-04 transient-unit revert is the ONLY recovery path.
+// The wrapping NewScheduleRevertStep's reverseCmds includes the per-rule
+// re-add commands; the SAFE-04 timer fires those if Apply errors mid-loop.
+//
+// Architectural note: this Step imports internal/firewall, breaking the
+// Plan 04-04 constraint that txn imports only sysops. The break is
+// deliberate and minimal — Enumerate is read-only, has no other dep on
+// txn, and is the load-bearing primitive for the catch-all predicate that
+// must match firewall.DetectMode's predicate exactly. Inline-duplicating
+// the predicate would risk drift between detection and deletion. (If
+// future refactoring extracts the predicate into a shared package — e.g.
+// internal/firewall/predicates — this Step can switch to that import
+// without behavior change.)
+func NewUfwDeleteCatchAllByEnumerateStep(port string) Step {
+	return &ufwDeleteCatchAllByEnumerateStep{port: port}
+}
+
+type ufwDeleteCatchAllByEnumerateStep struct {
+	port string
+}
+
+func (s *ufwDeleteCatchAllByEnumerateStep) Name() string {
+	return "UfwDeleteCatchAllByEnumerate"
+}
+
+func (s *ufwDeleteCatchAllByEnumerateStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	for i := 0; i < maxCatchAllIterations; i++ {
+		rules, err := firewall.Enumerate(ctx, ops)
+		if err != nil {
+			return fmt.Errorf("UfwDeleteCatchAllByEnumerate iter=%d enumerate: %w", i, err)
+		}
+		id := s.findCatchAllID(rules)
+		if id < 0 {
+			// No catch-alls remain — clean termination.
+			return nil
+		}
+		if dErr := ops.UfwDelete(ctx, id); dErr != nil {
+			msg := dErr.Error()
+			if strings.Contains(msg, "Could not delete") || strings.Contains(msg, "rule not found") {
+				// Idempotent: admin or race deleted concurrently; continue.
+				continue
+			}
+			return fmt.Errorf("UfwDeleteCatchAllByEnumerate iter=%d delete id=%d: %w", i, id, dErr)
+		}
+	}
+	// Loop bound exceeded without clean termination. Defensive — should
+	// never trigger on real hosts (max 2 catch-alls expected). Surface
+	// as error so the SAFE-04 timer can take over.
+	return fmt.Errorf("UfwDeleteCatchAllByEnumerate: exceeded %d iterations without clearing all catch-alls "+
+		"(possible Enumerate parser bug or runaway state)", maxCatchAllIterations)
+}
+
+func (s *ufwDeleteCatchAllByEnumerateStep) Compensate(_ context.Context, _ sysops.SystemOps) error {
+	// Intentional no-op per D-FW-07 / D-S04-05: catch-all deletion is
+	// irreversible by design. Recovery rides the wrapping SAFE-04
+	// NewScheduleRevertStep's reverseCmds.
+	return nil
+}
+
+// findCatchAllID returns the ID of the first catch-all rule matching this
+// step's port, or -1 if none. The predicate matches firewall.DetectMode's
+// hasCatchAll predicate exactly (mode.go lines 67-99):
+//   - Action contains "ALLOW" (case-insensitive)
+//   - Source equals "Anywhere" (case-insensitive — both v4 and v6 catch-alls
+//     after enumerate.go's stripV6Suffix)
+//   - RawComment == "" (foreign / sftpj rules carry non-empty comments)
+//   - portMatchesCatchAllPort(rule.Port, s.port) — accepts "22", "22/tcp",
+//     "22/udp" against s.port="22"
+func (s *ufwDeleteCatchAllByEnumerateStep) findCatchAllID(rules []firewall.Rule) int {
+	for _, r := range rules {
+		if !portMatchesCatchAllPort(r.Port, s.port) {
+			continue
+		}
+		if !strings.Contains(strings.ToUpper(r.Action), "ALLOW") {
+			continue
+		}
+		if r.RawComment != "" {
+			continue
+		}
+		if !strings.EqualFold(r.Source, "Anywhere") {
+			continue
+		}
+		return r.ID
+	}
+	return -1
+}
+
+// portMatchesCatchAllPort mirrors firewall.portMatches (mode.go:101-115)
+// verbatim. Duplicated rather than imported because firewall.portMatches
+// is unexported; the duplication is small (4 lines) and the predicate is
+// load-bearing for the catch-all definition contract — keeping the two
+// copies in lock-step is a small-enough hazard.
+func portMatchesCatchAllPort(rulePort, sftpPort string) bool {
+	if rulePort == sftpPort {
+		return true
+	}
+	for _, suffix := range []string{"/tcp", "/udp"} {
+		if rulePort == sftpPort+suffix {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- WriteUfwIPV6 ↔ (restore prior /etc/default/ufw bytes) ----------------
