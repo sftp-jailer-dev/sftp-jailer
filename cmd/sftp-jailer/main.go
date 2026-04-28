@@ -296,9 +296,39 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// ONE *revert.Watcher per TUI process so the 3-min revert window is
 	// shared across all FW-mutation modals (M-ADD-RULE today; M-DELETE-RULE
 	// in 04-06; S-LOCKDOWN commit in 04-08). The watcher's on-disk pointer
-	// at /var/lib/sftp-jailer/revert.json survives crashes — the Restore
-	// flow on next launch will reload pending revert state.
+	// at /var/lib/sftp-jailer/revert.active survives crashes — the Restore
+	// flow on next launch reloads pending revert state.
 	revertWatcher := revert.New(ops)
+
+	// Plan 04-09 carryover: reconcile any in-flight SAFE-04 revert window
+	// from a prior TUI session before constructing the App. Restore reads
+	// the on-disk pointer at /var/lib/sftp-jailer/revert.active and:
+	//   - missing             → clean state, modebar renders MODE words.
+	//   - present + active    → in-process state restored; modebar will
+	//     immediately switch to the REVERTING countdown on first render.
+	//   - present + inactive  → unit fired (timer expired or killed
+	//     externally); pointer auto-cleared and a stderr line surfaced
+	//     so the admin sees the recovery on launch.
+	//   - present + corrupt   → orphan pointer; best-effort clear with
+	//     a stderr warning so the box state is surfaced even if Restore
+	//     can't fully reconcile.
+	// Bound the call by 5s so a hung systemctl on a degraded box does
+	// not block TUI startup indefinitely.
+	{
+		restoreCtx, restoreCancel := context.WithTimeout(cmd.Context(), 5*time.Second)
+		switch fired, err := revertWatcher.Restore(restoreCtx); {
+		case err != nil && fired:
+			fmt.Fprintf(os.Stderr,
+				"sftp-jailer: warning: orphan revert pointer cleared on startup: %v\n", err)
+		case err != nil:
+			fmt.Fprintf(os.Stderr,
+				"sftp-jailer: warning: revert.Restore failed: %v (continuing without revert state)\n", err)
+		case fired:
+			fmt.Fprintf(os.Stderr,
+				"sftp-jailer: prior revert window fired before this launch — pre-change ufw rules were restored by the systemd unit\n")
+		}
+		restoreCancel()
+	}
 
 	// Factory injections — sorted alphabetically by screen name so future
 	// wave plans can insert their own line without merge conflict noise.
@@ -383,6 +413,12 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	a := app.New(version.Version, version.ProjectURL,
 		splash.New(version.Version, version.ProjectURL),
 	)
+	// Plan 04-09: bind the SAFE-04 watcher to the App's modebar so the
+	// REVERTING countdown branch fires when the timer is armed across
+	// any screen (D-L0809-03 + D-S04-03). If revert.Restore above
+	// repopulated the in-process State, the very first View() after
+	// program.Run will already render the countdown.
+	a.SetWatcher(revertWatcher)
 
 	// Exactly ONE program constructor per process (pitfall E1).
 	// Bubble Tea v2 notes:
