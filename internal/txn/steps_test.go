@@ -1239,3 +1239,174 @@ func TestRevertWatcher_interface_satisfied_by_fakeRevertWatcher(t *testing.T) {
 	// shape so NewScheduleRevertStep accepts it without import cycle.
 	var _ RevertWatcher = (*fakeRevertWatcher)(nil)
 }
+
+// ---------------------------------------------------------------------------
+// Plan 04-12 (gap closure): NewUfwDeleteCatchAllByEnumerateStep tests
+//
+// These tests pin the failure modes empirically caught by Plan 04-10's UAT
+// (04-10-SUMMARY "Production bugs discovered" table):
+//
+//   BUG-04-A: stale catch-all ID after `ufw insert 1` shifts positions.
+//   BUG-04-C: only-one-catch-all-deleted on dual-family v4+v6 hosts.
+//
+// The step under test re-Enumerates ufw at Apply time and deletes EVERY
+// matching catch-all (Source="Anywhere", ALLOW, empty RawComment, port
+// matches). This is the production version of cmd/uat-04/main.go:432-450's
+// helper-side workaround loop.
+// ---------------------------------------------------------------------------
+
+// ufwStatusFixtureDualFamily returns a "ufw status numbered" stdout
+// modeling a default Ubuntu 24.04 box with IPV6=yes — a v4 catch-all
+// (id=1), a v6 catch-all (id=2), and a sftpj rule (id=3). Format mirrors
+// internal/firewall/testdata/ufw-status-numbered-mixed.txt verbatim.
+func ufwStatusFixtureDualFamily() []byte {
+	return []byte(`Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    Anywhere
+[ 2] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 3] 22/tcp                     ALLOW IN    1.2.3.4                    # sftpj:v=1:user=alice
+`)
+}
+
+// ufwStatusFixtureV6OnlyAfterFirstDelete: the v4 catch-all is gone;
+// ufw renumbered remaining rules. v6 catch-all is now id=1, sftpj is id=2.
+func ufwStatusFixtureV6OnlyAfterFirstDelete() []byte {
+	return []byte(`Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 2] 22/tcp                     ALLOW IN    1.2.3.4                    # sftpj:v=1:user=alice
+`)
+}
+
+// ufwStatusFixtureSftpjOnly: both catch-alls gone, only sftpj remains.
+func ufwStatusFixtureSftpjOnly() []byte {
+	return []byte(`Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    1.2.3.4                    # sftpj:v=1:user=alice
+`)
+}
+
+// ufwStatusFixtureCatchallShifted: post-position-shift state where
+// sftpj rule was inserted at top, pushing the catch-all from id=1 to id=2.
+func ufwStatusFixtureCatchallShifted() []byte {
+	return []byte(`Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp                     ALLOW IN    1.2.3.4                    # sftpj:v=1:user=alice
+[ 2] 22/tcp                     ALLOW IN    Anywhere
+`)
+}
+
+// TestUfwDeleteCatchAllByEnumerate_dual_family_deletes_BOTH_v4_and_v6
+// pins BUG-04-C (P0): production buildPendingMutations breaks after the
+// first catch-all match (`break` at lockdown.go:509). On a default Ubuntu
+// 24.04 host (IPV6=yes), ufw maintains a v4 + v6 catch-all; only the v4
+// gets deleted, and DetectMode keeps reporting STAGING because the v6
+// catch-all still satisfies the hasCatchAll predicate. Empirically caught
+// by Plan 04-10 UAT.
+func TestUfwDeleteCatchAllByEnumerate_dual_family_deletes_BOTH_v4_and_v6(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	// Stateful Enumerate: each call returns a different rule listing,
+	// modeling ufw's ID compaction after each delete.
+	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
+		{ExitCode: 0, Stdout: ufwStatusFixtureDualFamily()},
+		{ExitCode: 0, Stdout: ufwStatusFixtureV6OnlyAfterFirstDelete()},
+		{ExitCode: 0, Stdout: ufwStatusFixtureSftpjOnly()},
+	}
+
+	step := NewUfwDeleteCatchAllByEnumerateStep("22")
+	require.NoError(t, step.Apply(context.Background(), f))
+
+	// Count UfwDelete calls — must be EXACTLY 2 (v4 + v6 catch-alls).
+	deleteCount := 0
+	for _, c := range f.Calls {
+		if c.Method == "UfwDelete" {
+			deleteCount++
+		}
+	}
+	require.Equal(t, 2, deleteCount,
+		"BUG-04-C: dual-family hosts have v4+v6 catch-alls; step must delete BOTH "+
+			"(production's buildPendingMutations break-after-first only deleted v4)")
+}
+
+// TestUfwDeleteCatchAllByEnumerate_position_shift_uses_FRESH_id
+// pins BUG-04-A (P0): production captured the catch-all ID at S-LOCKDOWN
+// load time (pre-mutation), then ran `ufw insert 1 ...` per-user rules
+// which shifted the catch-all from id=1 to id=2; the subsequent
+// UfwDeleteStep using the captured id=1 then deleted the freshly-inserted
+// sftpj rule instead of the catch-all. Empirically caught by Plan 04-10
+// UAT (commit 5f92a62 phase 3 phase-3 setup uses signature-match — the
+// helper-side workaround for this bug).
+//
+// The new step re-Enumerates at Apply time, so the id is always FRESH.
+func TestUfwDeleteCatchAllByEnumerate_position_shift_uses_FRESH_id(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	// Single Enumerate response: catch-all has shifted to id=2 because
+	// an earlier OpAdd inserted the sftpj rule at id=1.
+	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
+		{ExitCode: 0, Stdout: ufwStatusFixtureCatchallShifted()},
+		{ExitCode: 0, Stdout: ufwStatusFixtureSftpjOnly()}, // post-delete drain
+	}
+
+	step := NewUfwDeleteCatchAllByEnumerateStep("22")
+	require.NoError(t, step.Apply(context.Background(), f))
+
+	// Must delete id=2 (the fresh post-shift catch-all ID), NOT id=1
+	// (which would be the sftpj rule).
+	require.True(t, containsCall(f.Calls, "UfwDelete", "id=2"),
+		"BUG-04-A: step must use FRESH id from Apply-time Enumerate (id=2 here), "+
+			"not a stale ID captured at construction time")
+	require.False(t, containsCall(f.Calls, "UfwDelete", "id=1"),
+		"BUG-04-A: step must NOT delete id=1 (the sftpj rule); "+
+			"stale-ID resolution would mis-target the sftpj rule")
+}
+
+// TestUfwDeleteCatchAllByEnumerate_no_catchalls_is_noop pins idempotency:
+// a state with no catch-alls (already LOCKED) should result in zero
+// UfwDelete calls. The step is safe to invoke regardless of current MODE.
+func TestUfwDeleteCatchAllByEnumerate_no_catchalls_is_noop(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
+		{ExitCode: 0, Stdout: ufwStatusFixtureSftpjOnly()},
+	}
+
+	step := NewUfwDeleteCatchAllByEnumerateStep("22")
+	require.NoError(t, step.Apply(context.Background(), f))
+
+	for _, c := range f.Calls {
+		require.NotEqual(t, "UfwDelete", c.Method,
+			"no catch-alls present → zero UfwDelete calls expected (idempotent no-op)")
+	}
+}
+
+// TestUfwDeleteCatchAllByEnumerate_compensate_is_intentional_noop
+// mirrors the irreversibility-by-design pattern of NewUfwDeleteStep — the
+// step is irreversible by design (D-FW-07 / D-S04-05); recovery rides the
+// SAFE-04 transient unit's reverse-cmd, NOT this step's Compensate.
+func TestUfwDeleteCatchAllByEnumerate_compensate_is_intentional_noop(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
+		{ExitCode: 0, Stdout: ufwStatusFixtureDualFamily()},
+		{ExitCode: 0, Stdout: ufwStatusFixtureV6OnlyAfterFirstDelete()},
+		{ExitCode: 0, Stdout: ufwStatusFixtureSftpjOnly()},
+	}
+	step := NewUfwDeleteCatchAllByEnumerateStep("22")
+	require.NoError(t, step.Apply(context.Background(), f))
+	callsBefore := len(f.Calls)
+
+	require.NoError(t, step.Compensate(context.Background(), f))
+	require.Equal(t, callsBefore, len(f.Calls),
+		"Compensate must not touch sysops at all (D-FW-07 irreversible by design — "+
+			"recovery rides the SAFE-04 transient unit's reverse-cmd)")
+}
