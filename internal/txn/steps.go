@@ -937,14 +937,38 @@ type cancelRevertStep struct {
 
 func (s *cancelRevertStep) Name() string { return "CancelRevert" }
 func (s *cancelRevertStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
-	if err := ops.SystemctlStop(ctx, s.unitName); err != nil {
-		// "Failed to stop … not loaded" → idempotent success.
+	// BUG-04-D fix (P0, was empirically caught by Plan 04-10 UAT —
+	// 04-10-SUMMARY "Production bugs discovered" table).
+	//
+	// systemd-run --on-active=<dur> --unit=<X>.service per D-S04-04 creates
+	// BOTH a `.service` AND a `.timer` transient unit. The .timer is what
+	// fires the .service at the deadline; stopping only the .service leaves
+	// the .timer armed, which fires the .service AGAIN at the original
+	// deadline — undoing the just-confirmed mutation.
+	//
+	// Stop order: .timer FIRST (so it can't re-arm the .service between
+	// the two stops), then .service. Both stops are idempotent on
+	// "not loaded" / "not found" — by the time admin presses Confirm,
+	// either or both units may already be gone (timer fired self-cleaning,
+	// admin re-pressed Confirm, etc.).
+	//
+	// s.unitName always carries the ".service" suffix per
+	// scheduleRevertStep.Apply (fmt.Sprintf("sftpj-revert-%d.service", ...)).
+	timerName := strings.TrimSuffix(s.unitName, ".service") + ".timer"
+	if err := ops.SystemctlStop(ctx, timerName); err != nil {
 		msg := err.Error()
-		if strings.Contains(msg, "not loaded") || strings.Contains(msg, "not found") {
-			// fall through to watcher.Clear
-		} else {
-			return fmt.Errorf("CancelRevert stop: %w", err)
+		if !strings.Contains(msg, "not loaded") && !strings.Contains(msg, "not found") {
+			return fmt.Errorf("CancelRevert stop timer: %w", err)
 		}
+		// "not loaded" / "not found" → idempotent success; fall through
+		// to .service stop (the .service may still be running).
+	}
+	if err := ops.SystemctlStop(ctx, s.unitName); err != nil {
+		msg := err.Error()
+		if !strings.Contains(msg, "not loaded") && !strings.Contains(msg, "not found") {
+			return fmt.Errorf("CancelRevert stop service: %w", err)
+		}
+		// fall through to watcher.Clear
 	}
 	if s.watcher != nil {
 		if err := s.watcher.Clear(ctx); err != nil {
