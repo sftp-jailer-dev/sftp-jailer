@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/deleteuser"
@@ -626,6 +627,54 @@ func TestUsersScreen_n_and_p_keybindings_still_route_to_newuser_and_password(t *
 }
 
 // --- Plan 04-06: M-DELETE-RULE keybind tests --------------------------------
+
+// ---- Plan 04-08 Task 3 — STAGING column glyph tests --------------------
+
+// TestRenderAllowlistCell_staging_mode_shows_open_glyph asserts the
+// per-row IP-allowlist column displays "<count> (open) ⚠️" when the
+// firewall is in MODE: STAGING (catch-all + sftpj rules coexist).
+// D-FW-08 honest framing: rules exist but are not enforcement-effective.
+func TestRenderAllowlistCell_staging_mode_shows_open_glyph(t *testing.T) {
+	t.Parallel()
+	out := usersscreen.RenderAllowlistCellForTest(2, firewall.ModeStaging)
+	require.Contains(t, out, "(open)",
+		"STAGING mode must annotate counts with `(open)` per D-FW-08")
+	require.Contains(t, out, "⚠",
+		"STAGING mode must include warning glyph")
+}
+
+// TestRenderAllowlistCell_locked_mode_just_shows_count asserts LOCKED
+// mode renders the bare count — no `(open)` annotation, no warning
+// glyph (rules are enforcement-effective).
+func TestRenderAllowlistCell_locked_mode_just_shows_count(t *testing.T) {
+	t.Parallel()
+	out := usersscreen.RenderAllowlistCellForTest(2, firewall.ModeLocked)
+	require.NotContains(t, out, "(open)")
+	require.NotContains(t, out, "⚠")
+	require.Contains(t, out, "2")
+}
+
+// TestRenderAllowlistCell_zero_count asserts zero-count rows display
+// "0" without ANY annotation regardless of mode (no rules to qualify).
+func TestRenderAllowlistCell_zero_count(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []firewall.Mode{firewall.ModeOpen, firewall.ModeStaging, firewall.ModeLocked, firewall.ModeUnknown} {
+		out := usersscreen.RenderAllowlistCellForTest(0, mode)
+		require.NotContains(t, out, "(open)",
+			"zero-count rows never show `(open)` (no rules to qualify)")
+		require.NotContains(t, out, "⚠",
+			"zero-count rows never show warning glyph")
+	}
+}
+
+// TestRenderAllowlistCell_open_mode_count_plain asserts OPEN mode (no
+// sftpj rules, just the catch-all) shows the bare count — no `(open)`
+// because no per-user rules exist yet.
+func TestRenderAllowlistCell_open_mode_count_plain(t *testing.T) {
+	t.Parallel()
+	out := usersscreen.RenderAllowlistCellForTest(0, firewall.ModeOpen)
+	require.NotContains(t, out, "(open)")
+}
 
 // usersStubScreen is a tiny nav.Screen for the factory-injection tests.
 type usersStubScreen struct{ name string }

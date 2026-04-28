@@ -177,6 +177,33 @@ func TestHome_no_factory_no_crash(t *testing.T) {
 	}
 }
 
+// TestHome_L_pushes_lockdown_factory_when_set asserts pressing capital
+// `L` pushes the registered lockdown factory's screen via nav.PushCmd.
+// Phase 4 plan 04-08: capital L is reserved for the S-LOCKDOWN screen
+// (lowercase l is logs).
+func TestHome_L_pushes_lockdown_factory_when_set(t *testing.T) {
+	sentinel := &fakeScreen{title: "real-lockdown"}
+	home.SetLockdownFactory(func() nav.Screen { return sentinel })
+	defer home.SetLockdownFactory(nil)
+
+	m := home.New("v1", "u")
+	_, cmd := m.Update(keyPress("L"))
+	require.NotNil(t, cmd, "pressing L with a registered lockdown factory must produce a tea.Cmd")
+	nm := cmd().(nav.Msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Equal(t, sentinel, nm.Screen, "factory-produced lockdown screen must be pushed")
+}
+
+// TestHome_L_no_factory_no_crash asserts capital L without a registered
+// factory returns nil tea.Cmd — defensive parity with the
+// u/f/l/s no-factory path.
+func TestHome_L_no_factory_no_crash(t *testing.T) {
+	home.SetLockdownFactory(nil)
+	m := home.New("v1", "u")
+	_, cmd := m.Update(keyPress("L"))
+	require.Nil(t, cmd, "L with no factory registered must return nil tea.Cmd")
+}
+
 func TestHome_a_pushes_about_screen(t *testing.T) {
 	m := home.New("v1", "u")
 	_, cmd := m.Update(keyPress("a"))
