@@ -146,7 +146,7 @@ func TestComposeCommitReverseCmds_add_emits_grep_placeholder(t *testing.T) {
 	muts := []lockdown.PendingMutation{
 		{Op: lockdown.OpAdd, Rule: firewall.Rule{User: "alice", Source: "203.0.113.7/32", Port: "22"}},
 	}
-	out := composeCommitReverseCmds(muts, "22")
+	out := composeCommitReverseCmds(muts, "22", false)
 	require.NotEmpty(t, out, "must emit at least the grep + reload lines")
 	joined := strings.Join(out, "\n")
 	require.Contains(t, joined, "ufw status numbered | grep -F 'sftpj:v=1:user=alice'",
@@ -164,7 +164,7 @@ func TestComposeCommitReverseCmds_delete_uses_RenderReverseCommands(t *testing.T
 			ID: 5, Source: "Anywhere", Port: "22", Action: "ALLOW IN", RawComment: "",
 		}},
 	}
-	out := composeCommitReverseCmds(muts, "22")
+	out := composeCommitReverseCmds(muts, "22", false)
 	require.NotEmpty(t, out)
 	joined := strings.Join(out, "\n")
 	// RenderReverseCommands shape: `ufw insert <originalID> allow proto tcp from <Source> to any port <Port>`.
@@ -180,7 +180,7 @@ func TestComposeCommitReverseCmds_mixed_batch_no_duplicate_reload(t *testing.T) 
 		{Op: lockdown.OpDelete, Rule: firewall.Rule{ID: 5, Source: "Anywhere", Port: "22", Action: "ALLOW IN"}},
 		{Op: lockdown.OpAdd, Rule: firewall.Rule{User: "bob", Source: "2.2.2.2/32", Port: "22"}},
 	}
-	out := composeCommitReverseCmds(muts, "22")
+	out := composeCommitReverseCmds(muts, "22", false)
 	// Count occurrences of "ufw reload" — must be exactly 1 (the trailing finalizer).
 	reloadCount := 0
 	for _, line := range out {
@@ -194,8 +194,26 @@ func TestComposeCommitReverseCmds_mixed_batch_no_duplicate_reload(t *testing.T) 
 
 func TestComposeCommitReverseCmds_empty_returns_nil(t *testing.T) {
 	t.Parallel()
-	out := composeCommitReverseCmds(nil, "22")
+	out := composeCommitReverseCmds(nil, "22", false)
 	require.Nil(t, out, "empty mutations → nil reverse-cmds (no spurious reload)")
+	out = composeCommitReverseCmds(nil, "22", true)
+	require.Nil(t, out, "empty mutations → nil reverse-cmds even with restoreCatchAll=true "+
+		"(no spurious catch-all-re-add; nothing to revert)")
+}
+
+func TestComposeCommitReverseCmds_restoreCatchAll_prepends_ufw_allow_from_any(t *testing.T) {
+	t.Parallel()
+	muts := []lockdown.PendingMutation{
+		{Op: lockdown.OpAdd, Rule: firewall.Rule{User: "alice", Source: "203.0.113.7/32", Port: "22"}},
+	}
+	out := composeCommitReverseCmds(muts, "22", true)
+	require.NotEmpty(t, out)
+	// First line must be the catch-all re-add — mirrors rollbackCmd's
+	// catch-all-re-add command shape (B3 — the inverse direction).
+	require.Equal(t, "ufw allow proto tcp from any to any port 22", out[0],
+		"BUG-04-A/C SAFE-04 reverse: restoreCatchAll=true must prepend catch-all re-add line")
+	require.Equal(t, "ufw reload", out[len(out)-1],
+		"trailing finalizer remains `ufw reload`")
 }
 
 func TestDetectAddrFamily_v4(t *testing.T) {

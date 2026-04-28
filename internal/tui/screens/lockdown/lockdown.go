@@ -461,12 +461,16 @@ func (m *Model) flashErr(text string) tea.Cmd {
 
 // buildPendingMutations composes the txn batch's mutation list from the
 // current proposals (per-user IPs + manualAdds). One UfwInsert per IP
-// per user. Plus a UfwDelete for the catch-all if MODE=OPEN.
+// per user. The function returns ONLY OpAdd entries.
 //
-// Detail: the catch-all rule we want to delete is identified by an
-// empty RawComment + Anywhere source + matching SFTP port. Picks the
-// first match — there should never be more than one in normal
-// operation (the firewall enforces uniqueness by content).
+// The catch-all removal during OPEN→LOCKED / STAGING→LOCKED commits is
+// handled by commitCmd appending txn.NewUfwDeleteCatchAllByEnumerateStep
+// (Plan 04-12) — a position-independent dual-family-aware step that
+// re-Enumerates at Apply time. The previous shape, where this function
+// emitted an OpDelete with a stale catch-all id, suffered BUG-04-A
+// (stale id after position-shift) + BUG-04-C (only one of v4/v6 catch-
+// alls deleted on dual-family hosts). Both empirically caught by
+// Plan 04-10's UAT.
 func (m *Model) buildPendingMutations() []lockdown.PendingMutation {
 	var muts []lockdown.PendingMutation
 	for _, p := range m.proposals {
@@ -484,31 +488,21 @@ func (m *Model) buildPendingMutations() []lockdown.PendingMutation {
 			})
 		}
 	}
-	if m.currentMode == firewall.ModeOpen || m.currentMode == firewall.ModeStaging {
-		// Find the catch-all rule (empty comment + Anywhere source on
-		// the SFTP port) and emit a delete for it. In STAGING mode
-		// the commit is "remove the catch-all"; in OPEN mode the
-		// commit is "add per-user rules + remove the catch-all".
-		for _, r := range m.currentRules {
-			if !portMatchesSFTP(r.Port, m.sftpPort) {
-				continue
-			}
-			if r.RawComment != "" {
-				continue
-			}
-			if !strings.EqualFold(r.Source, "Anywhere") {
-				continue
-			}
-			if !strings.Contains(strings.ToUpper(r.Action), "ALLOW") {
-				continue
-			}
-			muts = append(muts, lockdown.PendingMutation{
-				Op:   lockdown.OpDelete,
-				Rule: r,
-			})
-			break
-		}
-	}
+	// BUG-04-A + BUG-04-C closure: catch-all removal is NO LONGER emitted
+	// from this function. The pre-fix code emitted OpDelete with the
+	// catch-all id captured at SetCurrentRulesForTest / load time, then
+	// commitCmd dispatched UfwDeleteStep with that stale id. After
+	// `ufw insert 1` shifted positions, the stale id pointed at a
+	// freshly-inserted sftpj rule (BUG-04-A); and the loop's `break`
+	// after the first match meant only ONE of the v4/v6 catch-alls on a
+	// dual-family Ubuntu 24.04 host was ever scheduled for delete
+	// (BUG-04-C). Both bugs were empirically caught by Plan 04-10's UAT.
+	//
+	// The fix: commitCmd appends txn.NewUfwDeleteCatchAllByEnumerateStep
+	// (Plan 04-12) which re-Enumerates at Apply time and deletes EVERY
+	// catch-all matching the SFTP port. buildPendingMutations now returns
+	// only OpAdd entries; the catch-all-deletion responsibility lives in
+	// commitCmd's step list.
 	return muts
 }
 
@@ -565,6 +559,7 @@ func (m *Model) commitCmd() tea.Cmd {
 	nowFn := m.nowFn
 	storeQ := m.store
 	port := m.sftpPort
+	mode := m.currentMode
 	muts := m.buildPendingMutations()
 
 	return func() tea.Msg {
@@ -575,7 +570,8 @@ func (m *Model) commitCmd() tea.Cmd {
 			return committedMsg{err: fmt.Errorf("commit batch is empty — nothing to apply")}
 		}
 
-		reverseCmds := composeCommitReverseCmds(muts, port)
+		restoreCatchAll := mode == firewall.ModeOpen || mode == firewall.ModeStaging
+		reverseCmds := composeCommitReverseCmds(muts, port, restoreCatchAll)
 		if len(reverseCmds) == 0 {
 			return committedMsg{err: fmt.Errorf("internal: composeCommitReverseCmds returned empty for non-empty mutations")}
 		}
@@ -599,8 +595,22 @@ func (m *Model) commitCmd() tea.Cmd {
 					Comment: comment,
 				}))
 			case lockdown.OpDelete:
+				// Defensive: preserved for forward-compat. Post-Plan-04-13
+				// buildPendingMutations no longer emits OpDelete entries
+				// (catch-all removal moved to NewUfwDeleteCatchAllByEnumerateStep
+				// below), but any future caller emitting OpDelete is still
+				// honored.
 				steps = append(steps, txn.NewUfwDeleteStep(mut.Rule.ID))
 			}
+		}
+		// BUG-04-A + BUG-04-C closure: append the position-independent
+		// dual-family-aware catch-all deletion step when the commit is
+		// OPEN→LOCKED or STAGING→LOCKED. The step re-Enumerates at Apply
+		// time (fresh ids → BUG-04-A closed) and deletes EVERY matching
+		// catch-all (v4 + v6 → BUG-04-C closed). Skipped on LOCKED-mode
+		// commits where there is no catch-all to remove.
+		if mode == firewall.ModeOpen || mode == firewall.ModeStaging {
+			steps = append(steps, txn.NewUfwDeleteCatchAllByEnumerateStep(port))
 		}
 		steps = append(steps, txn.NewUfwReloadStep())
 
@@ -709,6 +719,16 @@ func (m *Model) rollbackCmd() tea.Cmd {
 // we strip before adding our own. This avoids `ufw reload; ufw reload`
 // pairs which would be benign but ugly in `systemctl cat` output.
 //
+// restoreCatchAll (Plan 04-13, BUG-04-A + BUG-04-C consumer wiring):
+// when true, prepends a catch-all re-add command
+// (`ufw allow proto tcp from any to any port <port>`) — the inverse of
+// commitCmd's appended NewUfwDeleteCatchAllByEnumerateStep. Without
+// this, a SAFE-04 timer-fire after a successful OPEN→LOCKED commit
+// would leave the box in LOCKED mode (the timer's reverseCmds remove
+// the per-IP sftpj rules but never re-add the catch-all). ufw
+// deduplicates `from any` rules content-wise; running this twice is
+// idempotent at the ufw level.
+//
 // Returns nil for an empty input — no spurious reload line.
 //
 // Threat-model commitments (T-04-08-04 / T-04-08-05): the OpAdd
@@ -718,12 +738,23 @@ func (m *Model) rollbackCmd() tea.Cmd {
 // inside `grep -F`; ufwcomment.Encode rejects all shell metacharacters
 // in the user portion (the regex's `^[a-z][a-z0-9:=_-]+$`), so the
 // quote-balancing safety holds.
-func composeCommitReverseCmds(muts []lockdown.PendingMutation, _port string) []string {
+func composeCommitReverseCmds(muts []lockdown.PendingMutation, port string, restoreCatchAll bool) []string {
 	if len(muts) == 0 {
 		return nil
 	}
 
 	var out []string
+
+	if restoreCatchAll {
+		// SAFE-04 reverse: re-add the catch-all that the wrapping commit's
+		// NewUfwDeleteCatchAllByEnumerateStep removed. Mirrors rollbackCmd's
+		// catch-all-re-add command shape (B3 — the inverse direction).
+		// ufw deduplicates `from any` rules content-wise; running this
+		// command twice (e.g. timer fires after admin already re-added the
+		// catch-all manually) is idempotent at the ufw level.
+		out = append(out, fmt.Sprintf("ufw allow proto tcp from any to any port %s", port))
+	}
+
 	var deletes []lockdown.PendingMutation
 
 	for _, mut := range muts {

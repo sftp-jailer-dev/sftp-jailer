@@ -236,7 +236,13 @@ func (m *DryRunModel) renderCommands() string {
 		// for OpAdd entries (where AssignedID is unknown pre-Apply) +
 		// RenderReverseCommands for OpDelete entries. This matches what
 		// would actually run via NewScheduleRevertStep at commit time.
-		reverseCmds := composeCommitReverseCmds(m.mutations, "")
+		// Plan 04-13: composeCommitReverseCmds gained a restoreCatchAll
+		// bool param. The dry-run preview is purely informational — pass
+		// false here so the catch-all-re-add line doesn't appear in the
+		// preview. (The S-LOCKDOWN editor's actual commit path passes the
+		// real mode-derived value; the dry-run modal's renderCommands
+		// output is documented as approximate per the comment above.)
+		reverseCmds := composeCommitReverseCmds(m.mutations, "", false)
 		b.WriteString(fmt.Sprintf(
 			"systemd-run --on-active=180sec --unit=sftpj-revert-<unix-ns>.service /bin/sh -c '%s'\n",
 			strings.Join(reverseCmds, "; ")))
