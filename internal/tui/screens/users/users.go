@@ -40,6 +40,7 @@ import (
 	"github.com/sahilm/fuzzy"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/deleteuser"
@@ -165,6 +166,16 @@ type Model struct {
 	// j/k navigation cycles infos → filtered → infos (wrap) — see
 	// handleNavKey for the math.
 	infoCursor int
+
+	// Phase 4 plan 04-08: currentMode drives the per-user IP-allowlist
+	// column rendering. STAGING mode (catch-all + sftpj rules coexist)
+	// triggers the "(open) ⚠" annotation per D-FW-08 — honest about
+	// the firewall-only enforcement reality. LOCKED mode renders the
+	// bare count (rules are enforcement-effective). OPEN/UNKNOWN modes
+	// render the bare count too. Production wiring sets this from
+	// firewall.DetectMode at Enumerate time; tests pin via
+	// SetCurrentModeForTest.
+	currentMode firewall.Mode
 }
 
 // New constructs the screen wired to enum (the data-layer composer shipped
@@ -233,6 +244,40 @@ func (m *Model) LoadRowsForTest(rows []users.Row, infos []users.InfoRow) {
 	m.rows = rows
 	m.infos = infos
 	m.applySortAndFilter()
+}
+
+// SetCurrentModeForTest pokes the firewall MODE for unit tests that
+// exercise the per-user IP-allowlist column's STAGING-mode glyph
+// rendering. Production paths set this from firewall.DetectMode at
+// Enumerate time (Plan 04-09 modebar wiring).
+func (m *Model) SetCurrentModeForTest(mode firewall.Mode) {
+	m.currentMode = mode
+}
+
+// RenderAllowlistCellForTest exposes the per-row IP-allowlist cell
+// renderer for unit-test assertions. Production callers use the
+// internal renderAllowlistCell helper directly via View().
+func RenderAllowlistCellForTest(count int, mode firewall.Mode) string {
+	return renderAllowlistCell(count, mode)
+}
+
+// renderAllowlistCell formats the per-user IP-allowlist count cell.
+// Phase 4 plan 04-08 / D-FW-08:
+//   - count == 0 → "0" regardless of mode (no rules to qualify)
+//   - mode == ModeStaging AND count > 0 → "<count> (open) ⚠"
+//     (catch-all + sftpj rules coexist; rules are NOT
+//     enforcement-effective; honest UX about the firewall-only
+//     reality)
+//   - other modes → bare "<count>" (rules are enforcement-effective in
+//     LOCKED, no rules to qualify in OPEN/UNKNOWN)
+func renderAllowlistCell(count int, mode firewall.Mode) string {
+	if count == 0 {
+		return "0"
+	}
+	if mode == firewall.ModeStaging {
+		return fmt.Sprintf("%d (open) ⚠", count)
+	}
+	return fmt.Sprintf("%d", count)
 }
 
 // Title implements nav.Screen.
@@ -647,7 +692,7 @@ func (m *Model) View() string {
 	// column is 14 chars wide to fit the longest formatted value
 	// ("Nd (aging)" / "Nd (stale)" / "Nd (fresh)" / "∞" / "—").
 	b.WriteString(styles.Primary.Render(fmt.Sprintf(
-		"  %-12s %6s  %-30s %-14s %4s  %-12s %-16s %4s",
+		"  %-12s %6s  %-30s %-14s %4s  %-12s %-16s %-12s",
 		"user", "uid", "chroot", "pwd age", "keys", "last login", "first seen", "IPs")))
 	b.WriteString("\n")
 
@@ -673,8 +718,9 @@ func (m *Model) View() string {
 		if firstSeen == "" {
 			firstSeen = "—"
 		}
+		ipCell := renderAllowlistCell(r.IPAllowlistCount, m.currentMode)
 		row := fmt.Sprintf(
-			"%s%-12s %6d  %-30s %-14s %4d  %-12s %-16s %4d",
+			"%s%-12s %6d  %-30s %-14s %4d  %-12s %-16s %-12s",
 			marker,
 			truncate(r.Username, 12),
 			r.UID,
@@ -683,7 +729,7 @@ func (m *Model) View() string {
 			r.KeysCount,
 			lastLogin,
 			truncate(firstSeen, 16),
-			r.IPAllowlistCount,
+			ipCell,
 		)
 		if i == m.cursor {
 			row = styles.Primary.Render(row)

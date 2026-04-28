@@ -40,6 +40,11 @@ var (
 	firewallFactory func() nav.Screen
 	logsFactory     func() nav.Screen
 	settingsFactory func() nav.Screen
+	// lockdownFactory is the Phase 4 plan 04-08 hook for the
+	// S-LOCKDOWN screen. Pressed via capital `L` (lowercase `l` is
+	// reserved for logs since 02-06). nil-safe — pressing L with no
+	// factory registered returns nil tea.Cmd.
+	lockdownFactory func() nav.Screen
 )
 
 // SetDoctorFactory registers the constructor used when the admin presses
@@ -62,6 +67,12 @@ func SetLogsFactory(f func() nav.Screen) { logsFactory = f }
 // 's' to open the settings form. Wired by plan 02-07 in runTUI.
 func SetSettingsFactory(f func() nav.Screen) { settingsFactory = f }
 
+// SetLockdownFactory registers the constructor used when the admin
+// presses capital `L` to open the S-LOCKDOWN flagship screen (Phase 4
+// plan 04-08). Lowercase `l` is reserved for logs (02-06). Wired by
+// plan 04-08's runTUI bootstrap.
+func SetLockdownFactory(f func() nav.Screen) { lockdownFactory = f }
+
 // Model is the home dashboard.
 type Model struct {
 	version    string
@@ -79,6 +90,7 @@ type KeyMap struct {
 	OpenFirewall nav.KeyBinding
 	OpenLogs     nav.KeyBinding
 	OpenSettings nav.KeyBinding
+	OpenLockdown nav.KeyBinding // Phase 4 plan 04-08: capital L
 	About        nav.KeyBinding
 	Search       nav.KeyBinding
 	Help         nav.KeyBinding
@@ -93,6 +105,7 @@ func DefaultKeyMap() KeyMap {
 		OpenFirewall: nav.KeyBinding{Keys: []string{"f"}, Help: "firewall"},
 		OpenLogs:     nav.KeyBinding{Keys: []string{"l"}, Help: "logs"},
 		OpenSettings: nav.KeyBinding{Keys: []string{"s"}, Help: "settings"},
+		OpenLockdown: nav.KeyBinding{Keys: []string{"L"}, Help: "lockdown"},
 		About:        nav.KeyBinding{Keys: []string{"a"}, Help: "about"},
 		Search:       nav.KeyBinding{Keys: []string{"/"}, Help: "search"},
 		Help:         nav.KeyBinding{Keys: []string{"?"}, Help: "help"},
@@ -104,7 +117,7 @@ func DefaultKeyMap() KeyMap {
 func (k KeyMap) ShortHelp() []nav.KeyBinding {
 	return []nav.KeyBinding{
 		k.OpenDoctor, k.OpenUsers, k.OpenFirewall, k.OpenLogs, k.OpenSettings,
-		k.About, k.Search, k.Help, k.Quit,
+		k.OpenLockdown, k.About, k.Search, k.Help, k.Quit,
 	}
 }
 
@@ -112,7 +125,7 @@ func (k KeyMap) ShortHelp() []nav.KeyBinding {
 // screens; row 2 = secondary actions (about/search/help/quit).
 func (k KeyMap) FullHelp() [][]nav.KeyBinding {
 	return [][]nav.KeyBinding{
-		{k.OpenDoctor, k.OpenUsers, k.OpenFirewall, k.OpenLogs, k.OpenSettings},
+		{k.OpenDoctor, k.OpenUsers, k.OpenFirewall, k.OpenLogs, k.OpenSettings, k.OpenLockdown},
 		{k.About, k.Search, k.Help, k.Quit},
 	}
 }
@@ -172,6 +185,18 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 				return m, nav.PushCmd(settingsFactory())
 			}
 			return m, nil
+		case "L":
+			// Phase 4 plan 04-08: capital L opens S-LOCKDOWN (lowercase
+			// l is logs since 02-06). nil-factory returns nil tea.Cmd
+			// for defensive parity with the other factory-injection
+			// paths.
+			if lockdownFactory != nil {
+				screen := lockdownFactory()
+				if screen != nil {
+					return m, nav.PushCmd(screen)
+				}
+			}
+			return m, nil
 		case "a":
 			return m, nav.PushCmd(about.New(m.version, m.projectURL))
 		case "/":
@@ -186,7 +211,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 func (m *Model) View() string {
 	body := "sftp-jailer — home\n\n" +
 		"SSH: ?   ·   Users: ?   ·   Rules: ?\n\n" +
-		"(d diagnostic · u users · f firewall · l logs · s settings · a about · ? help · q quit)"
+		"(d diagnostic · u users · f firewall · l logs · s settings · L lockdown · a about · ? help · q quit)"
 	if m.search.Active {
 		body = m.search.View() + "\n\n" + body
 	}
