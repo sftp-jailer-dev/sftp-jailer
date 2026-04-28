@@ -302,12 +302,263 @@ func phase2FW06HardBlock(ctx context.Context, ops sysops.SystemOps, _ *revert.Wa
 	return nil
 }
 
-// phase3LockCommit implements phase 3 — see Task 3.
+// phase3LockCommit exercises a LOCK-06 commit batch: from MODE=Open it
+// inserts a sftpj per-user rule + deletes the catch-all under a 30-second
+// SAFE-04 revert window, asserts MODE → Locked, then waits past the
+// deadline and asserts MODE → Open (catch-all restored by the timer).
+//
+// Also runs a best-effort LOCK-07 empirical assertion: while in the
+// LOCKED window, journalctl -u ssh is grep'd for connection-refused /
+// disconnected entries — these would map to tier='targeted' observation
+// rows in the production observer pipeline. The assertion is best-effort
+// per D-L0809-06; absence of journal evidence is logged as a SKIP toast,
+// not a hard failure.
 func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert.Watcher) error {
-	return fmt.Errorf("not yet implemented (Task 3)")
+	// 1. Verify starting OPEN state
+	rules, err := firewall.Enumerate(ctx, ops)
+	if err != nil {
+		return fmt.Errorf("Enumerate: %w", err)
+	}
+	mode := firewall.DetectMode(rules, "22")
+	if mode != firewall.ModeOpen {
+		return fmt.Errorf("expected starting MODE=Open, got %s — phase 3 needs catch-all baseline", mode)
+	}
+	fmt.Println("  starting state: MODE: OPEN")
+
+	// Find catch-all rule ID by signature match (Source="Anywhere", ALLOW,
+	// no sftpj comment).
+	var catchAllID = -1
+	for _, r := range rules {
+		if r.Source == "Anywhere" && strings.Contains(strings.ToUpper(r.Action), "ALLOW") && r.RawComment == "" {
+			catchAllID = r.ID
+			break
+		}
+	}
+	if catchAllID < 0 {
+		return fmt.Errorf("could not find catch-all rule ID")
+	}
+	fmt.Printf("  catch-all rule ID: %d\n", catchAllID)
+
+	// 2. Choose a test user. We hardcode "ubuntu" — present on most cloud
+	//    Ubuntu images. The UAT exercises the txn batch; user allowlist
+	//    semantics are validated elsewhere.
+	const testIP = "198.51.100.42/32"
+	const testComment = "sftpj:v=1:user=ubuntu"
+
+	// 3. Mark the LOCKED window start so the LOCK-07 journal-grep
+	//    fallback can scope its search.
+	lockWindowStart := time.Now()
+
+	// 4. Build the SAFE-04 revert window — 30 sec for testing.
+	nowFn := time.Now
+	deadline := nowFn().Add(30 * time.Second)
+	// Reverse cmd: re-add catch-all + delete the test rule by comment grep.
+	reverseCmds := []string{
+		"ufw allow 22/tcp",
+		fmt.Sprintf("ufw status numbered | grep '%s' | head -1 | sed 's/[^0-9]*\\([0-9]*\\).*/\\1/' | xargs -I{} ufw --force delete {}", testComment),
+		"ufw reload",
+	}
+
+	steps := []txn.Step{
+		txn.NewScheduleRevertStep(reverseCmds, deadline, watcher, nowFn),
+		txn.NewUfwInsertStep(sysops.UfwAllowOpts{
+			Proto: "tcp", Source: testIP, Port: "22", Comment: testComment,
+		}),
+		txn.NewUfwDeleteStep(catchAllID),
+		txn.NewUfwReloadStep(),
+	}
+	tx := txn.New(ops)
+	if err := tx.Apply(ctx, steps); err != nil {
+		return fmt.Errorf("commit batch failed: %w", err)
+	}
+	fmt.Println("  commit batch applied")
+
+	// 5. Verify MODE = LOCKED
+	rules, err = firewall.Enumerate(ctx, ops)
+	if err != nil {
+		return fmt.Errorf("post-commit Enumerate: %w", err)
+	}
+	mode = firewall.DetectMode(rules, "22")
+	if mode != firewall.ModeLocked {
+		return fmt.Errorf("post-commit MODE = %s, expected Locked", mode)
+	}
+	fmt.Println("  MODE transitioned OPEN -> LOCKED")
+
+	// 6. (W7) LOCK-07 best-effort empirical assertion: scope journalctl
+	//    to the LOCKED window and grep for connection-refused entries.
+	//    Any non-allowlisted ssh probe during this short window would
+	//    map to tier='targeted' rows in the production observer pipeline
+	//    (D-L0809-06). Absence is logged as SKIP, not failure.
+	since := lockWindowStart.Format("2006-01-02 15:04:05")
+	if jres, jerr := ops.Exec(ctx, "journalctl", "-u", "ssh", "--since", since, "--no-pager"); jerr == nil && jres.ExitCode == 0 {
+		text := string(jres.Stdout)
+		if strings.Contains(text, "connection refused") || strings.Contains(text, "Disconnected") {
+			fmt.Println("  LOCK-07: journal shows refused/disconnected entries during LOCKED window (tier='targeted' candidates)")
+		} else {
+			fmt.Println("  LOCK-07 SKIP: no rejected-connection journal evidence during LOCKED window (best-effort; not a failure)")
+		}
+	} else {
+		fmt.Println("  LOCK-07 SKIP: journalctl unavailable (best-effort)")
+	}
+
+	// 7. Wait for the timer to fire (deadline + grace).
+	wait := time.Until(deadline) + 5*time.Second
+	fmt.Printf("  waiting %v for revert to fire...\n", wait.Round(time.Second))
+	time.Sleep(wait)
+
+	// 8. Verify rolled back to OPEN
+	rules, err = firewall.Enumerate(ctx, ops)
+	if err != nil {
+		return fmt.Errorf("post-fire Enumerate: %w", err)
+	}
+	mode = firewall.DetectMode(rules, "22")
+	if mode != firewall.ModeOpen {
+		return fmt.Errorf("post-fire MODE = %s, expected Open (revert should have restored catch-all)", mode)
+	}
+	fmt.Println("  MODE rolled back to OPEN — timer fired as expected")
+
+	// 9. Cleanup any leftover test rules
+	for _, r := range rules {
+		if r.RawComment == testComment {
+			_ = ops.UfwDelete(ctx, r.ID)
+		}
+	}
+	// Run Restore to clean any orphan pointer
+	_, _ = watcher.Restore(ctx)
+	return nil
 }
 
-// phase4LockRollback implements phase 4 — see Task 4.
+// phase4LockRollback exercises the LOCK-08 rollback path: sets up an
+// artificial LOCKED state (insert sftpj rule, find + delete catch-all by
+// signature match — the I1 fix re-Enumerates AFTER the insert so the
+// catch-all is located correctly even if its ID shifted), then runs the
+// rollback batch (re-add catch-all under a 30s SAFE-04 window), asserts
+// MODE → Staging, then explicitly cancels the timer (the rollback rules
+// are intended to be permanent).
 func phase4LockRollback(ctx context.Context, ops sysops.SystemOps, watcher *revert.Watcher) error {
-	return fmt.Errorf("not yet implemented (Task 4)")
+	// 1. Locate the original catch-all (signature match)
+	rules, err := firewall.Enumerate(ctx, ops)
+	if err != nil {
+		return fmt.Errorf("Enumerate: %w", err)
+	}
+	var catchAllID = -1
+	for _, r := range rules {
+		if r.Source == "Anywhere" && strings.Contains(strings.ToUpper(r.Action), "ALLOW") && r.RawComment == "" {
+			catchAllID = r.ID
+			break
+		}
+	}
+	if catchAllID < 0 {
+		return fmt.Errorf("no catch-all to remove")
+	}
+
+	// 2. Insert a sftpj test rule first so post-removal we land in LOCKED
+	//    (not UNKNOWN).
+	const testIP = "198.51.100.43/32"
+	const testComment = "sftpj:v=1:user=ubuntu"
+	if err := ops.UfwInsert(ctx, 1, sysops.UfwAllowOpts{
+		Proto: "tcp", Source: testIP, Port: "22", Comment: testComment,
+	}); err != nil {
+		return fmt.Errorf("setup UfwInsert: %w", err)
+	}
+
+	// 3. (I1 fix) re-Enumerate AFTER the insert and re-locate catch-all by
+	//    signature match (Source="Anywhere", ALLOW, empty comment) —
+	//    NOT by guessing the original ID + 1 slot. Insertion at position
+	//    one shifts everything below by one row, but other admin tooling
+	//    may have perturbed the firewall between Enumerate calls.
+	//    Signature-match is robust to all such shifts.
+	rules2, eErr := firewall.Enumerate(ctx, ops)
+	if eErr != nil {
+		return fmt.Errorf("re-Enumerate after setup insert: %w", eErr)
+	}
+	var newCatchAllID = -1
+	for _, r := range rules2 {
+		if r.Source == "Anywhere" && strings.Contains(strings.ToUpper(r.Action), "ALLOW") && r.RawComment == "" {
+			newCatchAllID = r.ID
+			break
+		}
+	}
+	if newCatchAllID < 0 {
+		// Catch-all somehow vanished between Enumerate calls — try the
+		// originally-captured ID as a last resort.
+		newCatchAllID = catchAllID
+	}
+	if err := ops.UfwDelete(ctx, newCatchAllID); err != nil {
+		// Cleanup before returning
+		_ = ops.UfwDelete(ctx, -1) // no-op; preserves cleanup attempt below
+		for _, r := range rules2 {
+			if r.RawComment == testComment {
+				_ = ops.UfwDelete(ctx, r.ID)
+			}
+		}
+		return fmt.Errorf("delete catch-all (id=%d): %w", newCatchAllID, err)
+	}
+	rules, _ = firewall.Enumerate(ctx, ops)
+	mode := firewall.DetectMode(rules, "22")
+	if mode != firewall.ModeLocked {
+		// Cleanup before returning
+		for _, r := range rules {
+			if r.RawComment == testComment {
+				_ = ops.UfwDelete(ctx, r.ID)
+			}
+		}
+		return fmt.Errorf("expected LOCKED setup state, got %s — abort phase 4", mode)
+	}
+	fmt.Println("  artificial LOCKED state set up")
+
+	// 4. Programmatic rollback: re-add catch-all under SAFE-04 30s window.
+	nowFn := time.Now
+	deadline := nowFn().Add(30 * time.Second)
+	// Reverse cmd: remove the catch-all we're about to re-add (the one
+	// without the sftpj comment).
+	reverseCmds := []string{
+		"ufw status numbered | grep ' allow 22 ' | grep -v sftpj | head -1 | sed 's/[^0-9]*\\([0-9]*\\).*/\\1/' | xargs -I{} ufw --force delete {}",
+		"ufw reload",
+	}
+	steps := []txn.Step{
+		txn.NewScheduleRevertStep(reverseCmds, deadline, watcher, nowFn),
+		txn.NewUfwAllowStep(sysops.UfwAllowOpts{
+			Source: "any", Port: "22/tcp",
+		}),
+		txn.NewUfwReloadStep(),
+	}
+	tx := txn.New(ops)
+	if err := tx.Apply(ctx, steps); err != nil {
+		return fmt.Errorf("rollback batch: %w", err)
+	}
+	fmt.Println("  rollback batch applied")
+
+	// 5. Verify MODE = STAGING (catch-all + sftpj rules coexist)
+	rules, _ = firewall.Enumerate(ctx, ops)
+	mode = firewall.DetectMode(rules, "22")
+	if mode != firewall.ModeStaging {
+		// Wait briefly in case ufw enumerate sees a transient stale state.
+		time.Sleep(time.Second)
+		rules, _ = firewall.Enumerate(ctx, ops)
+		mode = firewall.DetectMode(rules, "22")
+	}
+	if mode != firewall.ModeStaging {
+		return fmt.Errorf("post-rollback MODE = %s, expected Staging", mode)
+	}
+	fmt.Println("  MODE transitioned LOCKED -> STAGING (catch-all back, sftpj rules preserved)")
+
+	// 6. Confirm the revert (cancel the timer; rules persist).
+	st := watcher.Get()
+	if st != nil {
+		if err := ops.SystemctlStop(ctx, st.UnitName); err != nil {
+			fmt.Printf("  WARN: SystemctlStop on cancel: %v\n", err)
+		}
+		_ = watcher.Clear(ctx)
+		fmt.Printf("  revert unit %s cancelled — rollback rules now permanent\n", st.UnitName)
+	}
+
+	// 7. Cleanup test rules
+	rules, _ = firewall.Enumerate(ctx, ops)
+	for _, r := range rules {
+		if r.RawComment == testComment {
+			_ = ops.UfwDelete(ctx, r.ID)
+		}
+	}
+	return nil
 }
