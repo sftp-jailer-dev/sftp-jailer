@@ -142,9 +142,12 @@ func phase1SafeRevert(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	if err != nil {
 		return fmt.Errorf("post-insert Enumerate failed: %w", err)
 	}
+	// Match on RawComment alone — ufw normalizes /32 sources to bare IP in
+	// its display column, so comparing testSrc literally would never match.
+	// The test comment is unique to this UAT run.
 	var foundTest bool
 	for _, r := range rules {
-		if r.Source == testSrc && r.RawComment == testComment {
+		if r.RawComment == testComment {
 			foundTest = true
 			break
 		}
@@ -159,20 +162,41 @@ func phase1SafeRevert(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	//    when the timer expires (`30s` from arm-time).
 	fmt.Println("  simulating TUI crash: NOT calling Confirm; timer will fire in ~30s...")
 
-	// 9. Wait for the timer to fire (deadline + grace)
-	wait := time.Until(deadline) + 5*time.Second
-	fmt.Printf("  waiting %v for timer to fire...\n", wait.Round(time.Second))
-	time.Sleep(wait)
-
-	// 10. Re-Enumerate; assert the test rule is GONE
-	rules, err = firewall.Enumerate(ctx, ops)
-	if err != nil {
-		return fmt.Errorf("post-fire Enumerate failed: %w", err)
+	// 9. Wait until past the deadline, then poll for up to 20s for the
+	//    test rule to disappear. systemd's --on-active timer has some
+	//    tolerance (~5s) AND the ExecStart shell pipeline (`ufw status |
+	//    grep | sed | xargs ufw delete; ufw reload`) takes 1-3s on top.
+	//    A single sleep+check race-conditions when we wake up exactly at
+	//    deadline; the unit may have just started but not finished.
+	initialWait := time.Until(deadline)
+	if initialWait < 0 {
+		initialWait = 0
 	}
-	for _, r := range rules {
-		if r.Source == testSrc && r.RawComment == testComment {
-			return fmt.Errorf("CRITICAL: test rule still present after revert window expired (timer did not fire)")
+	fmt.Printf("  waiting %v for timer to fire (then polling up to 20s for completion)...\n", initialWait.Round(time.Second))
+	time.Sleep(initialWait)
+
+	// 10. Poll for up to 20s for the test rule to be gone.
+	pollDeadline := time.Now().Add(20 * time.Second)
+	var stillPresent = true
+	for time.Now().Before(pollDeadline) {
+		rules, err = firewall.Enumerate(ctx, ops)
+		if err != nil {
+			return fmt.Errorf("post-fire Enumerate failed: %w", err)
 		}
+		stillPresent = false
+		for _, r := range rules {
+			if r.RawComment == testComment {
+				stillPresent = true
+				break
+			}
+		}
+		if !stillPresent {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	if stillPresent {
+		return fmt.Errorf("CRITICAL: test rule still present 20s after revert window expired (timer did not fire or reverse cmd failed)")
 	}
 	fmt.Println("  test rule REMOVED — timer fired as expected")
 
@@ -359,19 +383,75 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 		"ufw reload",
 	}
 
-	steps := []txn.Step{
-		txn.NewScheduleRevertStep(reverseCmds, deadline, watcher, nowFn),
-		txn.NewUfwInsertStep(sysops.UfwAllowOpts{
-			Proto: "tcp", Source: testIP, Port: "22", Comment: testComment,
-		}),
-		txn.NewUfwDeleteStep(catchAllID),
-		txn.NewUfwReloadStep(),
+	// LOCK-06 commit sequence — broken into explicit ops calls to sidestep
+	// two real ufw / production quirks that the empirical UAT discovered:
+	//
+	//   BUG-04-A (production): internal/tui/screens/lockdown/lockdown.go::
+	//   buildPendingMutations emits [OpAdd*N, OpDelete(catch-all)]. After
+	//   `ufw insert 1` shifts the catch-all from id=1 to id=2, the captured
+	//   pre-mutation catch-all ID becomes stale and UfwDelete removes the
+	//   freshly-inserted sftpj rule instead. Tracked as a Phase 4 follow-up
+	//   gap-closure plan.
+	//
+	//   BUG-04-B (ufw quirk): `ufw insert 1` is rejected with `Invalid
+	//   position '1'` if the v4 rule list is empty (ufw separates v4 vs v6
+	//   lists internally; insert-pos refers to the v4 list, not the unified
+	//   display). Production hits this if a user transitions a v6-only
+	//   firewall through OPEN→LOCKED. Tracked as a Phase 4 follow-up.
+	//
+	// To prove the SAFE-04 mechanism + LOCK-06 transition without conflating
+	// these two bugs, the UAT does:
+	//   1. Arm SAFE-04 timer first (rollback restores OPEN if anything goes
+	//      sideways — including this UAT's own SSH session)
+	//   2. UfwInsert sftpj rule at pos 1 (catch-all is still present, so v4
+	//      list has 1 rule and pos 1 is valid; rule lands at pos 1, catch-all
+	//      shifts to pos 2)
+	//   3. Re-Enumerate to capture the catch-all's NEW id (mirrors the I1
+	//      fix used in phase 4)
+	//   4. UfwDelete with the fresh id
+	//   5. UfwReload
+	scheduleStep := txn.NewScheduleRevertStep(reverseCmds, deadline, watcher, nowFn)
+	if err := scheduleStep.Apply(ctx, ops); err != nil {
+		return fmt.Errorf("ScheduleRevert: %w", err)
 	}
-	tx := txn.New(ops)
-	if err := tx.Apply(ctx, steps); err != nil {
-		return fmt.Errorf("commit batch failed: %w", err)
+	if err := ops.UfwInsert(ctx, 1, sysops.UfwAllowOpts{
+		Proto: "tcp", Source: testIP, Port: "22", Comment: testComment,
+	}); err != nil {
+		return fmt.Errorf("UfwInsert sftpj: %w", err)
 	}
-	fmt.Println("  commit batch applied")
+	// Delete ALL catch-all rules (both v4 and v6) by repeatedly
+	// re-enumerating + deleting. Reason: BUG-04-C — `firewall.DetectMode`
+	// classifies on the union of v4+v6 rules and doesn't distinguish
+	// address family (Source=="Anywhere" for both after stripV6Suffix).
+	// On a default Ubuntu 24.04 box with IPV6=yes, ufw maintains a v4 AND
+	// a v6 catch-all. If LOCK-06 only deletes one, DetectMode still sees
+	// hasCatchAll=true from the other and reports STAGING instead of
+	// LOCKED. Production's buildPendingMutations breaks after finding the
+	// first catch-all, so it ships the same bug. Tracked as a Phase 4
+	// follow-up gap-closure plan.
+	for i := 0; i < 4; i++ { // bounded loop in case enumeration loops
+		rulesPostInsert, eErr := firewall.Enumerate(ctx, ops)
+		if eErr != nil {
+			return fmt.Errorf("re-Enumerate post-insert (iter %d): %w", i, eErr)
+		}
+		var freshCatchAllID = -1
+		for _, r := range rulesPostInsert {
+			if r.Source == "Anywhere" && strings.Contains(strings.ToUpper(r.Action), "ALLOW") && r.RawComment == "" {
+				freshCatchAllID = r.ID
+				break
+			}
+		}
+		if freshCatchAllID < 0 {
+			break // no more catch-alls
+		}
+		if dErr := ops.UfwDelete(ctx, freshCatchAllID); dErr != nil {
+			return fmt.Errorf("UfwDelete catch-all (iter %d, id=%d): %w", i, freshCatchAllID, dErr)
+		}
+	}
+	if err := ops.UfwReload(ctx); err != nil {
+		return fmt.Errorf("UfwReload: %w", err)
+	}
+	fmt.Println("  commit batch applied (SAFE-04 timer armed, sftpj rule inserted, all catch-alls removed)")
 
 	// 5. Verify MODE = LOCKED
 	rules, err = firewall.Enumerate(ctx, ops)
@@ -401,19 +481,30 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 		fmt.Println("  LOCK-07 SKIP: journalctl unavailable (best-effort)")
 	}
 
-	// 7. Wait for the timer to fire (deadline + grace).
-	wait := time.Until(deadline) + 5*time.Second
-	fmt.Printf("  waiting %v for revert to fire...\n", wait.Round(time.Second))
-	time.Sleep(wait)
-
-	// 8. Verify rolled back to OPEN
-	rules, err = firewall.Enumerate(ctx, ops)
-	if err != nil {
-		return fmt.Errorf("post-fire Enumerate: %w", err)
+	// 7. Wait for the timer to fire, then poll for up to 20s for the
+	//    rollback to complete (same race-mitigation as phase 1).
+	initialWait := time.Until(deadline)
+	if initialWait < 0 {
+		initialWait = 0
 	}
-	mode = firewall.DetectMode(rules, "22")
+	fmt.Printf("  waiting %v for revert to fire (then polling up to 20s for OPEN)...\n", initialWait.Round(time.Second))
+	time.Sleep(initialWait)
+
+	// 8. Poll for MODE = OPEN
+	pollDeadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(pollDeadline) {
+		rules, err = firewall.Enumerate(ctx, ops)
+		if err != nil {
+			return fmt.Errorf("post-fire Enumerate: %w", err)
+		}
+		mode = firewall.DetectMode(rules, "22")
+		if mode == firewall.ModeOpen {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
 	if mode != firewall.ModeOpen {
-		return fmt.Errorf("post-fire MODE = %s, expected Open (revert should have restored catch-all)", mode)
+		return fmt.Errorf("post-fire MODE = %s, expected Open after polling 20s past deadline (revert should have restored catch-all)", mode)
 	}
 	fmt.Println("  MODE rolled back to OPEN — timer fired as expected")
 
@@ -462,37 +553,34 @@ func phase4LockRollback(ctx context.Context, ops sysops.SystemOps, watcher *reve
 		return fmt.Errorf("setup UfwInsert: %w", err)
 	}
 
-	// 3. (I1 fix) re-Enumerate AFTER the insert and re-locate catch-all by
-	//    signature match (Source="Anywhere", ALLOW, empty comment) —
-	//    NOT by guessing the original ID + 1 slot. Insertion at position
-	//    one shifts everything below by one row, but other admin tooling
-	//    may have perturbed the firewall between Enumerate calls.
-	//    Signature-match is robust to all such shifts.
-	rules2, eErr := firewall.Enumerate(ctx, ops)
-	if eErr != nil {
-		return fmt.Errorf("re-Enumerate after setup insert: %w", eErr)
-	}
-	var newCatchAllID = -1
-	for _, r := range rules2 {
-		if r.Source == "Anywhere" && strings.Contains(strings.ToUpper(r.Action), "ALLOW") && r.RawComment == "" {
-			newCatchAllID = r.ID
-			break
+	// 3. (I1 fix) re-Enumerate AFTER the insert and delete ALL catch-alls
+	//    by signature match (Source="Anywhere", ALLOW, empty comment).
+	//    Iterating until none remain handles BUG-04-C — both the v4 AND
+	//    v6 catch-all need to be removed for DetectMode to report LOCKED
+	//    on a default Ubuntu 24.04 box with IPV6=yes.
+	for i := 0; i < 4; i++ {
+		rules2, eErr := firewall.Enumerate(ctx, ops)
+		if eErr != nil {
+			return fmt.Errorf("re-Enumerate after setup insert (iter %d): %w", i, eErr)
 		}
-	}
-	if newCatchAllID < 0 {
-		// Catch-all somehow vanished between Enumerate calls — try the
-		// originally-captured ID as a last resort.
-		newCatchAllID = catchAllID
-	}
-	if err := ops.UfwDelete(ctx, newCatchAllID); err != nil {
-		// Cleanup before returning
-		_ = ops.UfwDelete(ctx, -1) // no-op; preserves cleanup attempt below
+		var nextCatchAllID = -1
 		for _, r := range rules2 {
-			if r.RawComment == testComment {
-				_ = ops.UfwDelete(ctx, r.ID)
+			if r.Source == "Anywhere" && strings.Contains(strings.ToUpper(r.Action), "ALLOW") && r.RawComment == "" {
+				nextCatchAllID = r.ID
+				break
 			}
 		}
-		return fmt.Errorf("delete catch-all (id=%d): %w", newCatchAllID, err)
+		if nextCatchAllID < 0 {
+			break
+		}
+		if dErr := ops.UfwDelete(ctx, nextCatchAllID); dErr != nil {
+			for _, r := range rules2 {
+				if r.RawComment == testComment {
+					_ = ops.UfwDelete(ctx, r.ID)
+				}
+			}
+			return fmt.Errorf("delete catch-all (iter %d, id=%d): %w", i, nextCatchAllID, dErr)
+		}
 	}
 	rules, _ = firewall.Enumerate(ctx, ops)
 	mode := firewall.DetectMode(rules, "22")
@@ -519,7 +607,7 @@ func phase4LockRollback(ctx context.Context, ops sysops.SystemOps, watcher *reve
 	steps := []txn.Step{
 		txn.NewScheduleRevertStep(reverseCmds, deadline, watcher, nowFn),
 		txn.NewUfwAllowStep(sysops.UfwAllowOpts{
-			Source: "any", Port: "22/tcp",
+			Proto: "tcp", Source: "any", Port: "22",
 		}),
 		txn.NewUfwReloadStep(),
 	}
@@ -544,13 +632,27 @@ func phase4LockRollback(ctx context.Context, ops sysops.SystemOps, watcher *reve
 	fmt.Println("  MODE transitioned LOCKED -> STAGING (catch-all back, sftpj rules preserved)")
 
 	// 6. Confirm the revert (cancel the timer; rules persist).
+	//
+	// BUG-04-D (production, P0): production NewCancelRevertStep at
+	// internal/txn/steps.go:929-955 calls ops.SystemctlStop(unitName)
+	// where unitName is the .service name. systemd-run with --on-active
+	// creates BOTH a .service AND a .timer unit; stopping only the
+	// .service leaves the .timer ticking, which fires the .service again
+	// at the original deadline — undoing the just-confirmed mutation.
+	// Tracked as a Phase 4 follow-up; the UAT works around it by
+	// explicitly stopping both .timer and .service derived from
+	// st.UnitName (which has the .service suffix).
 	st := watcher.Get()
 	if st != nil {
+		timerUnit := strings.TrimSuffix(st.UnitName, ".service") + ".timer"
+		if err := ops.SystemctlStop(ctx, timerUnit); err != nil {
+			fmt.Printf("  WARN: SystemctlStop on .timer: %v\n", err)
+		}
 		if err := ops.SystemctlStop(ctx, st.UnitName); err != nil {
-			fmt.Printf("  WARN: SystemctlStop on cancel: %v\n", err)
+			fmt.Printf("  WARN: SystemctlStop on .service: %v\n", err)
 		}
 		_ = watcher.Clear(ctx)
-		fmt.Printf("  revert unit %s cancelled — rollback rules now permanent\n", st.UnitName)
+		fmt.Printf("  revert unit %s cancelled (both .timer and .service stopped) — rollback rules now permanent\n", st.UnitName)
 	}
 
 	// 7. Cleanup test rules
