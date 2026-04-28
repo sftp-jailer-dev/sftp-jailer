@@ -38,8 +38,22 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/styles"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/txn"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/ufwcomment"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 )
+
+// commitTimeout bounds the SAFE-04-wrapped commit batch (Schedule + N
+// mutations + Reload + post-Apply Enumerate + RebuildUserIPs). Same
+// budget as M-ADD-RULE / M-DELETE-RULE.
+const commitTimeout = 120 * time.Second
+
+// rollbackTimeout bounds the rollback batch (Schedule + UfwAllow +
+// Reload + post-Apply Enumerate + RebuildUserIPs).
+const rollbackTimeout = 60 * time.Second
+
+// revertWindow is the SAFE-04 deadline (D-S04-04) — 3 min from arm time.
+const revertWindow = 3 * time.Minute
 
 // loadTimeout bounds the async generator + enumerator + admin-IP detect
 // chain at Init-time.
@@ -513,29 +527,252 @@ func portMatchesSFTP(rulePort, sftpPort string) bool {
 	return false
 }
 
-// commitCmd / rollbackCmd / composeCommitReverseCmds / detectAddrFamily
-// are stubs in Task 1a — the full implementations land in Task 1b. The
-// signatures + presence are required so the screen's keybind handlers
-// compile + the unit-test file builds.
+// commitCmd composes the SAFE-04-wrapped txn batch for the LOCK-06
+// commit and runs it under tx.Apply. Ordering follows D-S04-09 step 3:
+// Schedule first (arms the 3-min revert), then N mutations, then a
+// trailing UfwReload finalizer. Cancel is NOT in the batch — it runs
+// only on explicit admin Confirm in the countdown UI (D-S04-09 step 5).
 //
-// Task 1b will replace these stubs with the SAFE-04-wrapped txn batch
-// implementations + RebuildUserIPs wiring + comprehensive tests.
+// Reverse-cmd composition (composeCommitReverseCmds):
+//   - OpAdd entries: comment-grep placeholder (the rule's AssignedID is
+//     not known pre-Apply; the placeholder resolves it via
+//     `ufw status numbered | grep -F '<comment>'`).
+//   - OpDelete entries: lockdown.RenderReverseCommands rebuilds the
+//     full `ufw insert <originalID> allow proto tcp from <src> to any
+//     port <port> [comment '<c>']` line.
+//
+// Post-Apply: best-effort RebuildUserIPs from the post-mutation
+// firewall.Enumerate output (FW-08 mirror, W2). Failure logs but does
+// NOT roll back the commit — the rules are armed under the SAFE-04
+// timer regardless of cache state.
 func (m *Model) commitCmd() tea.Cmd {
+	if m.ops == nil {
+		return func() tea.Msg {
+			return committedMsg{err: fmt.Errorf("internal: ops is nil (test path mis-wired)")}
+		}
+	}
+	ops := m.ops
+	// Avoid the typed-nil-pointer-as-non-nil-interface gotcha (mirrors
+	// deleterule.go pattern): if the concrete *Watcher is nil (test
+	// paths), pass an explicit nil interface to NewScheduleRevertStep
+	// so its `if s.watcher != nil` guard fires correctly. Production
+	// paths always supply a non-nil *Watcher (main.go::runTUI
+	// constructs the singleton).
+	var watcher txn.RevertWatcher
+	if m.watcher != nil {
+		watcher = m.watcher
+	}
+	nowFn := m.nowFn
+	storeQ := m.store
+	port := m.sftpPort
+	muts := m.buildPendingMutations()
+
 	return func() tea.Msg {
-		return committedMsg{err: fmt.Errorf("commitCmd: pending Task 1b implementation")}
+		ctx, cancel := context.WithTimeout(context.Background(), commitTimeout)
+		defer cancel()
+
+		if len(muts) == 0 {
+			return committedMsg{err: fmt.Errorf("commit batch is empty — nothing to apply")}
+		}
+
+		reverseCmds := composeCommitReverseCmds(muts, port)
+		if len(reverseCmds) == 0 {
+			return committedMsg{err: fmt.Errorf("internal: composeCommitReverseCmds returned empty for non-empty mutations")}
+		}
+
+		// D-S04-09 step 3 ordering: Schedule first, then mutations, then
+		// reload finalizer.
+		steps := []txn.Step{
+			txn.NewScheduleRevertStep(reverseCmds, nowFn().Add(revertWindow), watcher, nowFn),
+		}
+		for _, mut := range muts {
+			switch mut.Op {
+			case lockdown.OpAdd:
+				comment, err := ufwcomment.Encode(mut.Rule.User)
+				if err != nil {
+					return committedMsg{err: fmt.Errorf("encode comment for %s: %w", mut.Rule.User, err)}
+				}
+				steps = append(steps, txn.NewUfwInsertStep(sysops.UfwAllowOpts{
+					Proto:   "tcp",
+					Source:  mut.Rule.Source,
+					Port:    mut.Rule.Port,
+					Comment: comment,
+				}))
+			case lockdown.OpDelete:
+				steps = append(steps, txn.NewUfwDeleteStep(mut.Rule.ID))
+			}
+		}
+		steps = append(steps, txn.NewUfwReloadStep())
+
+		tx := txn.New(ops)
+		if err := tx.Apply(ctx, steps); err != nil {
+			return committedMsg{err: fmt.Errorf("commit batch: %w", err)}
+		}
+
+		// W2: best-effort FW-08 mirror rebuild post-Apply.
+		if storeQ != nil {
+			if rules, eErr := firewall.Enumerate(ctx, ops); eErr == nil {
+				_ = storeQ.RebuildUserIPs(ctx, rules, nowFn)
+			}
+		}
+
+		return committedMsg{err: nil}
 	}
 }
 
+// rollbackCmd re-adds the catch-all `allow port <p> from any` under a
+// SAFE-04 revert window (D-L0809-04). Per-user sftpj rules stay in
+// place — they're operationally redundant once the catch-all overrides
+// them, but visible as STAGING-mode rules for re-promotion later. The
+// new MODE auto-derives to STAGING (or OPEN if there are no per-user
+// rules) on the next Enumerate.
+//
+// Reverse-cmd shape (B3): the rollback's reverse re-deletes the
+// catch-all by signature (`allow <port>/tcp.*Anywhere`) AND comment
+// absence (`grep -v sftpj`) — there can be only one such rule at any
+// given time. The pattern is documented inline so future readers
+// understand why we don't use RenderReverseCommands here (the catch-
+// all has no fixed ID pre-Apply; signature-grep is the deterministic
+// resolver for a single rule).
 func (m *Model) rollbackCmd() tea.Cmd {
-	return func() tea.Msg {
-		return rollbackDoneMsg{err: fmt.Errorf("rollbackCmd: pending Task 1b implementation")}
+	if m.ops == nil {
+		return func() tea.Msg {
+			return rollbackDoneMsg{err: fmt.Errorf("internal: ops is nil (test path mis-wired)")}
+		}
 	}
+	ops := m.ops
+	// Avoid the typed-nil-pointer-as-non-nil-interface gotcha — see
+	// commitCmd's nil-check comment above for the rationale.
+	var watcher txn.RevertWatcher
+	if m.watcher != nil {
+		watcher = m.watcher
+	}
+	nowFn := m.nowFn
+	storeQ := m.store
+	port := m.sftpPort
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
+		defer cancel()
+
+		// Reverse: locate the catch-all by signature (`allow <port>/tcp` +
+		// Anywhere) AND absence of sftpj comment; delete by ID. The
+		// extended-regex matches either bare-port or proto-prefixed forms
+		// ufw might emit.
+		reverseCmd := fmt.Sprintf(
+			"ID=$(ufw status numbered | grep -E 'allow +%s/tcp.*Anywhere' | "+
+				"grep -v sftpj | head -1 | "+
+				"sed -E 's/^\\[ +([0-9]+)\\].*/\\1/'); "+
+				"[ -n \"$ID\" ] && ufw --force delete $ID",
+			port,
+		)
+		reverseCmds := []string{reverseCmd, "ufw reload"}
+
+		steps := []txn.Step{
+			txn.NewScheduleRevertStep(reverseCmds, nowFn().Add(revertWindow), watcher, nowFn),
+			txn.NewUfwAllowStep(sysops.UfwAllowOpts{
+				Proto:   "tcp",
+				Source:  "any",
+				Port:    port,
+				Comment: "", // catch-all has no comment
+			}),
+			txn.NewUfwReloadStep(),
+		}
+
+		tx := txn.New(ops)
+		if err := tx.Apply(ctx, steps); err != nil {
+			return rollbackDoneMsg{err: fmt.Errorf("rollback batch: %w", err)}
+		}
+
+		// W2: best-effort FW-08 mirror rebuild post-Apply.
+		if storeQ != nil {
+			if rules, eErr := firewall.Enumerate(ctx, ops); eErr == nil {
+				_ = storeQ.RebuildUserIPs(ctx, rules, nowFn)
+			}
+		}
+
+		return rollbackDoneMsg{err: nil}
+	}
+}
+
+// composeCommitReverseCmds builds the SAFE-04 reverse payload for a
+// multi-mutation commit batch. Each OpAdd contributes a comment-grep
+// placeholder reverse (the assigned rule ID is not known pre-Apply);
+// each OpDelete contributes a canonical `ufw insert <originalID> ...`
+// reverse via lockdown.RenderReverseCommands (which knows the pre-
+// delete state byte-for-byte). The output is a flat []string suitable
+// for handing to NewScheduleRevertStep — `strings.Join(out, "; ")` is
+// the systemd-run ExecStart shell body.
+//
+// The trailing `ufw reload` finalizer is appended exactly ONCE
+// (W3 contract): RenderReverseCommands appends its own reload, which
+// we strip before adding our own. This avoids `ufw reload; ufw reload`
+// pairs which would be benign but ugly in `systemctl cat` output.
+//
+// Returns nil for an empty input — no spurious reload line.
+//
+// Threat-model commitments (T-04-08-04 / T-04-08-05): the OpAdd
+// placeholder's `[ -n "$ID" ]` guard prevents `ufw delete <empty>`
+// invocations when the rule has already been removed (e.g. by an
+// earlier reverse cmd in the same batch). The comment is single-quoted
+// inside `grep -F`; ufwcomment.Encode rejects all shell metacharacters
+// in the user portion (the regex's `^[a-z][a-z0-9:=_-]+$`), so the
+// quote-balancing safety holds.
+func composeCommitReverseCmds(muts []lockdown.PendingMutation, _port string) []string {
+	if len(muts) == 0 {
+		return nil
+	}
+
+	var out []string
+	var deletes []lockdown.PendingMutation
+
+	for _, mut := range muts {
+		switch mut.Op {
+		case lockdown.OpAdd:
+			// ufwcomment.Encode is the load-bearing safety net for the
+			// shell-quote-free systemd-run ExecStart per D-S04-08. If
+			// Encode fails (invalid user), surface it via the special
+			// SQL-NULL placeholder; the SAFE-04 timer will fire but
+			// `grep -F ''` matches nothing → harmless no-op.
+			comment, err := ufwcomment.Encode(mut.Rule.User)
+			if err != nil {
+				comment = "" // benign — grep -F '' matches everything but `[ -n "$ID" ]` guards
+			}
+			out = append(out, fmt.Sprintf(
+				"ID=$(ufw status numbered | grep -F '%s' | head -1 | "+
+					"sed -E 's/^\\[ +([0-9]+)\\].*/\\1/'); "+
+					"[ -n \"$ID\" ] && ufw --force delete $ID",
+				comment,
+			))
+		case lockdown.OpDelete:
+			deletes = append(deletes, mut)
+		}
+	}
+
+	if len(deletes) > 0 {
+		// RenderReverseCommands returns OpDelete inserts + a trailing
+		// "ufw reload". Strip the trailing reload so we only emit it
+		// once at the end (W3 contract).
+		rendered := lockdown.RenderReverseCommands(deletes)
+		for _, line := range rendered {
+			if line == "ufw reload" {
+				continue
+			}
+			out = append(out, line)
+		}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+	out = append(out, "ufw reload")
+	return out
 }
 
 // detectAddrFamily returns "v4" or "v6" for a CIDR or bare IP. Falls
-// back to "v4" on any parse failure (defensive — never panics). Task
-// 1b's implementation pins the v4/v6 distinction; this stub keeps the
-// signature stable for buildPendingMutations.
+// back to "v4" on any parse failure (defensive — never panics, never
+// throws). The Rule.Proto field carries this value and is the address
+// family marker used by RebuildUserIPs to populate the user_ips mirror.
 func detectAddrFamily(cidr string) string {
 	if cidr == "" {
 		return "v4"
