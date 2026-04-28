@@ -52,6 +52,20 @@ type Fake struct {
 	// would match the same invocation.
 	ExecResponsesByPrefix map[string]ExecResult
 
+	// ExecResponseQueue maps an exact invocation string to a FIFO queue of
+	// scripted responses. On each Exec lookup, the front element is popped
+	// and returned; the map entry is updated to the tail. Empty queue or
+	// absent key falls through to ExecResponses → ExecResponsesByPrefix.
+	//
+	// Used by tests that need STATEFUL responses across successive calls —
+	// e.g. plan 04-12's NewUfwDeleteCatchAllByEnumerateStep tests, where
+	// `ufw status numbered` must return DIFFERENT rule listings on each
+	// re-enumerate-and-delete iteration to model ufw's ID compaction
+	// behavior empirically observed in plan 04-10's UAT.
+	//
+	// Concurrency: f.mu guards mutation (same as f.Calls).
+	ExecResponseQueue map[string][]ExecResult
+
 	// ExecError, if non-nil, is returned from every Exec call before any
 	// response map lookup. Used to simulate catastrophic failures.
 	ExecError error
@@ -258,6 +272,7 @@ func NewFake() *Fake {
 		GlobResults:           map[string][]string{},
 		ExecResponses:         map[string]ExecResult{},
 		ExecResponsesByPrefix: map[string]ExecResult{},
+		ExecResponseQueue:     map[string][]ExecResult{},
 		SshdConfig:            map[string][]string{},
 		JournalctlStdout:      map[string][]byte{},
 	}
@@ -347,8 +362,9 @@ func (f *Fake) Glob(_ context.Context, pattern string) ([]string, error) {
 }
 
 // Exec key format: strings.TrimSpace(name + " " + strings.Join(args, " ")).
-// Exact match in ExecResponses wins; otherwise longest-prefix match in
-// ExecResponsesByPrefix; otherwise error.
+// Lookup precedence: ExecResponseQueue FIFO pop (if non-empty for key) →
+// ExecResponses (exact match) → ExecResponsesByPrefix (longest-prefix
+// match) → error. The queue exists for stateful tests; see plan 04-12.
 func (f *Fake) Exec(_ context.Context, name string, args ...string) (ExecResult, error) {
 	argv := append([]string{name}, args...)
 	f.record("Exec", argv...)
@@ -358,6 +374,18 @@ func (f *Fake) Exec(_ context.Context, name string, args ...string) (ExecResult,
 	}
 
 	key := strings.TrimSpace(name + " " + strings.Join(args, " "))
+
+	// Queue lookup: pop FIFO front if present and non-empty. Holds f.mu
+	// during mutation to keep queue updates safe under the same discipline
+	// as f.Calls. Falls through if key absent or queue is empty.
+	f.mu.Lock()
+	if q, ok := f.ExecResponseQueue[key]; ok && len(q) > 0 {
+		head := q[0]
+		f.ExecResponseQueue[key] = q[1:]
+		f.mu.Unlock()
+		return head, nil
+	}
+	f.mu.Unlock()
 
 	if r, ok := f.ExecResponses[key]; ok {
 		return r, nil
