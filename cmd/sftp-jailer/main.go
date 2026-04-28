@@ -13,6 +13,7 @@ import (
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/lockdown"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/revert"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sshdcfg"
@@ -25,6 +26,7 @@ import (
 	firewallscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewallrule"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/home"
+	lockdownscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/lockdown"
 	logsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/logs"
 	observerunscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/observerun"
 	settingsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/settings"
@@ -217,6 +219,14 @@ var observerCursorPath = "/var/lib/sftp-jailer/observer.cursor"
 //     factory always builds ModeByUser scoped to the selected user
 //     (W1 keybind deviation: uppercase 'D' on S-USERS reserves
 //     lowercase 'd' for Phase 3 03-08a M-DELETE-USER).
+//   - 04-08 adds home.SetLockdownFactory(...) — injects an
+//     S-LOCKDOWN constructor that captures the live ops, the
+//     per-process *revert.Watcher singleton, a freshly-built
+//     lockdown.Generator (reads the observation DB through the
+//     queries handle), the same usersEnum used by S-USERS, the
+//     defaultSFTPPort literal, and the koanf-loaded
+//     LockdownProposalWindowDays. Pressing capital `L` on home
+//     opens the flagship S-LOCKDOWN screen.
 func runTUI(cmd *cobra.Command, args []string) error {
 	// Pitfall E2: recovery script for unclean exits. Path printed to stderr
 	// BEFORE program.Run() so it's in scrollback even on a SIGKILL.
@@ -322,6 +332,34 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	})
 	home.SetDoctorFactory(func() nav.Screen { return doctorscreen.New(doctorSvc) })
 	home.SetFirewallFactory(func() nav.Screen { return firewallscreen.New(ops) })
+	// Plan 04-08: capital `L` on home opens S-LOCKDOWN. The factory
+	// closure constructs a fresh model per push so each navigation
+	// re-reads the observation DB + firewall state. Captures:
+	//   - ops             — sysops.SystemOps for `who`, ufw, systemctl, ip
+	//   - revertWatcher   — per-process SAFE-04 singleton (D-S04-04)
+	//   - lockdown.NewGenerator(queries) — proposal generator (LOCK-02)
+	//     constructed inside the closure so each push gets a fresh
+	//     instance; the Generator is stateless beyond its queries
+	//     handle, so this is cheap.
+	//   - usersEnum       — sftp-jailer-managed user enumerator (shared
+	//     with S-USERS, S-SETTINGS, etc.)
+	//   - defaultSFTPPort — Phase 4 v1 hard-coded "22"
+	//   - usersCfg.LockdownProposalWindowDays — koanf-loaded window
+	//     (D-L0204-01); defaults to 90 if config absent (config.Defaults).
+	// SetStore registers the *store.Queries handle for FW-08 mirror
+	// rebuild post-commit (W2 best-effort).
+	home.SetLockdownFactory(func() nav.Screen {
+		m := lockdownscreen.New(
+			ops,
+			revertWatcher,
+			lockdown.NewGenerator(queries),
+			usersEnum,
+			defaultSFTPPort,
+			usersCfg.LockdownProposalWindowDays,
+		)
+		m.SetStore(queries)
+		return m
+	})
 	home.SetLogsFactory(func() nav.Screen { return logsscreen.New(queries, ops) })
 	home.SetSettingsFactory(func() nav.Screen { return settingsscreen.New(ops, configFilePath, usersEnum, chrootRoot) })
 	home.SetUsersFactory(func() nav.Screen { return usersscreen.NewWithConfig(usersEnum, &usersCfg, ops, chrootRoot) })
