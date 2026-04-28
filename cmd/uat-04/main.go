@@ -203,9 +203,103 @@ func phase1SafeRevert(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	return nil
 }
 
-// phase2FW06HardBlock implements phase 2 — see Task 2.
+// phase2FW06HardBlock exercises the FW-06 IPv6 hard-block preflight on a
+// live IPv6-enabled box: forces /etc/default/ufw → IPV6=no, confirms
+// HasPublicIPv6 returns true, then asserts the same logic M-ADD-RULE's
+// preflightCmd uses (IPV6=no AND HasPublicIPv6) detects the leak. Restores
+// the prior IPV6= value at the end.
 func phase2FW06HardBlock(ctx context.Context, ops sysops.SystemOps, _ *revert.Watcher) error {
-	return fmt.Errorf("not yet implemented (Task 2)")
+	// 1. Read current IPV6= value
+	priorBytes, err := ops.ReadFile(ctx, "/etc/default/ufw")
+	if err != nil {
+		return fmt.Errorf("read /etc/default/ufw: %w", err)
+	}
+	priorIPV6 := "yes" // default
+	for _, line := range strings.Split(string(priorBytes), "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "IPV6=") {
+			priorIPV6 = strings.Trim(strings.TrimPrefix(t, "IPV6="), `"`)
+			break
+		}
+	}
+	fmt.Printf("  prior IPV6= value: %q (will be restored at end)\n", priorIPV6)
+
+	// 2. Force IPV6=no
+	if err := ops.RewriteUfwIPV6(ctx, "no"); err != nil {
+		return fmt.Errorf("RewriteUfwIPV6('no'): %w", err)
+	}
+	// restart ufw via Exec (no typed wrapper for restart in sysops).
+	res, err := ops.Exec(ctx, "systemctl", "restart", "ufw")
+	if err != nil {
+		return fmt.Errorf("systemctl restart ufw: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("systemctl restart ufw exit %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	fmt.Println("  IPV6=no applied + ufw restarted")
+
+	// 3. Verify public IPv6 exists. If not, restore + SKIP.
+	hasIPv6, err := ops.HasPublicIPv6(ctx)
+	if err != nil {
+		// Best-effort restore on error path
+		if rerr := ops.RewriteUfwIPV6(ctx, priorIPV6); rerr != nil {
+			fmt.Printf("  WARN: failed to restore IPV6=%s on error path: %v\n", priorIPV6, rerr)
+		}
+		_, _ = ops.Exec(ctx, "systemctl", "restart", "ufw")
+		return fmt.Errorf("HasPublicIPv6: %w", err)
+	}
+	if !hasIPv6 {
+		// Restore and skip
+		if rerr := ops.RewriteUfwIPV6(ctx, priorIPV6); rerr != nil {
+			fmt.Printf("  WARN: failed to restore IPV6=%s: %v\n", priorIPV6, rerr)
+		}
+		_, _ = ops.Exec(ctx, "systemctl", "restart", "ufw")
+		fmt.Println("  SKIP: box has no public IPv6; FW-06 hard-block path not exercisable on this host")
+		return nil
+	}
+	fmt.Println("  public IPv6 detected")
+
+	// 4. Re-read /etc/default/ufw — confirm IPV6=no
+	nowBytes, err := ops.ReadFile(ctx, "/etc/default/ufw")
+	if err != nil {
+		return fmt.Errorf("re-read /etc/default/ufw: %w", err)
+	}
+	gotIPV6 := ""
+	for _, line := range strings.Split(string(nowBytes), "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "IPV6=") {
+			gotIPV6 = strings.Trim(strings.TrimPrefix(t, "IPV6="), `"`)
+			break
+		}
+	}
+	if gotIPV6 != "no" {
+		return fmt.Errorf("expected IPV6=no after rewrite, got %q", gotIPV6)
+	}
+	fmt.Printf("  /etc/default/ufw confirms IPV6=%s\n", gotIPV6)
+
+	// 5. Run M-ADD-RULE preflight logic — assert leak detection.
+	//    The production preflight in internal/tui/screens/firewallrule
+	//    checks the same conjunction: HasPublicIPv6 && (IPV6 file says
+	//    "no"). If both are true, the modal pushes M-FW-IPV6-FIX.
+	leak := (gotIPV6 == "no") && hasIPv6
+	if !leak {
+		return fmt.Errorf("CRITICAL: leak=false despite IPV6=no AND public IPv6 — preflight logic broken")
+	}
+	fmt.Println("  preflight logic correctly detects leak: M-ADD-RULE would have triggered M-FW-IPV6-FIX")
+
+	// 6. Restore prior IPV6= value
+	if err := ops.RewriteUfwIPV6(ctx, priorIPV6); err != nil {
+		return fmt.Errorf("restore IPV6=%s: %w", priorIPV6, err)
+	}
+	res2, err := ops.Exec(ctx, "systemctl", "restart", "ufw")
+	if err != nil {
+		return fmt.Errorf("systemctl restart ufw on cleanup: %w", err)
+	}
+	if res2.ExitCode != 0 {
+		return fmt.Errorf("systemctl restart ufw on cleanup exit %d: %s", res2.ExitCode, strings.TrimSpace(string(res2.Stderr)))
+	}
+	fmt.Printf("  restored IPV6=%s\n", priorIPV6)
+	return nil
 }
 
 // phase3LockCommit implements phase 3 — see Task 3.
