@@ -1410,3 +1410,139 @@ func TestUfwDeleteCatchAllByEnumerate_compensate_is_intentional_noop(t *testing.
 		"Compensate must not touch sysops at all (D-FW-07 irreversible by design — "+
 			"recovery rides the SAFE-04 transient unit's reverse-cmd)")
 }
+
+// ---- RemoveSshdDropIn tests (Phase 5 plan 05-03) ----------------------------
+
+func TestRemoveSshdDropIn_Apply_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	const (
+		dropInPath = "/etc/ssh/sshd_config.d/50-sftp-jailer.conf"
+		backupDir  = "/var/backups/sftp-jailer"
+	)
+	fixedTime := time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC)
+	nowFn := func() time.Time { return fixedTime }
+	f := sysops.NewFake()
+	f.Files[dropInPath] = []byte("DROP_IN_CONTENT")
+
+	step := NewRemoveSshdDropInStep(dropInPath, backupDir, 0o644, nowFn)
+	require.NoError(t, step.Apply(context.Background(), f))
+
+	// Verify backup was written with the original content.
+	expectBackup := "/var/backups/sftp-jailer/20260501T103000Z-50-sftp-jailer.conf.bak"
+	require.Equal(t, []byte("DROP_IN_CONTENT"), f.Files[expectBackup],
+		"backup must contain the original drop-in bytes")
+
+	// Verify the drop-in was removed.
+	_, dropInPresent := f.Files[dropInPath]
+	require.False(t, dropInPresent, "drop-in must be absent after Apply")
+}
+
+func TestRemoveSshdDropIn_Apply_AlreadyAbsent(t *testing.T) {
+	t.Parallel()
+
+	const dropInPath = "/etc/ssh/sshd_config.d/50-sftp-jailer.conf"
+	nowFn := func() time.Time { return time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC) }
+	f := sysops.NewFake()
+	// drop-in NOT preloaded → ReadFile returns fs.ErrNotExist
+
+	step := NewRemoveSshdDropInStep(dropInPath, "/var/backups/sftp-jailer", 0o644, nowFn)
+	require.NoError(t, step.Apply(context.Background(), f), "Apply must succeed when drop-in is already absent")
+
+	// Compensate must be a no-op (no AtomicWriteFile calls).
+	callsBefore := len(f.Calls)
+	require.NoError(t, step.Compensate(context.Background(), f), "Compensate when prior absent must return nil")
+	// Compensate with no prior must not write anything — only the RemoveAll from Apply should appear.
+	for _, c := range f.Calls[callsBefore:] {
+		require.NotEqual(t, "AtomicWriteFile", c.Method, "Compensate must not call AtomicWriteFile when no prior existed")
+	}
+}
+
+func TestRemoveSshdDropIn_Compensate_RestoresPriorBytes(t *testing.T) {
+	t.Parallel()
+
+	const (
+		dropInPath = "/etc/ssh/sshd_config.d/50-sftp-jailer.conf"
+		backupDir  = "/var/backups/sftp-jailer"
+	)
+	nowFn := func() time.Time { return time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC) }
+	f := sysops.NewFake()
+	f.Files[dropInPath] = []byte("ORIGINAL")
+
+	step := NewRemoveSshdDropInStep(dropInPath, backupDir, 0o644, nowFn)
+	require.NoError(t, step.Apply(context.Background(), f))
+
+	// After Apply, drop-in is gone.
+	_, dropInPresent := f.Files[dropInPath]
+	require.False(t, dropInPresent)
+
+	// Compensate must restore the original bytes.
+	require.NoError(t, step.Compensate(context.Background(), f))
+	require.Equal(t, []byte("ORIGINAL"), f.Files[dropInPath],
+		"Compensate must restore the prior drop-in bytes exactly")
+}
+
+func TestRemoveSshdDropIn_Apply_ReadErrorOtherThanNotExist(t *testing.T) {
+	t.Parallel()
+
+	const dropInPath = "/etc/ssh/sshd_config.d/50-sftp-jailer.conf"
+	nowFn := func() time.Time { return time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC) }
+	// Use a custom Fake whose ReadFile always returns a non-ErrNotExist error for the drop-in.
+	// We achieve this by using a wrapping sysops.Fake subtype — but the Fake itself only supports
+	// ErrNotExist (absent key) vs. success (present key). So we use a minimal inline fake by
+	// seeding the file and using a wrapper. Instead, we test the invariant by using a real
+	// Fake with a staged error via the ExecError field workaround: since Fake.ReadFile only
+	// distinguishes present vs absent, we inject a custom fake via interface.
+	//
+	// Alternative: use the plan-specified behavior via a sysops.Fake where we stage the
+	// non-ErrNotExist error by setting ReadFile to fail. The Fake as-is only returns
+	// ErrNotExist for absent files. We use a thin adapter to inject a custom error.
+	f := &readErrorFake{Fake: sysops.NewFake(), path: dropInPath, err: fmt.Errorf("permission denied")}
+
+	step := NewRemoveSshdDropInStep(dropInPath, "/var/backups/sftp-jailer", 0o644, nowFn)
+	err := step.Apply(context.Background(), f)
+	require.Error(t, err, "Apply must return error on non-ErrNotExist ReadFile failure")
+
+	// No RemoveAll must have been called (filesystem in unknown state).
+	for _, c := range f.Calls {
+		require.NotEqual(t, "RemoveAll", c.Method,
+			"Apply must NOT call RemoveAll when ReadFile returned a non-ErrNotExist error")
+	}
+}
+
+// readErrorFake wraps sysops.Fake to inject a specific error for a specific ReadFile path.
+type readErrorFake struct {
+	*sysops.Fake
+	path string
+	err  error
+}
+
+func (r *readErrorFake) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	if path == r.path {
+		r.Fake.Calls = append(r.Fake.Calls, sysops.FakeCall{Method: "ReadFile", Args: []string{path}})
+		return nil, r.err
+	}
+	return r.Fake.ReadFile(ctx, path)
+}
+
+func TestRemoveSshdDropIn_Apply_BackupWriteFailure(t *testing.T) {
+	t.Parallel()
+
+	const dropInPath = "/etc/ssh/sshd_config.d/50-sftp-jailer.conf"
+	const backupDir = "/var/backups/sftp-jailer"
+	nowFn := func() time.Time { return time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC) }
+	f := sysops.NewFake()
+	f.Files[dropInPath] = []byte("CONTENT")
+	// Make AtomicWriteFile fail (affects all paths, but the first AtomicWriteFile
+	// call in Apply is the backup write — that's what we test here).
+	f.AtomicWriteError = errors.New("disk full")
+
+	step := NewRemoveSshdDropInStep(dropInPath, backupDir, 0o644, nowFn)
+	err := step.Apply(context.Background(), f)
+	require.Error(t, err, "Apply must return error when backup write fails")
+	require.Contains(t, err.Error(), "backup write")
+
+	// Drop-in must NOT have been removed (we couldn't back it up).
+	_, dropInPresent := f.Files[dropInPath]
+	require.True(t, dropInPresent, "drop-in must remain if backup write failed")
+}
