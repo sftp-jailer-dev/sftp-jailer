@@ -26,6 +26,117 @@ builds:
       - -X main.buildVersion={{.Version}}
       - -X main.buildProjectURL=https://sftp-jailer.com
 
-# NOTE: `archives`, `nfpms`, `release`, and `changelog` sections intentionally
-# absent. Phase 5 will add them. `goreleaser check` against this file
-# succeeds because the absent sections are optional.
+# Belt-and-suspenders: regenerate man pages from the cobra tree at release time.
+# 05-02 wires cmd/gen-manpage; this hook fails fast if the generator is missing.
+before:
+  hooks:
+    - go mod download
+    - go run ./cmd/gen-manpage
+
+archives:
+  - id: sftp-jailer-tar
+    ids: [sftp-jailer]
+    name_template: '{{ .ProjectName }}_{{ replace .Version "-" "~" }}_{{ .Os }}_{{ .Arch }}'
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - README.md
+
+nfpms:
+  - id: sftp-jailer-deb
+    package_name: sftp-jailer
+    ids: [sftp-jailer]
+    file_name_template: '{{ .ProjectName }}_{{ replace .Version "-" "~" }}_{{ .Arch }}'
+    homepage: https://sftp-jailer.com
+    maintainer: sftp-jailer-dev <noreply@sftp-jailer.com>
+    description: |-
+      Interactive TUI for Linux sysadmins managing chrooted SFTP on Ubuntu 24.04.
+      One supervised flow from "fresh box" to "per-user IP-locked-down SFTP"
+      with observation-driven intel.
+    license: GPL-3.0
+    section: admin
+    priority: optional
+    formats: [deb]
+    # Per CONTEXT.md D-MP-02:
+    #   Depends — runtime requirements not in 'essential' set.
+    #   Recommends — passwd (chpasswd/gpasswd) is essential, so Recommends
+    #     not Depends to avoid lintian package-depends-on-essential-package.
+    #   adduser is intentionally NOT listed (also essential).
+    dependencies:
+      - init-system-helpers
+      - openssh-server
+      - ufw
+    recommends:
+      - passwd
+    contents:
+      # systemd unit files (lintian-clean canonical install path /lib/systemd/system/)
+      - src: packaging/systemd/sftp-jailer-observer.service
+        dst: /lib/systemd/system/sftp-jailer-observer.service
+        type: file
+        file_info:
+          mode: 0644
+      - src: packaging/systemd/sftp-jailer-observer.timer
+        dst: /lib/systemd/system/sftp-jailer-observer.timer
+        type: file
+        file_info:
+          mode: 0644
+      # Generated man page — nfpm gzips files matching /usr/share/man/man*/*
+      # automatically when packager==deb (per nfpm docs §contents/manpages).
+      - src: docs/man/sftp-jailer.1
+        dst: /usr/share/man/man1/sftp-jailer.1
+        type: file
+        file_info:
+          mode: 0644
+      # Lintian overrides (committed empty in 05-04; populated empirically
+      # as warnings surface).
+      - src: packaging/debian/lintian-overrides
+        dst: /usr/share/lintian/overrides/sftp-jailer
+        type: file
+        file_info:
+          mode: 0644
+      # State directory (D-LC-01 — owned by tool; postrm wipes on purge).
+      - dst: /var/lib/sftp-jailer
+        type: dir
+        file_info:
+          mode: 0755
+    # Maintainer scripts created in 05-04 (Debian Policy §10 case-arg shape).
+    scripts:
+      postinstall: packaging/debian/postinst
+      preremove: packaging/debian/prerm
+      postremove: packaging/debian/postrm
+    deb:
+      compression: zstd
+      # No conffiles declared — sshd drop-in is NOT a dpkg conffile per
+      # CONTEXT.md D-LC-02; runtime canonical writer owns it.
+
+release:
+  github:
+    owner: sftp-jailer-dev
+    name: sftp-jailer
+  # Pre-releases auto-detected: any version containing "rc" or "~rc" is marked prerelease.
+  prerelease: auto
+  # 05-06's release.yml uploads SHA256SUMS.txt explicitly; goreleaser ships
+  # the .deb + .tar.gz primary artifacts.
+  draft: false
+  mode: replace
+
+changelog:
+  use: git
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Documentation
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Other changes
+      order: 999
+  filters:
+    exclude:
+      - '^test:'
+      - '^chore:'
+      - '^ci:'

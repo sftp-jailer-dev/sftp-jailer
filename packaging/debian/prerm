@@ -1,0 +1,4 @@
+#!/bin/sh
+# prerm — placeholder; real body lands in plan 05-04.
+set -e
+exit 0
