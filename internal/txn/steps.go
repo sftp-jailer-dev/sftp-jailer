@@ -145,6 +145,13 @@ func (s *removeSshdDropInStep) Apply(ctx context.Context, ops sysops.SystemOps) 
 	if err == nil {
 		s.priorBytes = prior
 		s.priorExists = true
+		// BUG-05-A fix: ensure the backup directory exists before writing.
+		// The apply-flow caller (applysetup.go) calls MkdirAll(BackupDir) before
+		// running steps, but purge-sshd-cleanup uses a different backup dir
+		// (/var/backups/sftp-jailer/) that may not exist on the system.
+		if merr := ops.MkdirAll(ctx, s.backupDir, 0o700); merr != nil {
+			return fmt.Errorf("mkdir backup dir %s: %w", s.backupDir, merr)
+		}
 		ts := s.now().UTC().Format("20060102T150405Z")
 		s.backupPath = filepath.Join(s.backupDir, ts+"-"+filepath.Base(s.dropInPath)+".bak")
 		if werr := ops.AtomicWriteFile(ctx, s.backupPath, prior, 0o600); werr != nil {

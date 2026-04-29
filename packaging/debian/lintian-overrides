@@ -1,0 +1,54 @@
+# WHY: init-system-helpers is required by the postinst script to call
+# deb-systemd-helper for timer enable/disable. Although listed in the
+# Debian "essential" set on some configurations, it is NOT guaranteed
+# present on all Ubuntu 24.04 minimal installs and MUST be declared as
+# a Depends. Version-pinning is omitted because we require any version
+# that ships deb-systemd-helper (all released versions do).
+sftp-jailer: depends-on-essential-package-without-using-version Depends: init-system-helpers
+
+# WHY: sftp-jailer is a CGO_ENABLED=0 statically-linked binary by design.
+# The REQUIREMENTS.md mandates a single static binary with no runtime
+# dependencies beyond libc. Dynamic linking would break the deployment
+# model (no Go runtime required on target). This is an intentional
+# architectural decision, not an oversight.
+sftp-jailer: statically-linked-binary [usr/bin/sftp-jailer]
+
+# WHY: The maintainer scripts (postinst, prerm, postrm) use absolute paths
+# for /usr/bin/deb-systemd-helper and /usr/bin/deb-systemd-invoke per
+# the Debian systemd packaging guide. These helpers may not be in PATH
+# in all invocation contexts (dpkg runs scripts with a minimal environ).
+# Using absolute paths is the correct and safe approach for maintainer
+# scripts that shell out to system helpers.
+sftp-jailer: command-with-path-in-maintainer-script /usr/bin/deb-systemd-helper (in test syntax) [postinst:33]
+sftp-jailer: command-with-path-in-maintainer-script /usr/bin/deb-systemd-helper (in test syntax) [postrm:55]
+sftp-jailer: command-with-path-in-maintainer-script /usr/bin/deb-systemd-helper (in test syntax) [prerm:46]
+sftp-jailer: command-with-path-in-maintainer-script /usr/bin/deb-systemd-invoke (in test syntax) [postinst:39]
+sftp-jailer: command-with-path-in-maintainer-script /usr/bin/deb-systemd-invoke (in test syntax) [prerm:36]
+
+# WHY: The prerm script calls sftp-jailer via its absolute path
+# (/usr/bin/sftp-jailer) to run the purge-sshd-cleanup subcommand that
+# backs up and removes the sshd drop-in before the binary is removed.
+# The absolute path is correct — the script must target the installed binary,
+# which may differ from any sftp-jailer in PATH. This is the correct
+# pattern for prerm scripts that invoke the package's own binary.
+sftp-jailer: command-with-path-in-maintainer-script /usr/bin/sftp-jailer (in test syntax) [prerm:63]
+sftp-jailer: command-with-path-in-maintainer-script /usr/bin/sftp-jailer (plain script) [prerm:64]
+
+# WHY: The postinst and prerm scripts call systemctl directly for operations
+# that deb-systemd-helper cannot perform (e.g., systemctl daemon-reload,
+# is-active checks). Per Debian systemd Policy §11.1 the preferred approach
+# is deb-systemd-helper for enable/disable and direct systemctl for reload
+# and status queries. The direct calls are guarded by
+# "if [ -d /run/systemd/system ]" so they are safe on non-systemd systems.
+sftp-jailer: maintainer-script-calls-systemctl [postinst:37]
+sftp-jailer: maintainer-script-calls-systemctl [postinst:42]
+sftp-jailer: maintainer-script-calls-systemctl [prerm:40]
+sftp-jailer: maintainer-script-calls-systemctl [prerm:41]
+sftp-jailer: maintainer-script-calls-systemctl [prerm:49]
+
+# WHY: Architecture-Variant is a goreleaser-injected field used to track
+# the Go arch/variant string (e.g., "amd64v1", "arm64v8.0"). It is not
+# a standard Debian control field. goreleaser injects this for its own
+# build artifact tracking; it does not affect package installation or
+# functionality. Filed upstream: goreleaser/nfpm#999.
+sftp-jailer: unknown-field Architecture-Variant

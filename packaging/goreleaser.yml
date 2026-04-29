@@ -32,6 +32,13 @@ before:
   hooks:
     - go mod download
     - go run ./cmd/gen-manpage
+    # Pre-compress man page — lintian requires gzip'd man pages in .deb packages
+    # (lintian tag: uncompressed-manual-page). The .gz output is committed to
+    # packaging/debian/ and referenced by the nfpm contents list below.
+    - bash -c "gzip -9 -k -f docs/man/sftp-jailer.1 -c > packaging/debian/sftp-jailer.1.gz"
+    # Pre-compress Debian changelog — lintian requires changelog.Debian.gz
+    # (lintian tag: no-changelog). Source changelog is packaging/debian/changelog.
+    - bash -c "gzip -9 -k -f packaging/debian/changelog -c > packaging/debian/changelog.Debian.gz"
 
 archives:
   - id: sftp-jailer-tar
@@ -80,10 +87,24 @@ nfpms:
         type: file
         file_info:
           mode: 0644
-      # Generated man page — nfpm gzips files matching /usr/share/man/man*/*
-      # automatically when packager==deb (per nfpm docs §contents/manpages).
-      - src: docs/man/sftp-jailer.1
-        dst: /usr/share/man/man1/sftp-jailer.1
+      # Man page — pre-compressed by the before hook. lintian requires
+      # man pages to be gzip'd (tag: uncompressed-manual-page).
+      - src: packaging/debian/sftp-jailer.1.gz
+        dst: /usr/share/man/man1/sftp-jailer.1.gz
+        type: file
+        file_info:
+          mode: 0644
+      # Debian copyright file (Debian Policy §12.5: required in every .deb).
+      # lintian tag: no-copyright-file fires if this is absent.
+      - src: packaging/debian/copyright
+        dst: /usr/share/doc/sftp-jailer/copyright
+        type: file
+        file_info:
+          mode: 0644
+      # Debian changelog — pre-compressed by the before hook. lintian requires
+      # changelog.Debian.gz for non-native packages (tag: no-changelog).
+      - src: packaging/debian/changelog.Debian.gz
+        dst: /usr/share/doc/sftp-jailer/changelog.Debian.gz
         type: file
         file_info:
           mode: 0644

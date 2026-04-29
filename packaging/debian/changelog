@@ -1,0 +1,8 @@
+sftp-jailer (1.1) unstable; urgency=medium
+
+  * Phase 5 release: packaging, install/purge, automated release pipeline.
+  * BUG-05-A fix: add /var/backups/sftp-jailer/ to atomic write allowlist so
+    purge-sshd-cleanup drop-in backup succeeds and drop-in is removed on purge.
+  * Lintian-clean packaging: copyright, changelog, and lintian-overrides added.
+
+ -- sftp-jailer-dev <noreply@sftp-jailer.com>  Thu, 30 Apr 2026 00:00:00 +0000

@@ -274,6 +274,15 @@ func TestAtomicWriteFile_allowlist_preserves_phase3_paths(t *testing.T) {
 		"Phase 3 WriteAuthorizedKeys must remain allowed")
 }
 
+func TestAtomicWriteFile_allowlist_accepts_var_backups_sftp_jailer_prefix(t *testing.T) {
+	// BUG-05-A fix: purge-sshd-cleanup (prerm) writes a backup to
+	// /var/backups/sftp-jailer/ before removing the drop-in. This prefix
+	// MUST be in the production allowlist or the backup write silently fails
+	// and the drop-in survives apt purge (DIST-05 violation).
+	require.True(t, isAllowedAtomicWritePath("/var/backups/sftp-jailer/20260430T000000Z-50-sftp-jailer.conf.bak"),
+		"the production allowlist must cover /var/backups/sftp-jailer/ prefix (BUG-05-A fix, prerm purge-sshd-cleanup)")
+}
+
 func TestAtomicWriteFile_allowlist_test_seam_replaces_and_resets(t *testing.T) {
 	// Sanity check: the seam pair correctly toggles the allowlist.
 	require.False(t, isAllowedAtomicWritePath("/tmp/sftpj-test-x"),

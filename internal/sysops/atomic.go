@@ -21,7 +21,9 @@ import (
 //     WriteAuthorizedKeys writes <root>/<user>/.ssh/authorized_keys).
 //   - /srv/sftp/                           — Phase 3 (alt default chrootRoot).
 //   - /var/lib/sftp-jailer/                — Phase 4 (D-S04-06 revert pointer
-//   - Phase 3 backup directory + future writers).
+//     + Phase 3 apply-flow drop-in backups via applysetup.BackupDir).
+//   - /var/backups/sftp-jailer/            — Phase 5 (BUG-05-A fix): prerm
+//     purge-sshd-cleanup drop-in backup via purge_cleanup.purgeBackupDir.
 //
 // Entries ending in `/` are prefix matches; bare paths are exact matches.
 // Tests can replace the list via SetAtomicWriteAllowlistForTest (paired with
@@ -45,7 +47,8 @@ func defaultAtomicWriteAllowlist() []string {
 		"/etc/ssh/sshd_config.d/", // prefix — sshd drop-in writes
 		"/srv/sftp-jailer/",       // prefix — chrootRoot default
 		"/srv/sftp/",              // prefix — alt chrootRoot default
-		"/var/lib/sftp-jailer/",   // prefix — backups + revert pointer
+		"/var/lib/sftp-jailer/",   // prefix — backups + revert pointer (apply flow)
+		"/var/backups/sftp-jailer/", // prefix — purge-sshd-cleanup drop-in backup (prerm flow)
 	}
 }
 
