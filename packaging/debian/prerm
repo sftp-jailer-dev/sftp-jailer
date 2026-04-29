@@ -1,4 +1,78 @@
 #!/bin/sh
-# prerm — placeholder; real body lands in plan 05-04.
+# prerm — sftp-jailer .deb maintainer script (Phase 5 plan 05-04).
+#
+# Implements DIST-05 (the SAFE-06 sshd reload half) and the timer-shutdown
+# part of the install/purge round-trip.
+#
+# Critical contract (CONTEXT.md D-MS-01 + Specific Ideas L533-L535):
+#   /usr/bin/sftp-jailer purge-sshd-cleanup MUST run while the binary is
+#   still on disk. dpkg invokes prerm BEFORE removing files; postrm runs
+#   AFTER. Hence sshd reload dispatch belongs in prerm, not postrm.
+#
+# The subcommand is idempotent (exits 0 if drop-in already absent) and
+# rolls back via internal/txn compensators on sshd -t failure (drop-in
+# restored from /var/backups/sftp-jailer/). The `|| true` wrapper means a
+# half-broken box still progresses through `apt purge` — a stuck prerm
+# would be worse than a logged warning.
+#
+# Per Debian Policy §10, prerm is invoked as one of:
+#   prerm remove
+#   prerm upgrade <new-version>
+#   prerm failed-upgrade <old-version>
+#   prerm deconfigure in-favour <new-package> <version> [removing ...]
+#
+# We dispatch sshd cleanup on `remove` and `deconfigure` only. On
+# `upgrade`/`failed-upgrade` the same package is being reinstalled — the
+# drop-in must stay because the new postinst will (re)write it via the
+# runtime canonical writer; tearing it down + reloading sshd would be
+# strictly worse than leaving it.
 set -e
+
+case "$1" in
+    remove|deconfigure)
+        # Stop the observation timer + service before tearing down.
+        # deb-systemd-invoke is part of init-system-helpers (declared
+        # as Depends by 05-01's nfpm config).
+        if [ -x /usr/bin/deb-systemd-invoke ]; then
+            deb-systemd-invoke stop sftp-jailer-observer.timer || true
+            deb-systemd-invoke stop sftp-jailer-observer.service || true
+        else
+            systemctl stop sftp-jailer-observer.timer || true
+            systemctl stop sftp-jailer-observer.service || true
+        fi
+
+        # Disable the timer so a future `apt install` doesn't carry over
+        # the prior enable state if the user removed without purging.
+        if [ -x /usr/bin/deb-systemd-helper ]; then
+            deb-systemd-helper disable sftp-jailer-observer.timer || true
+        else
+            systemctl disable sftp-jailer-observer.timer || true
+        fi
+
+        # SAFE-06 sshd reload dispatched by the hidden cobra subcommand
+        # while the binary is still on disk. The subcommand:
+        #   - exits 0 if the drop-in is already absent (idempotent)
+        #   - backs up + removes the drop-in
+        #   - runs sshd -t
+        #   - dispatches systemctl reload ssh.service
+        #   - rolls back via txn compensators on failure
+        #
+        # || true: a partial-state box (e.g., binary present but corrupt,
+        # or a SAFE-04 revert.active orphan) should still complete `apt
+        # purge`. A logged failure is better than a stuck purge.
+        if [ -x /usr/bin/sftp-jailer ]; then
+            /usr/bin/sftp-jailer purge-sshd-cleanup || true
+        fi
+    ;;
+    upgrade|failed-upgrade)
+        # Same package is being reinstalled. Leave the drop-in + the
+        # timer in place — postinst will reconfigure on the new version.
+        :
+    ;;
+    *)
+        echo "prerm called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
 exit 0
