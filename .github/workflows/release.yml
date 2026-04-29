@@ -1,0 +1,151 @@
+# .github/workflows/release.yml — Phase 5 plan 05-05 (DIST-08).
+#
+# Tag-push-only release pipeline. Triggered EXCLUSIVELY when a tag matching
+# vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rcN is pushed (CONTEXT.md D-RW-03).
+# No nightly, no workflow_dispatch, no main-push builds — the trigger surface
+# stays narrow on purpose (REQUIREMENTS.md §Out of Scope).
+#
+# Job sequence (D-RW-01):
+#   1.  Checkout (full history for git-describe / changelog)
+#   2.  Setup Go 1.25.x
+#   3.  go mod verify
+#   4.  go test -race -count=1 ./...
+#   5.  golangci-lint v2.11
+#   6.  govulncheck ./...
+#   7.  Architecture-invariant scripts + inline grep guards
+#         (5 scripts + 2 inline checks; matches ci.yml's invariants job)
+#   8.  goreleaser release --clean
+#   9.  lintian --pedantic dist/*.deb     <-- DIST-03 zero-tolerance gate
+#   10. SHA256SUMS.txt generation + gh release upload
+#
+# The "doubled gate" (re-running CI checks the tagged commit may have already
+# passed on main) is INTENTIONAL per D-RW-01: a release ≠ a flaky main pass.
+# Estimated wall time: 10–15 min on the ubuntu-24.04 runner.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
+
+permissions:
+  contents: write   # for the GitHub Release artifact upload (gh release upload)
+
+jobs:
+  release:
+    name: build + lintian + publish
+    runs-on: ubuntu-24.04
+    steps:
+      # 1. Checkout — full history needed for git-describe / changelog generation.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. Setup Go — pinned to 1.25.x per CLAUDE.md TL;DR pin list (Bubble Tea v2 floor).
+      - name: Setup Go 1.25
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      # 3. Module integrity — must match go.sum verbatim.
+      - name: go mod verify
+        run: go mod verify
+
+      # 4. Race-detector test suite (every package).
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      # 5. golangci-lint — v2.11 per ci.yml (built with Go 1.25; v2.1 was Go 1.24 → exit 3).
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11
+
+      # 6. govulncheck — Go vulnerability scanner.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      # 7a. Architecture-invariant scripts (5 — matches ci.yml + 05-02's addition).
+      - name: Architecture invariants
+        run: |
+          bash scripts/check-no-exec-outside-sysops.sh
+          bash scripts/check-single-tea-program.sh
+          bash scripts/check-go-mod-pins.sh
+          bash scripts/check-no-raw-config-write.sh
+          bash scripts/check-manpage-fresh.sh
+
+      # 7b. Real.defaultTimeout policy check (mirrors ci.yml L73-L80).
+      - name: Real.defaultTimeout policy check (10s)
+        run: |
+          if ! grep -q '10 \* time\.Second' internal/sysops/real.go; then
+            echo "FAIL: internal/sysops/real.go is missing the '10 * time.Second' default-timeout policy line" >&2
+            exit 1
+          fi
+
+      # 7c. No v1 Bubble Tea imports (mirrors ci.yml L81-L86).
+      - name: No v1 Bubble Tea imports (bubbletea + bubbles + lipgloss)
+        run: |
+          if grep -rn 'github.com/charmbracelet/bubbletea\|github.com/charmbracelet/bubbles\|github.com/charmbracelet/lipgloss' . --include='*.go' --exclude-dir=.git; then
+            echo "FAIL: v1 Bubble Tea / Bubbles / Lip Gloss paths found; v2 migration is non-negotiable"
+            exit 1
+          fi
+
+      # 8. goreleaser — builds + archives + .debs + uploads to GitHub Release.
+      #    The action installs goreleaser at the pinned version, then runs the
+      #    `release --clean` command. GITHUB_TOKEN is the auto-provisioned
+      #    secret with `contents: write` (per the permissions block above).
+      - name: goreleaser release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: v2.15.4
+          args: release --clean --config packaging/goreleaser.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 9. lintian --pedantic — DIST-03 zero-tolerance gate.
+      #    Installs lintian via apt (not preinstalled on ubuntu-24.04 runner).
+      #    Runs against EVERY .deb produced; any non-overridden warning fails
+      #    the workflow. The lintian-overrides file is shipped INSIDE the .deb
+      #    at /usr/share/lintian/overrides/sftp-jailer (per 05-01 nfpms contents)
+      #    and is consulted automatically when lintian inspects the package.
+      - name: Install lintian
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lintian
+
+      - name: lintian --pedantic
+        run: |
+          set -euo pipefail
+          fail=0
+          for deb in dist/*.deb; do
+            echo "==> lintian --pedantic $deb"
+            if ! lintian --pedantic "$deb"; then
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "FAIL: lintian --pedantic raised non-overridden warnings on at least one .deb"
+            exit 1
+          fi
+          echo "OK: lintian --pedantic clean on all .debs"
+
+      # 10. SHA256SUMS.txt + upload to GitHub Release.
+      #     goreleaser uploads the .deb + .tar.gz primary artifacts itself;
+      #     this step appends SHA256SUMS.txt as a separate post-release artifact
+      #     so the sums are independent of goreleaser's internal hashing path.
+      - name: SHA256SUMS.txt + upload
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum *.deb > SHA256SUMS.txt
+          echo "==> SHA256SUMS.txt contents:"
+          cat SHA256SUMS.txt
+          gh release upload "$GITHUB_REF_NAME" SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
