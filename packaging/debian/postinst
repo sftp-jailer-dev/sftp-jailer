@@ -1,4 +1,65 @@
 #!/bin/sh
-# postinst — placeholder; real body lands in plan 05-04.
+# postinst — sftp-jailer .deb maintainer script (Phase 5 plan 05-04).
+#
+# Implements DIST-04: creates the sftp-jailer system group (idempotent),
+# enables + starts sftp-jailer-observer.timer (closing the deferred half
+# of OBS-01), and pre-creates /var/lib/sftp-jailer/observer.cursor at mode
+# 0600 root:root so the first observe-run does not slurp the entire
+# journal history (Phase 2 pitfall 1; runner detects empty cursor and
+# falls back to --since=7days).
+#
+# Reference body shipped verbatim from packaging/systemd/README.md L50-L76;
+# augmented with the D-MS-03 addgroup line (idempotent via getent test)
+# and explicit no-op handlers for the other Debian Policy §10 case-args.
+#
+# Per CONTEXT.md D-MS-02: shellcheck CI guard is a future enhancement;
+# the script is hand-checked against shellcheck -s sh during this plan.
 set -e
+
+case "$1" in
+    configure)
+        # D-MS-03: system group creation. addgroup --system uses the system
+        # GID range (<1000); idempotent via the getent test. If admin
+        # pre-created the group, this is a no-op (brownfield-safe).
+        # Locked from Phase 3 D-08 (Match Group sftp-jailer in canonical
+        # drop-in) and Phase 3 D-12 (gpasswd -a <user> sftp-jailer).
+        getent group sftp-jailer >/dev/null || addgroup --system sftp-jailer
+
+        # systemd unit registration. deb-systemd-helper / deb-systemd-invoke
+        # are part of init-system-helpers (declared as a Depends in 05-01's
+        # nfpm config). Fallbacks to plain systemctl preserve behavior on
+        # systems where the helper isn't on PATH for any reason.
+        systemctl daemon-reload || true
+        if [ -x /usr/bin/deb-systemd-helper ]; then
+            deb-systemd-helper unmask sftp-jailer-observer.timer || true
+            deb-systemd-helper enable sftp-jailer-observer.timer || true
+        else
+            systemctl enable sftp-jailer-observer.timer || true
+        fi
+        if [ -x /usr/bin/deb-systemd-invoke ]; then
+            deb-systemd-invoke start sftp-jailer-observer.timer || true
+        else
+            systemctl start sftp-jailer-observer.timer || true
+        fi
+
+        # State directory + observer.cursor pre-create.
+        # The observe-run code path (Phase 2 plan 02-09) detects an empty
+        # observer.cursor and falls back to --since=7days for the first run.
+        # This avoids slurping the entire journal history on a fresh box.
+        install -d -m 0755 /var/lib/sftp-jailer
+        : > /var/lib/sftp-jailer/observer.cursor
+        chmod 0600 /var/lib/sftp-jailer/observer.cursor
+    ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        # No-op — dpkg is rolling back; the prior package state remains.
+        :
+    ;;
+    *)
+        # Unknown case — log + bail (matches Debian Policy §10 advice;
+        # set -e does the bail).
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
 exit 0
