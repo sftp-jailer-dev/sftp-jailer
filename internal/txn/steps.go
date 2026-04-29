@@ -92,6 +92,77 @@ func (s *writeSshdDropInStep) Compensate(ctx context.Context, ops sysops.SystemO
 	return ops.AtomicWriteFile(ctx, s.dropInPath, s.priorBytes, s.mode)
 }
 
+// ---- RemoveSshdDropIn ↔ RestoreSshdDropInBackup (Phase 5 plan 05-03) -------
+
+// NewRemoveSshdDropInStep returns a Step that backs up the current drop-in
+// (if it exists) and removes it via sysops.RemoveAll. Compensate restores
+// the backup on rollback. If no prior drop-in existed, Apply and Compensate
+// are both no-ops on the drop-in path itself.
+//
+// This is the inverse of NewWriteSshdDropInStep — same backup-path format,
+// same mode used on Compensate's restore. Used by the hidden cobra
+// `purge-sshd-cleanup` subcommand invoked from the .deb prerm script
+// (Phase 5 plan 05-04).
+//
+// Backup path format: <backupDir>/<UTC-RFC3339-compact>-<basename>.bak
+// (matches NewWriteSshdDropInStep so backups from apply and purge co-exist
+// in /var/backups/sftp-jailer/ — admins can recover any prior drop-in by
+// timestamp).
+//
+// Idempotency: Compensate is safe to run twice — restoring the same bytes
+// is an idempotent AtomicWriteFile.
+//
+// Mode is the file mode used by Compensate to restore the drop-in. Pass
+// 0o644 to match the canonical writer's mode (D-09 step 3).
+func NewRemoveSshdDropInStep(dropInPath, backupDir string, mode fs.FileMode, now func() time.Time) Step {
+	if now == nil {
+		now = time.Now
+	}
+	return &removeSshdDropInStep{
+		dropInPath: dropInPath,
+		backupDir:  backupDir,
+		mode:       mode,
+		now:        now,
+	}
+}
+
+type removeSshdDropInStep struct {
+	dropInPath string
+	backupDir  string
+	mode       fs.FileMode
+	now        func() time.Time
+
+	// populated by Apply for use in Compensate:
+	backupPath  string
+	priorBytes  []byte
+	priorExists bool
+}
+
+func (s *removeSshdDropInStep) Name() string { return "RemoveSshdDropIn" }
+
+func (s *removeSshdDropInStep) Apply(ctx context.Context, ops sysops.SystemOps) error {
+	prior, err := ops.ReadFile(ctx, s.dropInPath)
+	if err == nil {
+		s.priorBytes = prior
+		s.priorExists = true
+		ts := s.now().UTC().Format("20060102T150405Z")
+		s.backupPath = filepath.Join(s.backupDir, ts+"-"+filepath.Base(s.dropInPath)+".bak")
+		if werr := ops.AtomicWriteFile(ctx, s.backupPath, prior, 0o600); werr != nil {
+			return fmt.Errorf("backup write %s: %w", s.backupPath, werr)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("read prior drop-in %s: %w", s.dropInPath, err)
+	}
+	return ops.RemoveAll(ctx, s.dropInPath)
+}
+
+func (s *removeSshdDropInStep) Compensate(ctx context.Context, ops sysops.SystemOps) error {
+	if !s.priorExists {
+		return nil
+	}
+	return ops.AtomicWriteFile(ctx, s.dropInPath, s.priorBytes, s.mode)
+}
+
 // ---- Useradd ↔ Userdel (D-12 step 4) ---------------------------------------
 
 // NewUseraddStep wraps sysops.Useradd. Compensate calls Userdel with
