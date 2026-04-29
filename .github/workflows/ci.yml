@@ -62,6 +62,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
       - name: No exec.Command outside internal/sysops
         run: bash scripts/check-no-exec-outside-sysops.sh
       - name: Exactly one tea.NewProgram
@@ -84,3 +88,5 @@ jobs:
             echo "FAIL: v1 Bubble Tea / Bubbles / Lip Gloss paths found; v2 migration is non-negotiable"
             exit 1
           fi
+      - name: Manpages fresh
+        run: bash scripts/check-manpage-fresh.sh
