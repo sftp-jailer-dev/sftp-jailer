@@ -112,8 +112,8 @@ func rootCmd() *cobra.Command {
 		Subcommands: []*cobra.Command{
 			versionCmd(),
 			doctorCmd(),
-			observeRunCmd(), // Phase 2 plan 02-02
-			// 05-03 will append: purgeSshdCleanupCmd(),
+			observeRunCmd(),          // Phase 2 plan 02-02
+			purgeSshdCleanupCmd(),    // Phase 5 plan 05-03 (Hidden:true)
 		},
 	})
 }
