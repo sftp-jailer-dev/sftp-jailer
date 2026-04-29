@@ -13,6 +13,7 @@ import (
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/config"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/rootcmd"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/lockdown"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/revert"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
@@ -105,29 +106,32 @@ func main() {
 }
 
 func rootCmd() *cobra.Command {
-	root := &cobra.Command{
-		Use:   "sftp-jailer",
-		Short: "Chrooted SFTP administration TUI for Ubuntu 24.04",
-		// Root cobra runs the TUI by default (plan 02 wires it).
-		RunE: runTUI,
-		// SAFE-01 gate: refuse on ANY subcommand unless running as root.
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// Exception: `version` is read-only metadata, allow non-root.
-			if cmd.Name() == "version" {
-				return nil
-			}
-			msg, shouldExit := rootCheckMessage(os.Args[1:], geteuid())
-			if shouldExit {
-				fmt.Fprint(os.Stderr, msg)
-				os.Exit(1)
-			}
-			return nil
+	return rootcmd.Build(rootcmd.Opts{
+		RunTUI:            runTUI,
+		PersistentPreRunE: safeRootGate,
+		Subcommands: []*cobra.Command{
+			versionCmd(),
+			doctorCmd(),
+			observeRunCmd(), // Phase 2 plan 02-02
+			// 05-03 will append: purgeSshdCleanupCmd(),
 		},
+	})
+}
+
+// safeRootGate is the SAFE-01 root-required gate, factored out of the
+// PersistentPreRunE closure so rootcmd.Build can accept it as a hook.
+// Behavior is byte-identical to the prior inline closure.
+func safeRootGate(cmd *cobra.Command, args []string) error {
+	// Exception: `version` is read-only metadata, allow non-root.
+	if cmd.Name() == "version" {
+		return nil
 	}
-	root.AddCommand(versionCmd())
-	root.AddCommand(doctorCmd())
-	root.AddCommand(observeRunCmd()) // Phase 2 plan 02-02
-	return root
+	msg, shouldExit := rootCheckMessage(os.Args[1:], geteuid())
+	if shouldExit {
+		fmt.Fprint(os.Stderr, msg)
+		os.Exit(1)
+	}
+	return nil
 }
 
 func versionCmd() *cobra.Command {
