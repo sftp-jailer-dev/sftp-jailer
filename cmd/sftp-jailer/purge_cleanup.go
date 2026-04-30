@@ -99,7 +99,7 @@ absent is a no-op that exits 0.`,
 
 			// Idempotent skip - if drop-in already absent, exit 0 (D-MS-04 step 2).
 			if _, err := ops.ReadFile(ctx, applysetup.DropInPath); errors.Is(err, fs.ErrNotExist) {
-				fmt.Fprintln(cmd.ErrOrStderr(), "drop-in already absent, skipping")
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "drop-in already absent, skipping")
 				return nil
 			} else if err != nil {
 				// Genuine read error (permission etc.) - bail out without changes.
@@ -112,7 +112,7 @@ absent is a no-op that exits 0.`,
 				// error chain may include a compensator error if any compensator
 				// itself failed - in that case exit 2 (ops-page-able).
 				if isCompensateFailure(err) {
-					fmt.Fprintf(cmd.ErrOrStderr(), "purge-sshd-cleanup: ROLLBACK FAILED: %v\n", err)
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "purge-sshd-cleanup: ROLLBACK FAILED: %v\n", err)
 					purgeOsExit(2)
 					return nil // unreachable in production; testable seam
 				}

@@ -117,7 +117,7 @@ func TestReal_RewriteUfwIPV6_replaces_existing_line(t *testing.T) {
 		"IPV6=no",
 		"DEFAULT_INPUT_POLICY=DROP",
 	}, "\n")
-	require.NoError(t, os.WriteFile(path, []byte(prior), 0o644))
+	require.NoError(t, os.WriteFile(path, []byte(prior), 0o600))
 
 	// Allow tmpdir writes for the test.
 	SetAtomicWriteAllowlistForTest([]string{dir + "/"})

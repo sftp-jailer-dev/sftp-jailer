@@ -32,7 +32,7 @@ func main() {
 	output := flag.String("output", "docs/man", "output directory for generated .1 files")
 	flag.Parse()
 
-	if err := os.MkdirAll(*output, 0o755); err != nil {
+	if err := os.MkdirAll(*output, 0o750); err != nil {
 		fmt.Fprintf(os.Stderr, "gen-manpage: mkdir %s: %v\n", *output, err)
 		os.Exit(1)
 	}

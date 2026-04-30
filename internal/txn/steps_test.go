@@ -1519,7 +1519,7 @@ type readErrorFake struct {
 
 func (r *readErrorFake) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	if path == r.path {
-		r.Fake.Calls = append(r.Fake.Calls, sysops.FakeCall{Method: "ReadFile", Args: []string{path}})
+		r.Calls = append(r.Calls, sysops.FakeCall{Method: "ReadFile", Args: []string{path}})
 		return nil, r.err
 	}
 	return r.Fake.ReadFile(ctx, path)

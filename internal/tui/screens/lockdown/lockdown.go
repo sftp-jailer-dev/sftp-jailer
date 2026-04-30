@@ -506,21 +506,6 @@ func (m *Model) buildPendingMutations() []lockdown.PendingMutation {
 	return muts
 }
 
-// portMatchesSFTP reports whether a Rule.Port string matches sftpPort.
-// Accepts "22", "22/tcp", "22/udp" against "22". Local helper rather
-// than depending on firewall.portMatches (unexported).
-func portMatchesSFTP(rulePort, sftpPort string) bool {
-	if rulePort == sftpPort {
-		return true
-	}
-	for _, suffix := range []string{"/tcp", "/udp"} {
-		if rulePort == sftpPort+suffix {
-			return true
-		}
-	}
-	return false
-}
-
 // commitCmd composes the SAFE-04-wrapped txn batch for the LOCK-06
 // commit and runs it under tx.Apply. Ordering follows D-S04-09 step 3:
 // Schedule first (arms the 3-min revert), then N mutations, then a
@@ -1044,19 +1029,19 @@ func (m *Model) renderTwoPane() string {
 			right.WriteString(styles.Dim.Render(
 				"hint: tell your customer to visit https://ifconfig.me - copy the IP shown there"))
 		} else {
-			right.WriteString(fmt.Sprintf("  %-22s %5s  %-7s  %s\n",
-				"source", "conns", "tier", "last-seen"))
+			fmt.Fprintf(&right, "  %-22s %5s  %-7s  %s\n",
+				"source", "conns", "tier", "last-seen")
 			for _, ip := range sel.IPs {
 				lastSeen := "-"
 				if ip.LastSeenNs > 0 {
 					lastSeen = time.Unix(0, ip.LastSeenNs).Format("2006-01-02")
 				}
-				right.WriteString(fmt.Sprintf("  %-22s %5d  %-7s  %s\n",
-					truncate(ip.Source, 22), ip.ConnCount, ip.Tier, lastSeen))
+				fmt.Fprintf(&right, "  %-22s %5d  %-7s  %s\n",
+					truncate(ip.Source, 22), ip.ConnCount, ip.Tier, lastSeen)
 			}
 			for _, ip := range m.manualAdds[u] {
-				right.WriteString(fmt.Sprintf("  %-22s %5s  %-7s  %s\n",
-					truncate(ip.Source, 22), "-", "manual", "-"))
+				fmt.Fprintf(&right, "  %-22s %5s  %-7s  %s\n",
+					truncate(ip.Source, 22), "-", "manual", "-")
 			}
 		}
 	}

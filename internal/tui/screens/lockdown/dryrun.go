@@ -196,8 +196,8 @@ func (m *DryRunModel) renderDiff() string {
 			// only emits well-formed users. Display a clear marker.
 			comment = "(invalid: " + err.Error() + ")"
 		}
-		b.WriteString(fmt.Sprintf("+ ufw insert 1 allow proto tcp from %s to any port %s comment '%s'\n",
-			mut.Rule.Source, mut.Rule.Port, comment))
+		fmt.Fprintf(&b, "+ ufw insert 1 allow proto tcp from %s to any port %s comment '%s'\n",
+			mut.Rule.Source, mut.Rule.Port, comment)
 	}
 	if !hasAdds {
 		b.WriteString("  (none)\n")
@@ -243,9 +243,8 @@ func (m *DryRunModel) renderCommands() string {
 		// real mode-derived value; the dry-run modal's renderCommands
 		// output is documented as approximate per the comment above.)
 		reverseCmds := composeCommitReverseCmds(m.mutations, "", false)
-		b.WriteString(fmt.Sprintf(
-			"systemd-run --on-active=180sec --unit=sftpj-revert-<unix-ns>.service /bin/sh -c '%s'\n",
-			strings.Join(reverseCmds, "; ")))
+		fmt.Fprintf(&b, "systemd-run --on-active=180sec --unit=sftpj-revert-<unix-ns>.service /bin/sh -c '%s'\n",
+			strings.Join(reverseCmds, "; "))
 	} else {
 		b.WriteString("  (no commands - empty mutation set)\n")
 	}
@@ -258,10 +257,10 @@ func (m *DryRunModel) renderCommands() string {
 			if err != nil {
 				comment = "(invalid)"
 			}
-			b.WriteString(fmt.Sprintf("ufw insert 1 allow proto tcp from %s to any port %s comment '%s'\n",
-				mut.Rule.Source, mut.Rule.Port, comment))
+			fmt.Fprintf(&b, "ufw insert 1 allow proto tcp from %s to any port %s comment '%s'\n",
+				mut.Rule.Source, mut.Rule.Port, comment)
 		case lpkg.OpDelete:
-			b.WriteString(fmt.Sprintf("ufw --force delete %d\n", mut.Rule.ID))
+			fmt.Fprintf(&b, "ufw --force delete %d\n", mut.Rule.ID)
 		}
 	}
 	if len(m.mutations) > 0 {

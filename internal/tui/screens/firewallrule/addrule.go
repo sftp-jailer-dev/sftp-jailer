@@ -58,9 +58,9 @@ import (
 	"strings"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
@@ -118,7 +118,6 @@ type Model struct {
 
 	// Computed values for the review/commit phase.
 	normalizedSource string // post-promote-and-validate
-	comment          string // ufwcomment.Encode(userField)
 
 	// Pre-flight result.
 	leakDetail string // human-readable banner for M-FW-IPV6-FIX
@@ -323,9 +322,9 @@ func (m *Model) attemptParse() {
 			return
 		}
 		if ip.To4() != nil {
-			raw = raw + "/32"
+			raw += "/32"
 		} else {
-			raw = raw + "/128"
+			raw += "/128"
 		}
 	}
 	// Strict CIDR parsing.
@@ -577,9 +576,8 @@ func (m *Model) View() string {
 		fmt.Fprintf(&b, "port:    %s\n\n", m.sftpPort)
 		b.WriteString(styles.Primary.Render("Proposed mutation:"))
 		b.WriteString("\n  ")
-		b.WriteString(fmt.Sprintf(
-			"ufw insert 1 allow proto tcp from %s to any port %s comment '%s'",
-			m.normalizedSource, m.sftpPort, comment))
+		fmt.Fprintf(&b, "ufw insert 1 allow proto tcp from %s to any port %s comment '%s'",
+			m.normalizedSource, m.sftpPort, comment)
 		b.WriteString("\n\n")
 		b.WriteString(styles.Primary.Render("SAFE-04 revert payload (3-min countdown):"))
 		b.WriteString("\n  ")

@@ -123,12 +123,12 @@ func (b ModeBar) View() string {
 // pass through unchanged. Returns a new ModeBar value (C6 pattern) so the
 // App's Update can route ticks here without a no-op switch case.
 func (b ModeBar) Update(msg tea.Msg) ModeBar {
-	switch msg.(type) {
-	case ModeBarTickMsg:
+	if _, ok := msg.(ModeBarTickMsg); ok {
 		// Re-rendering happens automatically the next time View() is
 		// called; the time math lives in View(). This case exists so
 		// the App's Update can route ticks through here uniformly with
 		// the toast/help widgets.
+		_ = ok
 	}
 	return b
 }

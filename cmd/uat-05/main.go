@@ -37,6 +37,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -114,12 +115,12 @@ JSON receipts written to %s/<subcmd>.json
 	}
 
 	// Always write the receipt, even on failure - it is the audit trail.
-	defer func() {
+	finalize := func() {
 		r.FinishedAt = time.Now().UTC()
 		if werr := writeReceipt(r); werr != nil {
 			fmt.Fprintf(os.Stderr, "WARN: could not write receipt: %v\n", werr)
 		}
-	}()
+	}
 
 	// Populate host_info upfront (best-effort; failures do not abort the run).
 	r.HostInfo = gatherHostInfo(ctx, ops)
@@ -129,11 +130,13 @@ JSON receipts written to %s/<subcmd>.json
 		r.Status = "FAIL"
 		r.Error = err.Error()
 		fmt.Printf("[FAIL] %s: %v\n", subcmd, err)
+		finalize()
 		os.Exit(1)
 	}
 
 	r.Status = "PASS"
 	fmt.Printf("[PASS] %s\n", subcmd)
+	finalize()
 }
 
 // gatherHostInfo collects basic system identification via ops.Exec.
@@ -163,7 +166,7 @@ func gatherHostInfo(ctx context.Context, ops sysops.SystemOps) map[string]string
 // writeReceipt serialises r to receiptDir/<subcmd>.json (mode 0644 root:root).
 // The directory is created if absent.
 func writeReceipt(r *receipt) error {
-	if err := os.MkdirAll(receiptDir, 0o755); err != nil {
+	if err := os.MkdirAll(receiptDir, 0o750); err != nil {
 		return fmt.Errorf("mkdir %s: %w", receiptDir, err)
 	}
 	data, err := json.MarshalIndent(r, "", "  ")
@@ -171,7 +174,7 @@ func writeReceipt(r *receipt) error {
 		return fmt.Errorf("marshal receipt: %w", err)
 	}
 	path := filepath.Join(receiptDir, r.Subcmd+".json")
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
@@ -180,7 +183,7 @@ func writeReceipt(r *receipt) error {
 // fileSHA256 computes the hex-encoded SHA-256 of the file at path.
 // Used by runBrownfieldPurge for the DIST-09 byte-equality assertion.
 func fileSHA256(path string) (string, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path is operator-supplied via flag, this binary runs as root for UAT only
 	if err != nil {
 		return "", fmt.Errorf("read %s for sha256: %w", path, err)
 	}
@@ -337,18 +340,19 @@ func runApplySshd(ctx context.Context, ops sysops.SystemOps, r *receipt) error {
 // fully automated without a headless Bubble Tea harness. The operator must
 // follow the runbook steps manually.
 func runUserCrud(_ context.Context, _ sysops.SystemOps, _ *receipt) error {
-	return fmt.Errorf(`user-crud is a manual TUI flow - this subcommand is intentionally a stub.
+	fmt.Fprintln(os.Stderr, `user-crud is a manual TUI flow - this subcommand is intentionally a stub.
 
 Follow docs/uat/05-ubuntu24-uat.md Step 5 (per-user CRUD):
-  5.1 Create user "uattest" via TUI (S-USERS → New)
+  5.1 Create user "uattest" via TUI (S-USERS -> New)
       Verify: getent passwd uattest && getent shadow uattest | cut -d: -f1-2
-  5.2 Add SSH key via TUI (S-USERS → select uattest → Add Key)
+  5.2 Add SSH key via TUI (S-USERS -> select uattest -> Add Key)
       Verify: cat <chrootRoot>/uattest/.ssh/authorized_keys
-  5.3 Delete user via TUI (S-USERS → select uattest → Delete)
+  5.3 Delete user via TUI (S-USERS -> select uattest -> Delete)
       Verify: ! getent passwd uattest exits 0
 
 After completing the TUI flow, fill in the PASS/FAIL columns in the runbook.
 The receipt for this subcommand will record FAIL until the operator signs off manually.`)
+	return errors.New("user-crud is a manual TUI flow; see docs/uat/05-ubuntu24-uat.md Step 5")
 }
 
 // runObserveFire fires the one-shot sftp-jailer-observer.service and polls
@@ -412,10 +416,10 @@ func runObserveFire(ctx context.Context, ops sysops.SystemOps, r *receipt) error
 // runLockdownCycle is a STUB. The lockdown commit + SAFE-04 auto-revert
 // flow requires interactive TUI operation and cannot be fully automated.
 func runLockdownCycle(_ context.Context, _ sysops.SystemOps, _ *receipt) error {
-	return fmt.Errorf(`lockdown-cycle is a manual TUI flow - this subcommand is intentionally a stub.
+	fmt.Fprintln(os.Stderr, `lockdown-cycle is a manual TUI flow - this subcommand is intentionally a stub.
 
 Follow docs/uat/05-ubuntu24-uat.md Step 7 (lockdown commit + rollback):
-  7.1 Operator drives S-LOCKDOWN: Propose → Dry-run → Commit
+  7.1 Operator drives S-LOCKDOWN: Propose -> Dry-run -> Commit
       DO NOT confirm the 3-minute revert window - let SAFE-04 auto-revert fire.
       Watch the ufw rules return to OPEN after ~3 minutes.
       Verify via: ufw status numbered  (pre, during, and post)
@@ -423,6 +427,7 @@ Follow docs/uat/05-ubuntu24-uat.md Step 7 (lockdown commit + rollback):
 The SAFE-04 3-minute auto-revert is the load-bearing assertion here.
 After completing this step manually, fill in the PASS/FAIL column in the runbook.
 The receipt for this subcommand will record FAIL until the operator signs off manually.`)
+	return errors.New("lockdown-cycle is a manual TUI flow; see docs/uat/05-ubuntu24-uat.md Step 7")
 }
 
 // runBrownfieldPurge is the DIST-09 acceptance gate.

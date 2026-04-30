@@ -84,7 +84,7 @@ func phase1SafeRevert(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	// 1. Confirm starting state - ufw active + catch-all present
 	rules, err := firewall.Enumerate(ctx, ops)
 	if err != nil {
-		return fmt.Errorf("Enumerate failed: %w", err)
+		return fmt.Errorf("enumerate failed: %w", err)
 	}
 	var hasCatchAll bool
 	for _, r := range rules {
@@ -341,7 +341,7 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	// 1. Verify starting OPEN state
 	rules, err := firewall.Enumerate(ctx, ops)
 	if err != nil {
-		return fmt.Errorf("Enumerate: %w", err)
+		return fmt.Errorf("enumerate: %w", err)
 	}
 	mode := firewall.DetectMode(rules, "22")
 	if mode != firewall.ModeOpen {
@@ -530,7 +530,7 @@ func phase4LockRollback(ctx context.Context, ops sysops.SystemOps, watcher *reve
 	// 1. Locate the original catch-all (signature match)
 	rules, err := firewall.Enumerate(ctx, ops)
 	if err != nil {
-		return fmt.Errorf("Enumerate: %w", err)
+		return fmt.Errorf("enumerate: %w", err)
 	}
 	var catchAllID = -1
 	for _, r := range rules {
