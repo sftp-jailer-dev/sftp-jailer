@@ -1,4 +1,4 @@
-// deleterule.go is the M-DELETE-RULE modal landed by Plan 04-06 — the
+// deleterule.go is the M-DELETE-RULE modal landed by Plan 04-06 - the
 // FW-03 user surface for "remove an allow rule." Three resolution modes
 // per D-FW-07:
 //
@@ -9,7 +9,7 @@
 //	ModeByUser   → admin presses 'D' on S-USERS for the selected user;
 //	               payload is the username. Init runs firewall.Enumerate
 //	               and filters to r.User == username AND r.ParseErr == nil
-//	               (foreign rules are excluded — only sftpj-tagged rules
+//	               (foreign rules are excluded - only sftpj-tagged rules
 //	               are deletable from this path).
 //	ModeBySource → admin presses 's' on S-FIREWALL and types a CIDR;
 //	               payload is the source string. Init runs Enumerate and
@@ -26,31 +26,31 @@
 // the SAFE-04 timer arms before any FW mutation runs (D-S04-09 step 3).
 //
 // The reverse-cmd payload reconstructs every deleted rule via
-// `lockdown.RenderReverseCommands` with OpDelete entries — each emits
+// `lockdown.RenderReverseCommands` with OpDelete entries - each emits
 // `ufw insert <originalID> allow proto tcp from <Source> to any port
 // <Port> [comment '<RawComment>']` so a timer-fire rebuilds the deleted
 // set byte-for-byte (T-04-06-04 mitigation: partial-failure rollback +
 // admin-doesn't-confirm both restore the same set).
 //
 // Threat model (mirror 04-06 PLAN <threat_model>):
-//   - T-04-06-01 (DoS, large batch): accept — PROJECT.md targets ≤100
+//   - T-04-06-01 (DoS, large batch): accept - PROJECT.md targets ≤100
 //     users * ~10 IPs each = ~1000 rules max; systemd-run ARG_MAX
 //     accommodates a 1000-line shell snippet (~80KB << 128KB).
-//   - T-04-06-02 (tampering, source CIDR): mitigate — caller (S-FIREWALL
+//   - T-04-06-02 (tampering, source CIDR): mitigate - caller (S-FIREWALL
 //     `s` prompt) validates via net.ParseCIDR before pushing the modal.
-//   - T-04-06-03 (self-lockout): mitigate — SAFE-04 timer covers the
+//   - T-04-06-03 (self-lockout): mitigate - SAFE-04 timer covers the
 //     window; admin has 3 min to detect lost connectivity.
-//   - T-04-06-04 (partial-failure consistency): mitigate — tx.Apply
+//   - T-04-06-04 (partial-failure consistency): mitigate - tx.Apply
 //     reverses the order on failure; Schedule's Compensate stops the
 //     unit so the timer doesn't fire post-failure.
-//   - T-04-06-05 (reverse-cmd ID drift): accept — FW-08 mirror is keyed
+//   - T-04-06-05 (reverse-cmd ID drift): accept - FW-08 mirror is keyed
 //     on (user, source, proto, port), not ID; rule SET is identical
 //     after revert even if numeric IDs differ.
 //
 // FW-08 mirror rebuild (W2): on successful tx.Apply, the modal best-
 // effort calls `store.RebuildUserIPs` from the post-mutation
 // `firewall.Enumerate` output. Failure surfaces in logs but does NOT
-// roll back the firewall change — the rules are correctly deleted, and
+// roll back the firewall change - the rules are correctly deleted, and
 // the SAFE-04 timer is independently armed.
 package firewallrule
 
@@ -82,7 +82,7 @@ const deleteEnumerateTimeout = 10 * time.Second
 // N UfwDelete + post-Apply Enumerate + best-effort RebuildUserIPs).
 const deleteCommitTimeout = 60 * time.Second
 
-// deleteRevertWindow is the SAFE-04 deadline (D-S04-04) — 3 min
+// deleteRevertWindow is the SAFE-04 deadline (D-S04-04) - 3 min
 // matching M-ADD-RULE's window (autoPopDelay + revertWindow are reused
 // from addrule.go).
 
@@ -96,7 +96,7 @@ const (
 	ModeByID DeleteMode = iota
 	// ModeByUser = delete every rule where r.User == username AND
 	// r.ParseErr == nil. Foreign rules (ErrNotOurs / ErrBadVersion) are
-	// excluded — they cannot be safely round-tripped (S-USERS `D`).
+	// excluded - they cannot be safely round-tripped (S-USERS `D`).
 	ModeByUser
 	// ModeBySource = delete every rule where r.Source matches the
 	// payload CIDR string verbatim. May span multiple users
@@ -108,17 +108,17 @@ const (
 type deletePhase int
 
 const (
-	// deletePhaseLoading — async firewall.Enumerate in flight (skipped
+	// deletePhaseLoading - async firewall.Enumerate in flight (skipped
 	// for ModeByID, which has the rule already).
 	deletePhaseLoading deletePhase = iota
-	// deletePhaseConfirm — admin reviews the resolved target set and
+	// deletePhaseConfirm - admin reviews the resolved target set and
 	// decides y / n.
 	deletePhaseConfirm
-	// deletePhaseCommitting — SAFE-04-wrapped txn batch in flight.
+	// deletePhaseCommitting - SAFE-04-wrapped txn batch in flight.
 	deletePhaseCommitting
-	// deletePhaseDone — txn succeeded; auto-pop after autoPopDelay.
+	// deletePhaseDone - txn succeeded; auto-pop after autoPopDelay.
 	deletePhaseDone
-	// deletePhaseError — txn or resolve failed; surface error and
+	// deletePhaseError - txn or resolve failed; surface error and
 	// allow esc-to-pop.
 	deletePhaseError
 )
@@ -141,7 +141,7 @@ type deleteAutoPopMsg struct{}
 type DeleteModel struct {
 	ops     sysops.SystemOps
 	watcher *revert.Watcher
-	store   *store.Queries // optional — tests pass nil; production wires the real handle
+	store   *store.Queries // optional - tests pass nil; production wires the real handle
 	mode    DeleteMode
 
 	// Per-mode payload (one is non-zero based on mode):
@@ -177,20 +177,20 @@ func NewDelete(ops sysops.SystemOps, watcher *revert.Watcher, mode DeleteMode, r
 	}
 }
 
-// NewDeleteByID is the S-FIREWALL `d` constructor — payload is the
+// NewDeleteByID is the S-FIREWALL `d` constructor - payload is the
 // already-resolved firewall.Rule; Init skips Enumerate and lands in
 // phaseConfirm directly.
 func NewDeleteByID(ops sysops.SystemOps, watcher *revert.Watcher, rule firewall.Rule) *DeleteModel {
 	return NewDelete(ops, watcher, ModeByID, rule, "", "")
 }
 
-// NewDeleteByUser is the S-USERS `D` constructor — payload is the
+// NewDeleteByUser is the S-USERS `D` constructor - payload is the
 // username; Init runs Enumerate and filters to that user's sftpj rules.
 func NewDeleteByUser(ops sysops.SystemOps, watcher *revert.Watcher, username string) *DeleteModel {
 	return NewDelete(ops, watcher, ModeByUser, firewall.Rule{}, username, "")
 }
 
-// NewDeleteBySource is the S-FIREWALL `s` constructor — payload is the
+// NewDeleteBySource is the S-FIREWALL `s` constructor - payload is the
 // source CIDR; Init runs Enumerate and filters by source verbatim.
 func NewDeleteBySource(ops sysops.SystemOps, watcher *revert.Watcher, source string) *DeleteModel {
 	return NewDelete(ops, watcher, ModeBySource, firewall.Rule{}, "", source)
@@ -209,20 +209,20 @@ func (m *DeleteModel) Title() string { return "Delete firewall rule(s)" }
 // KeyMap implements nav.Screen.
 func (m *DeleteModel) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — always false (no textinput).
+// WantsRawKeys implements nav.Screen - always false (no textinput).
 func (m *DeleteModel) WantsRawKeys() bool { return false }
 
 // Init runs Enumerate for ModeByUser/ModeBySource; ModeByID skips and
 // transitions straight to phaseConfirm with the payload Rule.
 func (m *DeleteModel) Init() tea.Cmd {
 	if m.mode == ModeByID {
-		// Already have the rule — skip Enumerate.
+		// Already have the rule - skip Enumerate.
 		m.targets = []firewall.Rule{m.rule}
 		m.phase = deletePhaseConfirm
 		return nil
 	}
 	if m.ops == nil {
-		// Test path — caller should drive via LoadTargetsForTest /
+		// Test path - caller should drive via LoadTargetsForTest /
 		// FeedTargetsLoadedMsgForTest. Stay in phaseLoading until then.
 		return nil
 	}
@@ -301,7 +301,7 @@ func (m *DeleteModel) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		switch s {
 		case "y", "Y":
 			if len(m.targets) == 0 {
-				// No-op — nothing to delete; let admin esc-back.
+				// No-op - nothing to delete; let admin esc-back.
 				return m, nil
 			}
 			m.phase = deletePhaseCommitting
@@ -324,7 +324,7 @@ func (m *DeleteModel) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 // proto tcp from <Source> to any port <Port> [comment '<RawComment>']`
 // (T-04-06-04 mitigation).
 //
-// Targets are sorted DESCENDING by ID per D-FW-07 strategy 1 — lower
+// Targets are sorted DESCENDING by ID per D-FW-07 strategy 1 - lower
 // IDs don't shift after a higher delete.
 //
 // W2 fix: post-Apply we best-effort rebuild the FW-08 mirror so the
@@ -333,7 +333,7 @@ func (m *DeleteModel) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 // the SAFE-04 timer is independently armed.
 func (m *DeleteModel) commitCmd() tea.Cmd {
 	if m.ops == nil {
-		// Test path with nil ops — emit a benign error so the state
+		// Test path with nil ops - emit a benign error so the state
 		// machine transitions visibly.
 		return func() tea.Msg {
 			return deleteCommittedMsg{err: errors.New("internal: ops is nil (test path mis-wired)")}
@@ -351,7 +351,7 @@ func (m *DeleteModel) commitCmd() tea.Cmd {
 	}
 	nowFn := m.nowFn
 	storeQ := m.store
-	// Defensive copy of the targets — sort happens on the copy.
+	// Defensive copy of the targets - sort happens on the copy.
 	targets := append([]firewall.Rule(nil), m.targets...)
 
 	// Sort DESCENDING by ID (D-FW-07 strategy 1). Lower IDs don't shift
@@ -386,7 +386,7 @@ func (m *DeleteModel) commitCmd() tea.Cmd {
 		if err := tx.Apply(ctx, steps); err != nil {
 			// tx.Apply's reverse-order Compensate runs Schedule's
 			// Compensate (stops the unit, clears watcher pointer).
-			// UfwDeleteStep.Compensate is a no-op (D-S04-05) — once a
+			// UfwDeleteStep.Compensate is a no-op (D-S04-05) - once a
 			// rule is gone at the tool layer, only the SAFE-04 timer
 			// can recover it. The half-applied state is still
 			// consistent: rules from successful steps are gone (and
@@ -432,7 +432,7 @@ func (m *DeleteModel) View() string {
 			fmt.Sprintf("Deleting %d rule(s)...", len(m.targets))))
 	case deletePhaseDone:
 		return wrapModal(styles.Success.Render(fmt.Sprintf(
-			"✓ Deleted %d rule(s) — 3-min revert window armed", len(m.targets))))
+			"✓ Deleted %d rule(s) - 3-min revert window armed", len(m.targets))))
 	case deletePhaseError:
 		return wrapModal(
 			styles.Critical.Render(fmt.Sprintf("Failed: %v", m.commitErr)) +
@@ -451,7 +451,7 @@ func (m *DeleteModel) confirmText() string {
 			comment = "(no comment)"
 		}
 		return fmt.Sprintf(
-			"Delete rule #%d (allow port %s from %s — %s)?",
+			"Delete rule #%d (allow port %s from %s - %s)?",
 			r.ID, r.Port, r.Source, comment)
 	case ModeByUser:
 		var srcs []string

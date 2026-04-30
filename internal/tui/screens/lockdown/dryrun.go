@@ -1,18 +1,18 @@
-// Package lockdown's dryrun.go implements M-DRY-RUN — read-only preview
+// Package lockdown's dryrun.go implements M-DRY-RUN - read-only preview
 // of the proposed LOCK-06 commit batch (D-L0809-05). Two scrollable
 // sections:
 //
-//  1. Rule diff — current `ufw status numbered` ruleset side-by-side
+//  1. Rule diff - current `ufw status numbered` ruleset side-by-side
 //     with the predicted post-commit listing. Added rules show `+`,
 //     deleted rules show `- ` prefix, unchanged are dim.
-//  2. Command plan — verbatim shell sequence the txn batch will run,
+//  2. Command plan - verbatim shell sequence the txn batch will run,
 //     including the `systemd-run --on-active=180sec
 //     --unit=sftpj-revert-<unix-ns>.service /bin/sh -c '<reverse>'`
 //     line and the per-step revert payload baked into it.
 //
 // Keys: `c`/`C` copy entire plan via OSC 52; `Tab` switch sections;
 // j/k scroll within active section; esc pop without applying. NO commit
-// action — this is preview only.
+// action - this is preview only.
 package lockdown
 
 import (
@@ -73,14 +73,14 @@ func NewDryRunModal(ops sysops.SystemOps, mutations []lpkg.PendingMutation, curr
 // Title implements nav.Screen.
 func (m *DryRunModel) Title() string { return "Dry-run preview" }
 
-// WantsRawKeys implements nav.Screen — false (no textinput).
+// WantsRawKeys implements nav.Screen - false (no textinput).
 func (m *DryRunModel) WantsRawKeys() bool { return false }
 
-// KeyMap implements nav.Screen — minimal; the screen renders its own
+// KeyMap implements nav.Screen - minimal; the screen renders its own
 // help inline in View().
 func (m *DryRunModel) KeyMap() nav.KeyMap { return emptyKeyMap{} }
 
-// Init implements nav.Screen — no async work; the dry-run is fully
+// Init implements nav.Screen - no async work; the dry-run is fully
 // derivable from the constructor inputs.
 func (m *DryRunModel) Init() tea.Cmd { return nil }
 
@@ -148,7 +148,7 @@ func (m *DryRunModel) RenderPlanText() string {
 //	Proposed additions:
 //	+ ufw insert 1 allow proto tcp from <src> to any port <port> comment '<c>'
 //
-// Plain-text-only — the View() rendering wraps in styles for the TUI;
+// Plain-text-only - the View() rendering wraps in styles for the TUI;
 // this function is the source of truth for both display and OSC 52
 // copy.
 func (m *DryRunModel) renderDiff() string {
@@ -192,7 +192,7 @@ func (m *DryRunModel) renderDiff() string {
 		// would actually run (no drift between dry-run and commit).
 		comment, err := ufwcomment.Encode(mut.Rule.User)
 		if err != nil {
-			// Defensive — shouldn't happen because buildPendingMutations
+			// Defensive - shouldn't happen because buildPendingMutations
 			// only emits well-formed users. Display a clear marker.
 			comment = "(invalid: " + err.Error() + ")"
 		}
@@ -216,14 +216,14 @@ func (m *DryRunModel) renderDiff() string {
 //	...
 //	ufw reload
 //
-// The reverse-cmd body comes from lockdown.RenderReverseCommands —
+// The reverse-cmd body comes from lockdown.RenderReverseCommands -
 // note that for OpAdd entries with AssignedID==0 (commit-time, before
 // the rules are assigned), RenderReverseCommands skips them rather
 // than emitting a malformed reverse. The S-LOCKDOWN commit path uses
 // composeCommitReverseCmds (which emits the comment-grep placeholder
-// instead) — this dry-run renders the simpler RenderReverseCommands
+// instead) - this dry-run renders the simpler RenderReverseCommands
 // shape because the unit-name / pre-assigned-ID is purely informational
-// here. If admin presses 'C' from the dry-run modal (NOT possible —
+// here. If admin presses 'C' from the dry-run modal (NOT possible -
 // 'c' copies; 'C' is only on S-LOCKDOWN), they'd see different reverse
 // shapes; documented limitation acknowledged.
 func (m *DryRunModel) renderCommands() string {
@@ -231,13 +231,13 @@ func (m *DryRunModel) renderCommands() string {
 
 	b.WriteString("# SAFE-04 schedule (3-min revert):\n")
 	if len(m.mutations) > 0 {
-		// Use composeCommitReverseCmds for the preview — the canonical
+		// Use composeCommitReverseCmds for the preview - the canonical
 		// commit-time composer that emits the comment-grep placeholder
 		// for OpAdd entries (where AssignedID is unknown pre-Apply) +
 		// RenderReverseCommands for OpDelete entries. This matches what
 		// would actually run via NewScheduleRevertStep at commit time.
 		// Plan 04-13: composeCommitReverseCmds gained a restoreCatchAll
-		// bool param. The dry-run preview is purely informational — pass
+		// bool param. The dry-run preview is purely informational - pass
 		// false here so the catch-all-re-add line doesn't appear in the
 		// preview. (The S-LOCKDOWN editor's actual commit path passes the
 		// real mode-derived value; the dry-run modal's renderCommands
@@ -247,7 +247,7 @@ func (m *DryRunModel) renderCommands() string {
 			"systemd-run --on-active=180sec --unit=sftpj-revert-<unix-ns>.service /bin/sh -c '%s'\n",
 			strings.Join(reverseCmds, "; ")))
 	} else {
-		b.WriteString("  (no commands — empty mutation set)\n")
+		b.WriteString("  (no commands - empty mutation set)\n")
 	}
 
 	b.WriteString("\n# Forward batch:\n")

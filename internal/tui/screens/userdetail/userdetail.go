@@ -1,15 +1,15 @@
-// Package userdetail renders S-USER-DETAIL — the per-user authorized-keys
+// Package userdetail renders S-USER-DETAIL - the per-user authorized-keys
 // surface pushed from S-USERS via 'k' or Enter on a real row (plan 03-08a
 // per phase 03 D-22).
 //
 // Capabilities:
 //
 //   - Async-loads the user's authorized_keys file via ops.ReadFile +
-//     ops.Lstat (FileInfo.ModTime per plan 03-01 B-06 — the "added on"
+//     ops.Lstat (FileInfo.ModTime per plan 03-01 B-06 - the "added on"
 //     column).
 //   - Renders one row per key with algorithm / SHA256 fingerprint /
 //     comment / wire-byte size / humanized "added X ago" timestamp
-//     (single-source ModTime — sshd reads the file before chroot, so the
+//     (single-source ModTime - sshd reads the file before chroot, so the
 //     mtime IS the upload time for the most recent key).
 //   - Key delete (D-22) via single-key txn batch:
 //     [WriteAuthorizedKeys, VerifyAuthKeys] using the chrootcheck
@@ -18,7 +18,7 @@
 //     the prior file content automatically.
 //   - 'p' pushes M-PASSWORD for this user (plan 03-07's password.New).
 //   - 'c' copies the selected key's fingerprint via OSC 52 + toast.
-//   - 'a' pushes M-ADD-KEY (addkey.New) — single-textarea entry surface
+//   - 'a' pushes M-ADD-KEY (addkey.New) - single-textarea entry surface
 //     that auto-detects per-line source (paste / gh:user / file path)
 //     per D-19, surfaces a mandatory review table per D-20, and commits
 //     via the four-step StrictModes verifier with rollback per D-21.
@@ -59,7 +59,7 @@ import (
 //
 // Keybind W1 deviation: CONTEXT.md originally specified 'a' for this
 // surface, but Phase 3 plan 03-08a already binds 'a' to the M-ADD-KEY
-// (add-SSH-key) modal — Phase 3's 03-08b UAT validated that muscle
+// (add-SSH-key) modal - Phase 3's 03-08b UAT validated that muscle
 // memory on a real Ubuntu 24.04 host. Resolution: this plan uses 'r'
 // (mnemonic: r = rule). CONTEXT.md amended in 04-CONTEXT.md
 // "Integration Points" + "Existing code" sections so future plans
@@ -105,7 +105,7 @@ type Model struct {
 	toast     widgets.Toast
 	keyMap    KeyMap
 
-	// verifierFn is the chrootcheck.CheckAuthKeysFile seam — production
+	// verifierFn is the chrootcheck.CheckAuthKeysFile seam - production
 	// binds the real verifier; tests can override via SetVerifierForTest
 	// to script a violation slice for the rollback-on-verify-failure path.
 	verifierFn func(ctx context.Context, ops sysops.SystemOps, username, chrootRoot string) ([]txn.VerifyViolation, error)
@@ -185,12 +185,12 @@ func (m *Model) MtimeForTest() time.Time { return m.keysFileMtime }
 func (m *Model) UsernameForTest() string { return m.username }
 
 // Title implements nav.Screen.
-func (m *Model) Title() string { return "user detail — " + m.username }
+func (m *Model) Title() string { return "user detail - " + m.username }
 
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keyMap }
 
-// WantsRawKeys implements nav.Screen — false (no textinput on this
+// WantsRawKeys implements nav.Screen - false (no textinput on this
 // screen; every key is either a single-letter binding or navigation).
 func (m *Model) WantsRawKeys() bool { return false }
 
@@ -296,7 +296,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		return m, nil
 	case "a":
 		// 'a' pushes M-ADD-KEY (addkey.New). ops==nil is the unit-test
-		// path where LoadKeysForTest seeded state without a Fake —
+		// path where LoadKeysForTest seeded state without a Fake -
 		// there's nothing to commit against, so return cleanly.
 		//
 		// W-03 regression guard: Phase 4 explicitly does NOT replace
@@ -450,12 +450,12 @@ func (m *Model) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(styles.Primary.Render("user detail — " + m.username))
+	b.WriteString(styles.Primary.Render("user detail - " + m.username))
 	b.WriteString("\n\n")
 
 	if !m.keysFileExists || len(m.keys) == 0 {
-		// Fresh-user empty state — [a] opens M-ADD-KEY (addkey.New).
-		b.WriteString("no authorized_keys file yet — press [a] to add the first key")
+		// Fresh-user empty state - [a] opens M-ADD-KEY (addkey.New).
+		b.WriteString("no authorized_keys file yet - press [a] to add the first key")
 		b.WriteString("\n\n")
 		b.WriteString(styles.Dim.Render(
 			"a·add key   r·add rule   p·set password   esc·back"))
@@ -478,18 +478,18 @@ func (m *Model) View() string {
 		if i == m.cursor {
 			marker = "▌ "
 		}
-		// Per-key "added on" — the sshd authorized_keys file has a single
+		// Per-key "added on" - the sshd authorized_keys file has a single
 		// mtime; we render the same timestamp for every row (the most-
 		// recent add is what the mtime actually represents). This is
 		// honest UX: we can't distinguish per-key add times from the
 		// FS metadata alone.
-		added := "—"
+		added := "-"
 		if !m.keysFileMtime.IsZero() {
 			added = humanize.RelTime(m.keysFileMtime, now, "ago", "from now")
 		}
 		comment := k.Comment
 		if comment == "" {
-			comment = "—"
+			comment = "-"
 		}
 		row := fmt.Sprintf(
 			"%s%-18s  %-50s  %-24s  %5d  %s",
@@ -520,7 +520,7 @@ func (m *Model) View() string {
 }
 
 // truncate clips s to width with a trailing "…" marker. Pure-display
-// helper — never called on data destined for the clipboard.
+// helper - never called on data destined for the clipboard.
 func truncate(s string, width int) string {
 	if len(s) <= width {
 		return s
@@ -542,7 +542,7 @@ func wrapModal(content string) string {
 		Render(content)
 }
 
-// KeyMap describes the screen's bindings — implements nav.KeyMap.
+// KeyMap describes the screen's bindings - implements nav.KeyMap.
 type KeyMap struct {
 	Back     nav.KeyBinding
 	AddKey   nav.KeyBinding

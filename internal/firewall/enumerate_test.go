@@ -17,7 +17,7 @@ import (
 )
 
 // loadFixture reads testdata/<name> and returns it as scripted Exec stdout.
-// gosec G304: name is a fixture filename hardcoded by the calling test —
+// gosec G304: name is a fixture filename hardcoded by the calling test -
 // not user input. Test code only.
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
@@ -36,7 +36,7 @@ func scriptUfw(t *testing.T, f *sysops.Fake, fixture string) {
 	}
 }
 
-// TestEnumerate_mixed: 6 rules — 2 system-default, 3 sftpj v=1, 1 sftpj v=2.
+// TestEnumerate_mixed: 6 rules - 2 system-default, 3 sftpj v=1, 1 sftpj v=2.
 // Verifies ID parse, Proto v4/v6 detection, RawComment carry, User decode,
 // and ParseErr=ErrBadVersion for the v=2 forward-compat row.
 func TestEnumerate_mixed(t *testing.T) {
@@ -47,7 +47,7 @@ func TestEnumerate_mixed(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rules, 6)
 
-	// Rule 1: SSH default IPv4 — has comment but not sftpj.
+	// Rule 1: SSH default IPv4 - has comment but not sftpj.
 	require.Equal(t, 1, rules[0].ID)
 	require.Equal(t, "v4", rules[0].Proto)
 	require.Equal(t, "SSH default", rules[0].RawComment)
@@ -76,7 +76,7 @@ func TestEnumerate_mixed(t *testing.T) {
 	require.Equal(t, "v6", rules[4].Proto)
 	require.Equal(t, "carol", rules[4].User)
 
-	// Rule 6: sftpj v=2 — forward-compat. User must be empty; ParseErr is ErrBadVersion.
+	// Rule 6: sftpj v=2 - forward-compat. User must be empty; ParseErr is ErrBadVersion.
 	require.Equal(t, 6, rules[5].ID)
 	require.Equal(t, "", rules[5].User, "v>=2 must blank User so UI renders ?")
 	require.True(t, errors.Is(rules[5].ParseErr, ufwcomment.ErrBadVersion),

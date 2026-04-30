@@ -4,10 +4,10 @@
 // Both cmd/sftp-jailer/main.go and cmd/gen-manpage/main.go consume Build
 // to obtain a *cobra.Command pre-wired with all visible subcommands. Hidden
 // subcommands (e.g. purge-sshd-cleanup from plan 05-03 and init-db from
-// plan 05-07) are included — cobra/doc.GenManTree skips them automatically.
+// plan 05-07) are included - cobra/doc.GenManTree skips them automatically.
 //
 // Build does NOT include the runtime TUI hook (runTUI) or the SAFE-01
-// PersistentPreRunE — those are wired by cmd/sftp-jailer/main.go after
+// PersistentPreRunE - those are wired by cmd/sftp-jailer/main.go after
 // calling Build. This split keeps gen-manpage purely declarative (no
 // process-state side effects when invoked from `go generate`).
 package rootcmd

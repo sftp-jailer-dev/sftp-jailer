@@ -14,7 +14,7 @@ import (
 
 // TestWire_resolvesHomePlaceholder proves that after wire.Register(), the
 // App substitutes a real home screen for a splash.HomePlaceholder emitted
-// through nav.ReplaceMsg — end-to-end C4 seam.
+// through nav.ReplaceMsg - end-to-end C4 seam.
 func TestWire_resolvesHomePlaceholder(t *testing.T) {
 	app.ResetPlaceholderResolversForTest()
 	wire.Register()
@@ -24,7 +24,7 @@ func TestWire_resolvesHomePlaceholder(t *testing.T) {
 	s := splash.New("v9.9", "https://example.com")
 	a := app.New("v9.9", "https://example.com", s)
 
-	// Send ReplaceMsg directly carrying a HomePlaceholder factory — matches
+	// Send ReplaceMsg directly carrying a HomePlaceholder factory - matches
 	// what the splash's real dismissal path produces.
 	_, _ = a.Update(nav.ReplaceMsg{
 		Factory: func() nav.Screen {

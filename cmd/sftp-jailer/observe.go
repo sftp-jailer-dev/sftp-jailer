@@ -4,7 +4,7 @@
 //   - the systemd timer (Phase 2 plan 02-09 ships the unit), and
 //   - the M-OBSERVE TUI modal (Phase 2 plan 02-08 streams its stdout).
 //
-// SAFE-01 root gate is inherited via rootCmd.PersistentPreRunE — every
+// SAFE-01 root gate is inherited via rootCmd.PersistentPreRunE - every
 // observe-run invocation is non-root-blocked before this RunE runs.
 //
 // OBS-04 schema-drift gate runs BEFORE store.Open / store.Migrate via the
@@ -12,7 +12,7 @@
 // to stderr and os.Exit(2) (distinct exit code per RESEARCH §540-548).
 //
 // OBS-05 retention values flow from config.Load (or config.Defaults() if
-// the file is missing or unreadable) — this is the loop that closes the
+// the file is missing or unreadable) - this is the loop that closes the
 // config-driven retention story end-to-end.
 package main
 
@@ -34,7 +34,7 @@ import (
 
 // observeRunLockPath is the hardcoded flock(2) path for OBS-02 race
 // protection. Lives in /var/lib/sftp-jailer (writable by root, persists
-// across boots) — NOT /run, because we want the lock to survive a brief
+// across boots) - NOT /run, because we want the lock to survive a brief
 // race where two concurrent invocations both attempt to start before
 // either has called AcquireRunLock.
 const observeRunLockPath = "/var/lib/sftp-jailer/observe-run.lock"
@@ -71,7 +71,7 @@ Exit codes:
 
 			ops := sysops.NewReal()
 
-			// OBS-04 / D-14 schema-drift gate — BEFORE store.Open + Migrate.
+			// OBS-04 / D-14 schema-drift gate - BEFORE store.Open + Migrate.
 			drift, current, err := schemaCheck(ctx, dbPath)
 			if err != nil {
 				return fmt.Errorf("peek schema: %w", err)
@@ -94,7 +94,7 @@ Exit codes:
 				return fmt.Errorf("store.Migrate: %w", err)
 			}
 
-			// Load config — Defaults on file-missing; warn-and-default on parse error.
+			// Load config - Defaults on file-missing; warn-and-default on parse error.
 			cfg, cerr := config.Load(ctx, ops, configPath)
 			if cerr != nil {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(),

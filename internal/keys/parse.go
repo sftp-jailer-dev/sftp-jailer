@@ -34,14 +34,14 @@ const (
 	// format key; ssh.ParseAuthorizedKey has already validated it and
 	// Algorithm/Fingerprint/Comment/ByteSize are populated.
 	SourceDirect Source = iota
-	// SourceGithubAll indicates a "gh:<user>" marker — caller should
+	// SourceGithubAll indicates a "gh:<user>" marker - caller should
 	// invoke FetchGitHub(ctx, GithubUser) to retrieve all keys for the
 	// user and re-parse the result for the review modal.
 	SourceGithubAll
-	// SourceGithubByID indicates a "gh:<user>/<id>" marker — caller
+	// SourceGithubByID indicates a "gh:<user>/<id>" marker - caller
 	// should invoke FetchGitHubByID(ctx, GithubUser, GithubKeyID).
 	SourceGithubByID
-	// SourceFile indicates a "/" or "~/" prefix — caller should
+	// SourceFile indicates a "/" or "~/" prefix - caller should
 	// os.ReadFile the FilePath (after expanding ~ if needed) and
 	// recursively Parse the contents.
 	SourceFile
@@ -73,7 +73,7 @@ type ParsedKey struct {
 	// Comment is the trailing free-text on the authorized_keys line.
 	// Filled only when Source == SourceDirect.
 	Comment string
-	// ByteSize is len(pubkey.Marshal()) — the wire-format byte length
+	// ByteSize is len(pubkey.Marshal()) - the wire-format byte length
 	// admins see in the D-20 "bytes" column. Filled only when
 	// Source == SourceDirect.
 	ByteSize int
@@ -87,7 +87,7 @@ type ParsedKey struct {
 	GithubKeyID int
 
 	// FilePath is the verbatim path string from the input line. The
-	// keys package does NOT expand ~ — that's the file-load caller's
+	// keys package does NOT expand ~ - that's the file-load caller's
 	// job. Filled only when Source == SourceFile.
 	FilePath string
 }
@@ -99,7 +99,7 @@ type ParsedKey struct {
 type ParseErr struct {
 	// Line is the 1-based line number in the original textarea input.
 	Line int
-	// Raw is the verbatim line bytes (without trailing newline) — what
+	// Raw is the verbatim line bytes (without trailing newline) - what
 	// the admin actually typed/pasted.
 	Raw string
 	// Err is the underlying error (typically wrapping
@@ -122,7 +122,7 @@ func (e ParseErr) Error() string {
 //
 // Direct-paste lines are validated immediately via ssh.ParseAuthorizedKey;
 // a ParseAuthorizedKey error becomes a ParseErr. gh: and SourceFile
-// lines are returned as markers — the caller resolves them via
+// lines are returned as markers - the caller resolves them via
 // FetchGitHub / os.ReadFile + Parse-recursion.
 //
 // Partial-batch contract: a single malformed line does NOT abort the
@@ -207,7 +207,7 @@ func parseGithubMarker(rest string, lineNo int, raw string) (ParsedKey, error) {
 // parseDirectPaste validates a single line via ssh.ParseAuthorizedKey
 // and extracts Algorithm/Fingerprint/Comment/ByteSize for the D-20
 // review modal columns. The library handles all OpenSSH-recognized key
-// types (RSA, ed25519, ecdsa, sk-*) plus options syntax — far better
+// types (RSA, ed25519, ecdsa, sk-*) plus options syntax - far better
 // than a hand-rolled base64-+-OID extractor.
 func parseDirectPaste(raw string, lineNo int) (ParsedKey, error) {
 	pk, comment, _, _, err := ssh.ParseAuthorizedKey([]byte(raw))
@@ -227,6 +227,6 @@ func parseDirectPaste(raw string, lineNo int) (ParsedKey, error) {
 
 // Fingerprint returns the canonical OpenSSH SHA256 fingerprint for a
 // public key already obtained via ssh.ParseAuthorizedKey. Thin wrapper
-// over ssh.FingerprintSHA256 — kept here so the keys package is the
+// over ssh.FingerprintSHA256 - kept here so the keys package is the
 // single dependency surface for the SSH library.
 func Fingerprint(pk ssh.PublicKey) string { return ssh.FingerprintSHA256(pk) }

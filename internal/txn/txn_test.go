@@ -103,7 +103,7 @@ func TestApply_returns_original_error_when_compensator_succeeds(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, errors.Is(err, stepFailure))
-	// No compensator-error noise — only the original step failure.
+	// No compensator-error noise - only the original step failure.
 	require.NotContains(t, err.Error(), "compensate")
 }
 
@@ -150,7 +150,7 @@ func TestApply_single_step_failure_no_compensators_run(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(err, stepErr))
 	// The failing step's own Apply ran but Compensate did NOT (its mutation
-	// is presumed not to have taken effect — Apply is "atomic or no-op").
+	// is presumed not to have taken effect - Apply is "atomic or no-op").
 	require.Equal(t, []string{"Apply Only"}, calls)
 }
 

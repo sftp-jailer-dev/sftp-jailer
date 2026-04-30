@@ -1,5 +1,5 @@
 #!/bin/sh
-# postinst — sftp-jailer .deb maintainer script (Phase 5 plan 05-04).
+# postinst - sftp-jailer .deb maintainer script (Phase 5 plan 05-04).
 #
 # Implements DIST-04: creates the sftp-jailer system group (idempotent),
 # enables + starts sftp-jailer-observer.timer (closing the deferred half
@@ -52,12 +52,12 @@ case "$1" in
         # current schema version. The binary's `init-db` subcommand opens
         # the store + runs Migrate idempotently. Guarded by [ -x ... ] so
         # the script tolerates a partially-unpacked tree (mirrors the
-        # prerm purge-sshd-cleanup guard pattern). NO `|| true` —
+        # prerm purge-sshd-cleanup guard pattern). NO `|| true` -
         # set -e propagates a real failure (sqlite open/migrate error,
         # or schema drift on a downgrade install) so dpkg marks the
         # configure step failed and the admin investigates. The DB at
         # /var/lib/sftp-jailer/observations.db is created mode 0644
-        # root:root by sqlite — same ownership as the observer.service
+        # root:root by sqlite - same ownership as the observer.service
         # (User=root in packaging/systemd/sftp-jailer-observer.service),
         # so subsequent observe-run writes are consistent.
         if [ -x /usr/bin/sftp-jailer ]; then
@@ -68,11 +68,11 @@ case "$1" in
         chmod 0600 /var/lib/sftp-jailer/observer.cursor
     ;;
     abort-upgrade|abort-remove|abort-deconfigure)
-        # No-op — dpkg is rolling back; the prior package state remains.
+        # No-op - dpkg is rolling back; the prior package state remains.
         :
     ;;
     *)
-        # Unknown case — log + bail (matches Debian Policy §10 advice;
+        # Unknown case - log + bail (matches Debian Policy §10 advice;
         # set -e does the bail).
         echo "postinst called with unknown argument \`$1'" >&2
         exit 1

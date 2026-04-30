@@ -14,7 +14,7 @@ import (
 //
 // Directive shape matters: we use `//go:embed all:migrations` rather than
 // `//go:embed migrations/*.sql`. The glob form fails at compile time when
-// the directory contains no .sql files — which is the Phase 1 state
+// the directory contains no .sql files - which is the Phase 1 state
 // because only `.gitkeep` lives there. The plain `//go:embed migrations`
 // form ALSO fails because `//go:embed` excludes dotfiles by default, and
 // `.gitkeep` is the only tracked file. The `all:` prefix opts dotfiles in,
@@ -102,7 +102,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 			_ = tx.Rollback()
 			return fmt.Errorf("store.Migrate: exec %s: %w", m.name, err)
 		}
-		// PRAGMA user_version can't be parameterized — format the int into
+		// PRAGMA user_version can't be parameterized - format the int into
 		// the statement. Safe: the value comes from a %d scan of a file
 		// name prefix under our control, not user input.
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", m.version)); err != nil {

@@ -27,7 +27,7 @@ import (
 //	ssh-keygen -lf internal/keys/testdata/sample.pub
 //
 // Pinning the literal string ensures keys.Fingerprint stays in lockstep
-// with what `ssh-keygen -lf` displays — the same value admins compare
+// with what `ssh-keygen -lf` displays - the same value admins compare
 // against the M-ADD-KEY review modal column (D-20).
 const sampleFingerprint = "SHA256:tEOJMisUY8XrgbyajGOQ+ZVqOZ06DGYCh/DW22OR+HU"
 
@@ -44,7 +44,7 @@ const sampleRSAKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDAs+Ym+EqP0EFcoJmi66
 const sampleECDSAKey = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBF8qDlGX/Rm0sRAtjh82JsFNfklhzlV5jCEoJG24NwmhgfPrjYhwuLrN3mFsF5aA3SmtyyE0p4zFhhNg0wEGo7s= ecdsa-test@sftp-jailer-fixture"
 
 // sampleSKKey is a synthetic sk-ssh-ed25519 (security-key) line. The bytes
-// after the algorithm prefix are not a real key — Parse only needs to
+// after the algorithm prefix are not a real key - Parse only needs to
 // dispatch on the prefix; ssh.ParseAuthorizedKey may reject the body but
 // the test scopes to the sk- prefix recognition rule (D-19).
 //
@@ -96,7 +96,7 @@ func TestParse_sk_prefix_recognized_as_direct(t *testing.T) {
 }
 
 // TestParse_gh_user_marker_no_slash covers the bare gh:<user> form.
-// No FetchGitHub call yet — Parse returns the marker; the caller resolves.
+// No FetchGitHub call yet - Parse returns the marker; the caller resolves.
 func TestParse_gh_user_marker_no_slash(t *testing.T) {
 	parsed, errs := keys.Parse("gh:alice\n")
 	require.Empty(t, errs)
@@ -123,7 +123,7 @@ func TestParse_gh_user_with_id(t *testing.T) {
 }
 
 // TestParse_path_absolute covers the absolute-path source. Parser doesn't
-// read the file — that's the caller's job.
+// read the file - that's the caller's job.
 func TestParse_path_absolute(t *testing.T) {
 	parsed, errs := keys.Parse("/etc/keys/alice.pub\n")
 	require.Empty(t, errs)
@@ -133,7 +133,7 @@ func TestParse_path_absolute(t *testing.T) {
 }
 
 // TestParse_path_tilde covers the ~-relative path source. Parser does NOT
-// expand ~ — that's the file-load caller's job.
+// expand ~ - that's the file-load caller's job.
 func TestParse_path_tilde(t *testing.T) {
 	parsed, errs := keys.Parse("~/keys/alice.pub\n")
 	require.Empty(t, errs)
@@ -157,7 +157,7 @@ func TestParse_malformed_line_returns_parseErr_keeps_other_lines(t *testing.T) {
 }
 
 // TestParse_blank_lines_skipped verifies blank lines (leading, trailing,
-// between entries) are silently skipped — no spurious ParseErrs.
+// between entries) are silently skipped - no spurious ParseErrs.
 func TestParse_blank_lines_skipped(t *testing.T) {
 	input := "\n\n" + sampleKey + "\n\n\ngh:alice\n\n"
 	parsed, errs := keys.Parse(input)
@@ -166,7 +166,7 @@ func TestParse_blank_lines_skipped(t *testing.T) {
 }
 
 // TestParse_comment_lines_skipped verifies # comment lines are silently
-// skipped — no spurious ParseErrs.
+// skipped - no spurious ParseErrs.
 func TestParse_comment_lines_skipped(t *testing.T) {
 	input := "# this is a comment\n" + sampleKey + "\n# another comment\n"
 	parsed, errs := keys.Parse(input)
@@ -206,13 +206,13 @@ func TestFingerprint_sha256_format_matches_ssh_keygen(t *testing.T) {
 
 	fp := parsed[0].Fingerprint
 	require.True(t, regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{43}$`).MatchString(fp),
-		"got %q — should match canonical OpenSSH SHA256 form", fp)
+		"got %q - should match canonical OpenSSH SHA256 form", fp)
 	require.Equal(t, sampleFingerprint, fp,
 		"fingerprint must match `ssh-keygen -lf testdata/sample.pub`")
 }
 
 // TestParse_gh_empty_user_returns_parseErr verifies the "gh:" with no
-// username form is a ParseErr — defensive coverage for malformed input.
+// username form is a ParseErr - defensive coverage for malformed input.
 func TestParse_gh_empty_user_returns_parseErr(t *testing.T) {
 	_, errs := keys.Parse("gh:\n")
 	require.Len(t, errs, 1)

@@ -54,7 +54,7 @@ type KeyMap interface {
 	FullHelp() [][]KeyBinding
 }
 
-// Screen is the uniform interface for every TUI screen — splash, home,
+// Screen is the uniform interface for every TUI screen - splash, home,
 // doctor, users, firewall, logs, etc. It deliberately does NOT embed
 // tea.Model because Update has a Screen-typed return (not tea.Model), which
 // keeps the stack homogeneous.
@@ -65,7 +65,7 @@ type Screen interface {
 	Title() string
 	KeyMap() KeyMap
 	// WantsRawKeys returns true when a textinput (or similar) on the screen
-	// is focused — the root App suppresses its own global 'q' handler so the
+	// is focused - the root App suppresses its own global 'q' handler so the
 	// letter gets typed into the input rather than quitting the program.
 	WantsRawKeys() bool
 }

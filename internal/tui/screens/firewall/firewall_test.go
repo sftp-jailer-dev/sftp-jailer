@@ -1,4 +1,4 @@
-// Package firewallscreen tests for S-FIREWALL — the wave-4 first screen,
+// Package firewallscreen tests for S-FIREWALL - the wave-4 first screen,
 // pushed from home `f`. Mirrors the S-USERS test shape (key helper +
 // nav.Screen compile-time check + LoadXForTest seam) per UI-SPEC §"Async /
 // Loading State Contract".
@@ -36,7 +36,7 @@ func keyPress(s string) tea.KeyPressMsg {
 	return tea.KeyPressMsg(tea.Key{Code: r, Text: s})
 }
 
-// TestFirewallScreen_implements_nav_Screen — compile-time check that Model
+// TestFirewallScreen_implements_nav_Screen - compile-time check that Model
 // satisfies nav.Screen plus runtime checks on Title / KeyMap / WantsRawKeys.
 func TestFirewallScreen_implements_nav_Screen(t *testing.T) {
 	var s nav.Screen = firewallscreen.New(nil)
@@ -48,13 +48,13 @@ func TestFirewallScreen_implements_nav_Screen(t *testing.T) {
 	require.NotEmpty(t, km.FullHelp())
 }
 
-// TestFirewallScreen_loading_state — initial View shows the loading copy.
+// TestFirewallScreen_loading_state - initial View shows the loading copy.
 func TestFirewallScreen_loading_state(t *testing.T) {
 	m := firewallscreen.New(nil)
 	require.Contains(t, m.View(), "reading firewall rules…")
 }
 
-// TestFirewallScreen_LoadRulesForTest_flat_mode — feeding rules via the
+// TestFirewallScreen_LoadRulesForTest_flat_mode - feeding rules via the
 // test seam bypasses Init+Enumerate; flat-mode View must render every
 // supplied rule's id and user.
 func TestFirewallScreen_LoadRulesForTest_flat_mode(t *testing.T) {
@@ -70,7 +70,7 @@ func TestFirewallScreen_LoadRulesForTest_flat_mode(t *testing.T) {
 	}
 }
 
-// TestFirewallScreen_by_user_mode — pressing `g` toggles to per-user
+// TestFirewallScreen_by_user_mode - pressing `g` toggles to per-user
 // grouped view (FW-04). Each user gets a section header.
 func TestFirewallScreen_by_user_mode(t *testing.T) {
 	m := firewallscreen.New(nil)
@@ -87,8 +87,8 @@ func TestFirewallScreen_by_user_mode(t *testing.T) {
 	require.Contains(t, v, "view: by user", "footer must indicate by-user mode; got %q", v)
 }
 
-// TestFirewallScreen_by_user_mode_omits_zero_rule_users — by-user mode
-// should never render a "user: nobody — 0 rules" header. (The data source
+// TestFirewallScreen_by_user_mode_omits_zero_rule_users - by-user mode
+// should never render a "user: nobody - 0 rules" header. (The data source
 // only contains rules so this is automatically true; we assert it.)
 func TestFirewallScreen_by_user_mode_omits_zero_rule_users(t *testing.T) {
 	m := firewallscreen.New(nil)
@@ -101,7 +101,7 @@ func TestFirewallScreen_by_user_mode_omits_zero_rule_users(t *testing.T) {
 		"by-user mode should not list zero-rule users; got %q", v)
 }
 
-// TestFirewallScreen_ErrBadVersion_renders_question_mark — rules where
+// TestFirewallScreen_ErrBadVersion_renders_question_mark - rules where
 // ParseErr == ufwcomment.ErrBadVersion render the user column as `?`.
 func TestFirewallScreen_ErrBadVersion_renders_question_mark(t *testing.T) {
 	m := firewallscreen.New(nil)
@@ -116,7 +116,7 @@ func TestFirewallScreen_ErrBadVersion_renders_question_mark(t *testing.T) {
 	require.Contains(t, v, "?", "ErrBadVersion must render `?` in user column; got %q", v)
 }
 
-// TestFirewallScreen_ufw_inactive_empty_state — UI-SPEC line 357.
+// TestFirewallScreen_ufw_inactive_empty_state - UI-SPEC line 357.
 func TestFirewallScreen_ufw_inactive_empty_state(t *testing.T) {
 	m := firewallscreen.New(nil)
 	m.LoadRulesForTest(nil, firewall.ErrUFWInactive)
@@ -124,7 +124,7 @@ func TestFirewallScreen_ufw_inactive_empty_state(t *testing.T) {
 	require.Contains(t, v, "No SFTP-tagged firewall rules.")
 }
 
-// TestFirewallScreen_other_error_renders_error_state — UI-SPEC line 358.
+// TestFirewallScreen_other_error_renders_error_state - UI-SPEC line 358.
 func TestFirewallScreen_other_error_renders_error_state(t *testing.T) {
 	m := firewallscreen.New(nil)
 	m.LoadRulesForTest(nil, errors.New("ufw: command not found"))
@@ -133,7 +133,7 @@ func TestFirewallScreen_other_error_renders_error_state(t *testing.T) {
 	require.Contains(t, v, "ufw: command not found")
 }
 
-// TestFirewallScreen_copy_emits_SetClipboard — pressing `c` on a loaded
+// TestFirewallScreen_copy_emits_SetClipboard - pressing `c` on a loaded
 // rule returns a non-nil tea.Cmd; invoking it produces a tea.BatchMsg whose
 // concatenated message string contains the expected raw line content.
 func TestFirewallScreen_copy_emits_SetClipboard(t *testing.T) {
@@ -163,7 +163,7 @@ func TestFirewallScreen_copy_emits_SetClipboard(t *testing.T) {
 	require.Contains(t, m.View(), "copied rule via OSC 52")
 }
 
-// TestFirewallScreen_search_active_flips_WantsRawKeys — pressing `/`
+// TestFirewallScreen_search_active_flips_WantsRawKeys - pressing `/`
 // activates the search widget; pressing esc deactivates.
 func TestFirewallScreen_search_active_flips_WantsRawKeys(t *testing.T) {
 	m := firewallscreen.New(nil)
@@ -177,7 +177,7 @@ func TestFirewallScreen_search_active_flips_WantsRawKeys(t *testing.T) {
 	require.False(t, m.WantsRawKeys(), "after esc, search must clear and WantsRawKeys back to false")
 }
 
-// TestFirewallScreen_keymap_bindings — assert the S-FIREWALL bindings list.
+// TestFirewallScreen_keymap_bindings - assert the S-FIREWALL bindings list.
 func TestFirewallScreen_keymap_bindings(t *testing.T) {
 	km := firewallscreen.DefaultKeyMap()
 	short := km.ShortHelp()
@@ -192,7 +192,7 @@ func TestFirewallScreen_keymap_bindings(t *testing.T) {
 	}
 }
 
-// TestFirewallScreen_esc_pops — esc/q pops back to home.
+// TestFirewallScreen_esc_pops - esc/q pops back to home.
 func TestFirewallScreen_esc_pops(t *testing.T) {
 	m := firewallscreen.New(nil)
 	m.LoadRulesForTest([]firewall.Rule{{ID: 1}}, nil)
@@ -203,7 +203,7 @@ func TestFirewallScreen_esc_pops(t *testing.T) {
 	require.Equal(t, nav.Pop, nm.Intent)
 }
 
-// TestFirewallScreen_default_view_is_flat — initial loaded state shows
+// TestFirewallScreen_default_view_is_flat - initial loaded state shows
 // the `view: flat` footer indicator.
 func TestFirewallScreen_default_view_is_flat(t *testing.T) {
 	m := firewallscreen.New(nil)
@@ -228,7 +228,7 @@ type stubKeyMap struct{}
 func (stubKeyMap) ShortHelp() []nav.KeyBinding   { return nil }
 func (stubKeyMap) FullHelp() [][]nav.KeyBinding  { return nil }
 
-// TestSFirewall_a_pushes_addrule_when_factory_set — pressing 'a' on
+// TestSFirewall_a_pushes_addrule_when_factory_set - pressing 'a' on
 // S-FIREWALL must emit a nav.Push carrying whatever the registered
 // AddRuleFactory returns. Plan 04-05 Task 3 wires this so the home
 // screen's bootstrap can register the M-ADD-RULE constructor without
@@ -252,7 +252,7 @@ func TestSFirewall_a_pushes_addrule_when_factory_set(t *testing.T) {
 		"pushed screen must be the factory's return value")
 }
 
-// TestSFirewall_a_noop_when_factory_nil — pressing 'a' with no factory
+// TestSFirewall_a_noop_when_factory_nil - pressing 'a' with no factory
 // registered is a clean no-op (no panic, no cmd).
 func TestSFirewall_a_noop_when_factory_nil(t *testing.T) {
 	firewallscreen.SetAddRuleFactory(nil)
@@ -265,7 +265,7 @@ func TestSFirewall_a_noop_when_factory_nil(t *testing.T) {
 
 // --- Plan 04-06: M-DELETE-RULE keybind tests --------------------------------
 
-// TestSFirewall_d_pushes_deleterule_for_sftpj_rule — pressing 'd' on a
+// TestSFirewall_d_pushes_deleterule_for_sftpj_rule - pressing 'd' on a
 // selected sftpj rule (ParseErr == nil, User != "") must invoke the
 // deleteRuleFactory with ModeByID + the selected rule, and push the
 // returned screen.
@@ -304,7 +304,7 @@ func TestSFirewall_d_pushes_deleterule_for_sftpj_rule(t *testing.T) {
 	require.Equal(t, "alice", gotRule.User)
 }
 
-// TestSFirewall_d_noop_on_foreign_rule — pressing 'd' on a row whose
+// TestSFirewall_d_noop_on_foreign_rule - pressing 'd' on a row whose
 // ParseErr != nil (e.g. ErrNotOurs / ErrBadVersion) must NOT invoke the
 // factory. Foreign rules are not safely round-trippable.
 func TestSFirewall_d_noop_on_foreign_rule(t *testing.T) {
@@ -337,11 +337,11 @@ func TestSFirewall_d_noop_on_foreign_rule(t *testing.T) {
 		"deleteRuleFactory must NOT be called for ParseErr != nil rules")
 }
 
-// TestSFirewall_s_pushes_deleterule_modeBySource — pressing 's' must
+// TestSFirewall_s_pushes_deleterule_modeBySource - pressing 's' must
 // invoke the factory with ModeBySource. Payload format is the source
 // CIDR string; v1 ships with an empty payload (the modal's
 // ModeBySource path itself surfaces the no-matches state when source
-// is "" — but the test pins the factory was reached with the right
+// is "" - but the test pins the factory was reached with the right
 // mode).
 func TestSFirewall_s_pushes_deleterule_modeBySource(t *testing.T) {
 	defer firewallscreen.SetDeleteRuleFactory(nil)
@@ -366,7 +366,7 @@ func TestSFirewall_s_pushes_deleterule_modeBySource(t *testing.T) {
 		"factory must be invoked with ModeBySource")
 }
 
-// TestSFirewall_d_noop_when_factory_nil — pressing 'd' with no factory
+// TestSFirewall_d_noop_when_factory_nil - pressing 'd' with no factory
 // registered is a clean no-op (no panic, no cmd).
 func TestSFirewall_d_noop_when_factory_nil(t *testing.T) {
 	firewallscreen.SetDeleteRuleFactory(nil)
@@ -379,7 +379,7 @@ func TestSFirewall_d_noop_when_factory_nil(t *testing.T) {
 	require.Nil(t, cmd, "'d' without factory must be a no-op")
 }
 
-// TestSFirewall_s_noop_when_factory_nil — pressing 's' with no factory
+// TestSFirewall_s_noop_when_factory_nil - pressing 's' with no factory
 // registered is a clean no-op.
 func TestSFirewall_s_noop_when_factory_nil(t *testing.T) {
 	firewallscreen.SetDeleteRuleFactory(nil)

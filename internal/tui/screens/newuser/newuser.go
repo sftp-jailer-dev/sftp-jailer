@@ -1,4 +1,4 @@
-// Package newuser renders the M-NEW-USER modal — the multi-textinput form
+// Package newuser renders the M-NEW-USER modal - the multi-textinput form
 // that creates a chrooted SFTP user via the D-12 useradd batch and (on
 // success) chains into M-PASSWORD per D-11.
 //
@@ -7,32 +7,32 @@
 //   - New(ops, chrootRoot): fresh-create. UID auto-pick starts at 2000;
 //     home auto-derives as <chrootRoot>/<username>; primary group defaults
 //     to the username (UPG); sftp-jailer membership default-checked. The
-//     useradd opts use CreateHome=true and GID=0 (UPG — useradd creates
+//     useradd opts use CreateHome=true and GID=0 (UPG - useradd creates
 //     a same-name group).
 //
 //   - NewFromOrphan(ops, chrootRoot, orphan): D-14 orphan reconcile path.
 //     Pre-populates fields from the orphan dir's existing UID AND GID
-//     (B-03 fix — preserves the dir's existing same-name group rather
+//     (B-03 fix - preserves the dir's existing same-name group rather
 //     than letting useradd create a fresh group with a new GID and
 //     causing silent ownership drift). useradd opts use CreateHome=false
 //     (the dir already exists) and GID=orphan.GID (`-u <uid> -g <gid>`).
-//     The Chmod / Chown txn steps are SKIPPED in the orphan path — the
+//     The Chmod / Chown txn steps are SKIPPED in the orphan path - the
 //     directory already has correct ownership and re-applying could drift
 //     if Lookup ever returned a different gid.
 //
 // Lifecycle phases:
 //
-//	phasePreflight — Init runs B4 (/etc/shells contains /usr/sbin/nologin)
+//	phasePreflight - Init runs B4 (/etc/shells contains /usr/sbin/nologin)
 //	                 + chrootcheck.WalkRoot(chrootRoot) asynchronously.
 //	                 Block with errInline if either fails.
-//	phaseEditing   — admin navigates the field list (j/k), enters a field
+//	phaseEditing   - admin navigates the field list (j/k), enters a field
 //	                 (e/Enter on a textinput), types into it, commits with
 //	                 Enter, exits edit-of-field with Esc.
-//	phaseSubmitting — txn batch in flight (Useradd + GpasswdAdd [+ Chmod
+//	phaseSubmitting - txn batch in flight (Useradd + GpasswdAdd [+ Chmod
 //	                  + Chown for fresh-create only]).
-//	phaseDone      — txn succeeded; auto-push M-PASSWORD via tea.Batch
+//	phaseDone      - txn succeeded; auto-push M-PASSWORD via tea.Batch
 //	                 (nav.PopCmd, nav.PushCmd(password.New(...))).
-//	phaseError     — preflight failure OR txn-Apply failure (rolled back
+//	phaseError     - preflight failure OR txn-Apply failure (rolled back
 //	                 by the txn substrate); errInline carries the message;
 //	                 admin presses Esc to back out.
 //
@@ -48,10 +48,10 @@
 //     M-PASSWORD on success).
 //
 // Architectural invariants:
-//   - This package issues zero direct subprocess calls — every mutation
+//   - This package issues zero direct subprocess calls - every mutation
 //     flows through internal/txn → internal/sysops (CI guard
 //     scripts/check-no-exec-outside-sysops.sh).
-//   - This package never writes to /etc/sftp-jailer/config.yaml — the only
+//   - This package never writes to /etc/sftp-jailer/config.yaml - the only
 //     write surface is the txn batch (CI guard
 //     scripts/check-no-raw-config-write.sh).
 package newuser
@@ -85,7 +85,7 @@ import (
 // kernel sentinel). The modal rejects anything in this range explicitly
 // rather than let useradd surface a confusing error. UIDs >= 65536 are
 // allowed at the modal layer (useradd will decide; some sites use 65536+
-// for federated pools — N-04 boundary tests pin this).
+// for federated pools - N-04 boundary tests pin this).
 const (
 	uidFloor    = 2000
 	uidReserved = 60000 // first reserved UID (USER-04)
@@ -153,7 +153,7 @@ type preflightLoadedMsg struct {
 // submitDoneMsg carries the txn.Apply outcome.
 type submitDoneMsg struct{ err error }
 
-// userLookupFn is the os/user.LookupId seam — production uses
+// userLookupFn is the os/user.LookupId seam - production uses
 // internal/sysops-equivalent stdlib lookups; tests stub via
 // SetUserLookupForTest. Returns true if a user with the given UID exists.
 type userLookupFn func(uid int) bool
@@ -163,7 +163,7 @@ type Model struct {
 	ops        sysops.SystemOps
 	chrootRoot string
 
-	// Field state — one textinput per typed input plus two booleans.
+	// Field state - one textinput per typed input plus two booleans.
 	usernameTI       textinput.Model
 	uidTI            textinput.Model
 	homeTI           textinput.Model
@@ -182,7 +182,7 @@ type Model struct {
 	spinner spinner.Model
 	toast   widgets.Toast
 
-	// Orphan-reconcile metadata (B-03 — UID and GID both pinned so submit
+	// Orphan-reconcile metadata (B-03 - UID and GID both pinned so submit
 	// can route the right useradd opts and SKIP the chmod/chown steps).
 	isOrphan  bool
 	orphanGID int
@@ -225,7 +225,7 @@ func New(ops sysops.SystemOps, chrootRoot string) *Model {
 // the SKIP-chmod-chown branch. Re-running chmod/chown on an already-owned
 // dir is correctness-equivalent in the happy path but creates a drift
 // window if Lookup ever resolves to a different gid than the dir actually
-// has — the orphan-path SKIP defends against that.
+// has - the orphan-path SKIP defends against that.
 func NewFromOrphan(ops sysops.SystemOps, chrootRoot string, orphan users.InfoRow) *Model {
 	m := newBase(ops, chrootRoot)
 	name := filepath.Base(orphan.Dir)
@@ -277,7 +277,7 @@ func (m *Model) Title() string {
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — true while editing a textinput so
+// WantsRawKeys implements nav.Screen - true while editing a textinput so
 // the root App forwards every key (including 'q', 'a', '/', digits) into
 // the input rather than acting on global bindings.
 func (m *Model) WantsRawKeys() bool {
@@ -362,7 +362,7 @@ func (m *Model) FieldValuesForTest() (username, uid, home, primaryGroup string, 
 		m.sftpJailerMember
 }
 
-// PhaseEditing / PhaseError / etc. — int-typed exports for tests so the
+// PhaseEditing / PhaseError / etc. - int-typed exports for tests so the
 // test file does not need to import the unexported phase type.
 const (
 	PhasePreflightForTest  = int(phasePreflight)
@@ -386,14 +386,14 @@ func (m *Model) applyPreflight(msg preflightLoadedMsg) {
 		return
 	}
 	if !msg.shellsOK {
-		m.errInline = "/etc/shells does not list /usr/sbin/nologin — useradd would create a user with an unlisted shell (B4). Add the line and retry."
+		m.errInline = "/etc/shells does not list /usr/sbin/nologin - useradd would create a user with an unlisted shell (B4). Add the line and retry."
 		m.errFatal = true
 		m.phase = phaseError
 		return
 	}
 	if len(msg.walkViolations) > 0 {
 		var bld strings.Builder
-		bld.WriteString("chroot chain violations — fix before creating users:")
+		bld.WriteString("chroot chain violations - fix before creating users:")
 		for _, v := range msg.walkViolations {
 			bld.WriteString("\n  • ")
 			bld.WriteString(v.Reason)
@@ -428,7 +428,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		// just-created username + AutoGenerateMode. The handoff is a
 		// single tea.Batch so the nav stack mutates atomically.
 		var flashCmd tea.Cmd
-		m.toast, flashCmd = m.toast.Flash("user " + m.username() + " created — set password")
+		m.toast, flashCmd = m.toast.Flash("user " + m.username() + " created - set password")
 		return m, tea.Batch(
 			nav.PopCmd(),
 			nav.PushCmd(password.New(m.ops, m.username(), password.AutoGenerateMode)),
@@ -537,7 +537,7 @@ func (m *Model) handleNavKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 // current value moves to the placeholder slot and the textinput is cleared
 // so subsequent keys REPLACE rather than APPEND. textinput.Focus places
 // the cursor at end-of-content, so SetValue(prior) + Focus would extend
-// rather than overwrite — this clearing makes the typing match what the
+// rather than overwrite - this clearing makes the typing match what the
 // admin expects ("type a fresh value"). The plan calls this out as the
 // canonical pattern in 02-07's edit-mode summary.
 func (m *Model) beginEdit() (nav.Screen, tea.Cmd) {
@@ -643,16 +643,16 @@ func (m *Model) validate() string {
 		return err.Error()
 	}
 	if uid < uidFloor {
-		return fmt.Sprintf("uid %d too low — pick %d or above (system UID range below)", uid, uidFloor)
+		return fmt.Sprintf("uid %d too low - pick %d or above (system UID range below)", uid, uidFloor)
 	}
 	if uid >= uidReserved && uid <= 65535 {
 		// USER-04 reserved-range: 60000-65535. N-04 boundary tests pin
 		// both 60000 and 65535 as rejected. 65536+ is allowed (some sites
 		// use federated UID pools above the kernel sentinel).
-		return fmt.Sprintf("uid %d is in the reserved Ubuntu range %d-65535 — pick %d-%d (USER-04)", uid, uidReserved, uidFloor, uidCeiling)
+		return fmt.Sprintf("uid %d is in the reserved Ubuntu range %d-65535 - pick %d-%d (USER-04)", uid, uidReserved, uidFloor, uidCeiling)
 	}
 	if m.lookupFn != nil && m.lookupFn(uid) {
-		return fmt.Sprintf("uid %d is already in use — pick a different uid", uid)
+		return fmt.Sprintf("uid %d is already in use - pick a different uid", uid)
 	}
 	home := m.derivedHome()
 	if !filepath.IsAbs(home) {
@@ -705,7 +705,7 @@ func (m *Model) attemptSubmit() tea.Cmd {
 		opts = sysops.UseraddOpts{
 			Username:           uname,
 			UID:                uid,
-			GID:                0, // UPG — useradd creates same-name group
+			GID:                0, // UPG - useradd creates same-name group
 			Home:               home,
 			Shell:              "/usr/sbin/nologin",
 			CreateHome:         true,
@@ -753,20 +753,20 @@ func (m *Model) View() string {
 	case phaseSubmitting:
 		b.WriteString(m.spinner.View() + " creating user (useradd → gpasswd → chmod → chown)…")
 	case phaseDone:
-		b.WriteString(styles.Success.Render("✓ user created — opening password modal…"))
+		b.WriteString(styles.Success.Render("✓ user created - opening password modal…"))
 	case phaseError:
 		b.WriteString(styles.Critical.Render(m.errInline))
 		b.WriteString("\n\n[esc] back")
 	case phaseEditing:
-		title := "M-NEW-USER — fresh create"
+		title := "M-NEW-USER - fresh create"
 		if m.isOrphan {
-			title = "M-NEW-USER — orphan reconcile"
+			title = "M-NEW-USER - orphan reconcile"
 		}
 		b.WriteString(styles.Primary.Render(title))
 		b.WriteString("\n\n")
 		if m.isOrphan {
 			b.WriteString(styles.Warn.Render(
-				"orphan reconcile mode — UID and GID inferred from existing directory; useradd will use -u/-g and SKIP the chmod/chown steps to preserve current ownership."))
+				"orphan reconcile mode - UID and GID inferred from existing directory; useradd will use -u/-g and SKIP the chmod/chown steps to preserve current ownership."))
 			b.WriteString("\n\n")
 		}
 		// Render each field row.
@@ -802,7 +802,7 @@ func (m *Model) View() string {
 				}
 			case fieldCreate:
 				if m.isOrphan {
-					value = styles.Primary.Render("[create — orphan reconcile]")
+					value = styles.Primary.Render("[create - orphan reconcile]")
 				} else {
 					value = styles.Primary.Render("[create]")
 				}
@@ -833,7 +833,7 @@ func (m *Model) View() string {
 	return wrapModal(b.String())
 }
 
-// fieldRender returns the per-row value cell — textinput.View when editing
+// fieldRender returns the per-row value cell - textinput.View when editing
 // the row, plain string otherwise.
 func (m *Model) fieldRender(k fieldKind, ti textinput.Model, plainValue, hint string) string {
 	if m.editing && k == m.cursor {

@@ -1,6 +1,6 @@
 // Package keys_test exercises FetchGitHub + FetchGitHubByID against an
 // httptest.Server. Per W-06, every handler in this file matches the
-// expected URL path explicitly — a production code change that constructs
+// expected URL path explicitly - a production code change that constructs
 // a wrong path (e.g. "/users/alice.keys" instead of "/alice.keys") will
 // fail the test rather than silently get a 404 the test is unprepared for.
 package keys_test

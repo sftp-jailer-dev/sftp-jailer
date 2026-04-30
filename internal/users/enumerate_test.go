@@ -42,7 +42,7 @@ func (e fakeDirEntry) Type() fs.FileMode          { return 0 }
 func (e fakeDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
 
 // loadFixture reads testdata/<name>.
-// gosec G304: name is a fixture filename hardcoded by the calling test —
+// gosec G304: name is a fixture filename hardcoded by the calling test -
 // not user input. Test code only.
 func loadFixture(t *testing.T, name string) []byte {
 	t.Helper()
@@ -135,7 +135,7 @@ func TestEnumerate_returns_sftp_group_members(t *testing.T) {
 	require.True(t, usernames["alice"], "alice in sftp-jailer group must appear")
 	require.True(t, usernames["bob"], "bob in sftp-jailer group must appear")
 	require.True(t, usernames["carol"], "carol in sftponly group (sftp* prefix) must appear")
-	require.False(t, usernames["dave"], "dave is in 'other' group only — must NOT appear")
+	require.False(t, usernames["dave"], "dave is in 'other' group only - must NOT appear")
 	// Match Group sftp-jailer block IS present in the fixture; ChrootDirectory IS present.
 	require.False(t, hasInfo(infos, users.InfoMissingMatch))
 	require.False(t, hasInfo(infos, users.InfoMissingChroot))
@@ -143,7 +143,7 @@ func TestEnumerate_returns_sftp_group_members(t *testing.T) {
 
 // TestEnumerate_includes_chroot_home_users_via_sshdcfg: wendy is NOT in
 // any sftp* group, but her home /srv/sftp/wendy sits under the
-// ChrootDirectory /srv/sftp/%u — she must appear in the union.
+// ChrootDirectory /srv/sftp/%u - she must appear in the union.
 func TestEnumerate_includes_chroot_home_users_via_sshdcfg(t *testing.T) {
 	f := sysops.NewFake()
 	seedBaseFakeFS(t, f)
@@ -161,7 +161,7 @@ func TestEnumerate_includes_chroot_home_users_via_sshdcfg(t *testing.T) {
 }
 
 // TestEnumerate_emits_orphan_info_rows: the chroot root contains "ghost"
-// which has no /etc/passwd entry — emit an orphan InfoRow with the
+// which has no /etc/passwd entry - emit an orphan InfoRow with the
 // "[fix in Phase 3]" hint.
 func TestEnumerate_emits_orphan_info_rows(t *testing.T) {
 	f := sysops.NewFake()
@@ -319,7 +319,7 @@ func TestEnumerate_authorized_keys_count_via_sysops_ReadFile(t *testing.T) {
 // Fake.Shadow entry for alice (lstchg = today - 42, max = 90) results in
 // alice.PasswordAgeDays in [41, 42] (day-boundary tolerance) AND
 // PasswordMaxDays == 90. Mirrors the keys / logins / allowlist enricher
-// shape — fail-silent on per-row errors.
+// shape - fail-silent on per-row errors.
 func TestEnumerate_enrichPasswordAge_populates_from_shadow(t *testing.T) {
 	f := sysops.NewFake()
 	seedBaseFakeFS(t, f)
@@ -353,7 +353,7 @@ func TestEnumerate_enrichPasswordAge_falls_back_to_minus_one_on_missing_shadow_e
 	f.ExecResponses["ufw status numbered"] = sysops.ExecResult{
 		Stdout: []byte("Status: active\n"), ExitCode: 0,
 	}
-	// Shadow map is empty — every per-user lookup misses.
+	// Shadow map is empty - every per-user lookup misses.
 
 	_, q := newDB(t)
 	e := users.New(f, q)

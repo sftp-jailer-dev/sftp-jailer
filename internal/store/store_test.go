@@ -2,7 +2,7 @@
 // handle pair and the embedded-migration framework.
 //
 // Tests use a temp-file DB (not :memory:) because WAL mode behavior
-// differs between file-backed and in-memory databases — we specifically
+// differs between file-backed and in-memory databases - we specifically
 // verify that journal_mode resolves to "wal" on disk.
 package store_test
 
@@ -204,7 +204,7 @@ func TestPeekUserVersion_nonexistent_path(t *testing.T) {
 }
 
 // TestExpectedSchemaVersion_constant verifies the exported constant matches
-// the highest-numbered migration this binary ships (currently 3 — Phase 4
+// the highest-numbered migration this binary ships (currently 3 - Phase 4
 // plan 04-03 added 003_user_ips.sql for the FW-08 derived cache mirror).
 func TestExpectedSchemaVersion_constant(t *testing.T) {
 	require.Equal(t, 3, store.ExpectedSchemaVersion, "ExpectedSchemaVersion must equal 3 (highest migration)")

@@ -11,7 +11,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
 )
 
-// A fully-green report must produce six [OK] rows — one per detector.
+// A fully-green report must produce six [OK] rows - one per detector.
 func TestRenderText_all_ok(t *testing.T) {
 	r := model.DoctorReport{
 		SshdDropIns: model.SshdDropInReport{
@@ -156,7 +156,7 @@ func TestRenderText_includes_apply_action_when_needs_canonical_apply(t *testing.
 	require.Contains(t, got, "missing drop-in, broken chain, or external sftp-server")
 }
 
-// When the report is fully clean, the [A] action prompt MUST NOT appear —
+// When the report is fully clean, the [A] action prompt MUST NOT appear -
 // adding it noisily would erode the prescription signal.
 func TestRenderText_omits_apply_action_when_clean(t *testing.T) {
 	r := model.DoctorReport{
@@ -175,7 +175,7 @@ func TestRenderText_omits_apply_action_when_clean(t *testing.T) {
 	require.NotContains(t, got, "[A] Apply canonical config")
 }
 
-// Round-trip the structured report through JSON — confirms every field used
+// Round-trip the structured report through JSON - confirms every field used
 // by the renderer is json-serialisable (supports `doctor --json` output).
 func TestDoctorReport_json_roundtrip(t *testing.T) {
 	r := model.DoctorReport{

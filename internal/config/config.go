@@ -1,6 +1,6 @@
 // Package config loads and atomically saves /etc/sftp-jailer/config.yaml.
 //
-// This file is sftp-jailer's own config — the D-07 carve-out from the
+// This file is sftp-jailer's own config - the D-07 carve-out from the
 // otherwise read-only Phase 2 boundary. Three knobs only:
 //
 //   - detail_retention_days [1..3650]    days to keep detail rows
@@ -18,7 +18,7 @@
 //
 // Architectural invariants:
 //   - Reads via sysops.ReadFile (NOT koanf's providers/file which calls
-//     os.ReadFile directly — would bypass the seam).
+//     os.ReadFile directly - would bypass the seam).
 //   - Writes via sysops.AtomicWriteFile (Phase 2 plan 02-02 D-07 carve-out).
 //   - This package never imports os or os/exec.
 package config
@@ -43,7 +43,7 @@ import (
 // map to snake_case YAML keys.
 //
 // PasswordAgingDays / PasswordStaleDays are NOT exposed in the S-SETTINGS
-// cycle UI in this plan — admins can edit the config file directly. A
+// cycle UI in this plan - admins can edit the config file directly. A
 // follow-up v1.1 plan will surface them in the cycle UI.
 type Settings struct {
 	DetailRetentionDays int `koanf:"detail_retention_days"`
@@ -52,7 +52,7 @@ type Settings struct {
 	PasswordAgingDays   int `koanf:"password_aging_days"`
 	PasswordStaleDays   int `koanf:"password_stale_days"`
 
-	// LockdownProposalWindowDays (Phase 4 / D-L0204-01) — observation
+	// LockdownProposalWindowDays (Phase 4 / D-L0204-01) - observation
 	// lookback window the LOCK-02 proposal generator uses (`tier=success`
 	// observations grouped by source IP per user). INDEPENDENT from
 	// detail_retention_days: they answer different questions (one is
@@ -66,8 +66,8 @@ type Settings struct {
 // admin has only set a subset.
 //
 // Password-age thresholds (02-11): aging at 180d, stale at 365d. These
-// are deliberately conservative — most enterprise password rotation
-// policies sit in the 90–365d range, so the defaults flag accounts that
+// are deliberately conservative - most enterprise password rotation
+// policies sit in the 90-365d range, so the defaults flag accounts that
 // have drifted past the typical mid-range mark without alarming on
 // recently-changed passwords.
 func Defaults() Settings {
@@ -83,7 +83,7 @@ func Defaults() Settings {
 
 // Load reads path via sysops.ReadFile, parses YAML via koanf, unmarshals
 // into Settings, and overlays Defaults() for any zero-value fields. A
-// missing file is NOT an error — Load returns Defaults() with nil err so
+// missing file is NOT an error - Load returns Defaults() with nil err so
 // the first-launch UX shows sensible values.
 func Load(ctx context.Context, ops sysops.SystemOps, path string) (Settings, error) {
 	defaults := Defaults()
@@ -103,7 +103,7 @@ func Load(ctx context.Context, ops sysops.SystemOps, path string) (Settings, err
 		return Settings{}, fmt.Errorf("config.Load unmarshal: %w", err)
 	}
 	// koanf's Unmarshal does NOT interpret a `.` in struct tags as a
-	// nested-YAML path during YAML→struct mapping — it treats the dotted
+	// nested-YAML path during YAML→struct mapping - it treats the dotted
 	// string as a literal flat key. The YAML for D-L0204-01 lives under
 	// the `lockdown:` block (so admins can group future lockdown.* keys
 	// together), so we read the nested value explicitly via the
@@ -157,7 +157,7 @@ func Validate(s Settings) []error {
 	}
 	// compact_after_days must be at least 1, AND ≤ detail_retention_days
 	// (when the latter is itself valid; when detail_retention_days is
-	// already invalid, comparing against it is meaningless — but we still
+	// already invalid, comparing against it is meaningless - but we still
 	// flag a non-positive compact value).
 	if s.CompactAfterDays < 1 {
 		errs = append(errs, fmt.Errorf("compact_after_days must be a positive integer (got %d)", s.CompactAfterDays))
@@ -175,7 +175,7 @@ func Validate(s Settings) []error {
 	}
 	// LockdownProposalWindowDays (D-L0204-01): independent koanf knob;
 	// range [1, 3650] (10-year cap mitigates T-04-07-06 "absurd-input"
-	// SQL DoS). Mirrors the detail_retention_days range — admins reading
+	// SQL DoS). Mirrors the detail_retention_days range - admins reading
 	// the rules hint will recognise the shape.
 	if s.LockdownProposalWindowDays < 1 || s.LockdownProposalWindowDays > 3650 {
 		errs = append(errs, fmt.Errorf("lockdown.proposal_window_days must be a positive integer between 1 and 3650 (got %d)", s.LockdownProposalWindowDays))
@@ -185,7 +185,7 @@ func Validate(s Settings) []error {
 
 // overlayDefaults populates zero-value fields in s from d. Used by Load to
 // give the admin a sensible starting point when the config file is missing
-// or incomplete — the alternative (failing on missing keys) breaks
+// or incomplete - the alternative (failing on missing keys) breaks
 // first-launch UX.
 func overlayDefaults(s, d Settings) Settings {
 	if s.DetailRetentionDays == 0 {

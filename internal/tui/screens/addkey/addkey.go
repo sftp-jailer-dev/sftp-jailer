@@ -1,13 +1,13 @@
 // Package addkey renders the M-ADD-KEY modal: a single-textarea entry
 // surface that auto-detects per-line source per D-19 (direct paste / gh:
 // import / file path), fetches gh: keys via internal/keys.FetchGitHub
-// (5s timeout, no auto-retry — surface 429 Retry-After verbatim), and
+// (5s timeout, no auto-retry - surface 429 Retry-After verbatim), and
 // routes ALL keys (regardless of source) through a mandatory review
 // table per D-20 before committing as a single internal/txn batch.
 //
 // Commit batch (D-20 step 5 + D-21 four-step verifier):
 //
-//	1. txn.NewAtomicWriteAuthorizedKeysStep — atomic write + chown + chmod
+//	1. txn.NewAtomicWriteAuthorizedKeysStep - atomic write + chown + chmod
 //	2. txn.NewVerifyAuthKeysStep with verifier closure that runs:
 //	     2a. chrootcheck.CheckAuthKeysFile (D-21 steps 1-2: perms + path-walk)
 //	     2b. re-read authorized_keys via ops.ReadFile, re-parse with keys.Parse (D-21 step 3)
@@ -17,7 +17,7 @@
 // the AtomicWriteAuthorizedKeys compensator to restore prior content.
 //
 // The review table is MANDATORY even for gh:<user> returning a single
-// key — D-20 explicitly forbids an auto-commit-on-fetch path. The gh
+// key - D-20 explicitly forbids an auto-commit-on-fetch path. The gh
 // account-compromise threat motivates the friction (T-03-08b-03).
 //
 // Pre-fetch validation: per 03-04 SUMMARY T-03-04-02 call-site invariant,
@@ -81,7 +81,7 @@ const verifierTimeout = 10 * time.Second
 
 // fetchTimeout duplicates the 5s declared by internal/keys.FetchGitHub
 // so the screen's overall context can be derived from a single budget.
-// Per D-19: NO auto-retry on 429 — the timeout is per-attempt, not a
+// Per D-19: NO auto-retry on 429 - the timeout is per-attempt, not a
 // window over multiple attempts. Adds 1s headroom for goroutine plumbing.
 const fetchTimeout = 6 * time.Second
 
@@ -131,7 +131,7 @@ type Model struct {
 	toast   widgets.Toast
 	keys    KeyMap
 
-	// Review-table state — populated after parse + (optional) async resolve.
+	// Review-table state - populated after parse + (optional) async resolve.
 	review    []ReviewRow
 	reviewSel []bool
 	reviewCur int
@@ -179,12 +179,12 @@ func New(ops sysops.SystemOps, chrootRoot, username string) *Model {
 // ---- nav.Screen interface ---------------------------------------------------
 
 // Title implements nav.Screen.
-func (m *Model) Title() string { return "add ssh key — " + m.username }
+func (m *Model) Title() string { return "add ssh key - " + m.username }
 
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — true while the textarea is the
+// WantsRawKeys implements nav.Screen - true while the textarea is the
 // admin's primary input surface (phaseInput) OR during phaseError where
 // any key returns to the input. False during fetching/review/committing/
 // done so the screen's single-key shortcuts (j/k/space/c/enter) reach
@@ -193,7 +193,7 @@ func (m *Model) WantsRawKeys() bool {
 	return m.phase == phaseInput || m.phase == phaseError
 }
 
-// Init implements nav.Screen — no async load on push (admin types first).
+// Init implements nav.Screen - no async load on push (admin types first).
 func (m *Model) Init() tea.Cmd { return nil }
 
 // Update implements nav.Screen.
@@ -232,7 +232,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 			m.errFatal = false
 			return m, nil
 		case phaseFetching, phaseCommitting:
-			// Swallow — async work will complete and return us to a stable phase.
+			// Swallow - async work will complete and return us to a stable phase.
 			return m, nil
 		}
 	}
@@ -292,7 +292,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 // Pure-string lines feed directly into the review-table builder; gh: and
 // file: markers spawn an async resolution goroutine. ANY ssh.ParseAuthorizedKey
 // error from keys.Parse (or in any subsequently-resolved gh:/file: bytes)
-// rejects the whole batch — admin sees the verbatim error and can retry.
+// rejects the whole batch - admin sees the verbatim error and can retry.
 func (m *Model) attemptParse() tea.Cmd {
 	text := m.ta.Value()
 	parsed, errs := keys.Parse(text)
@@ -307,7 +307,7 @@ func (m *Model) attemptParse() tea.Cmd {
 		return nil
 	}
 	if len(parsed) == 0 {
-		m.errInline = "no keys found — paste at least one key, or gh:user, or path"
+		m.errInline = "no keys found - paste at least one key, or gh:user, or path"
 		m.errFatal = false
 		m.phase = phaseError
 		return nil
@@ -317,7 +317,7 @@ func (m *Model) attemptParse() tea.Cmd {
 		if p.Source == keys.SourceGithubAll || p.Source == keys.SourceGithubByID {
 			if !ghUsernameRegex.MatchString(p.GithubUser) {
 				m.errInline = fmt.Sprintf(
-					"invalid GitHub username %q — must match [A-Za-z0-9-]+",
+					"invalid GitHub username %q - must match [A-Za-z0-9-]+",
 					p.GithubUser)
 				m.errFatal = true
 				m.phase = phaseError
@@ -432,7 +432,7 @@ func (m *Model) resolveAsync(parsed []keys.ParsedKey) tea.Cmd {
 				cleaned := filepath.Clean(path)
 				for _, deny := range forbiddenFilePrefixes {
 					if cleaned == deny || strings.HasPrefix(cleaned+"/", deny+"/") {
-						return fetchedMsg{err: fmt.Errorf("file %s: refused — sensitive system path", p.FilePath)}
+						return fetchedMsg{err: fmt.Errorf("file %s: refused - sensitive system path", p.FilePath)}
 					}
 				}
 				if ops == nil {
@@ -514,9 +514,9 @@ func (m *Model) attemptCommit() tea.Cmd {
 		}
 	}
 	if len(selectedRows) == 0 {
-		m.errInline = "no keys selected — at least one row must be checked"
+		m.errInline = "no keys selected - at least one row must be checked"
 		m.errFatal = false
-		// Stay in review (don't transition to error — admin just needs to toggle).
+		// Stay in review (don't transition to error - admin just needs to toggle).
 		return nil
 	}
 	if m.ops == nil {
@@ -590,7 +590,7 @@ func buildVerifier() func(ctx context.Context, ops sysops.SystemOps, username, c
 				Reason: fmt.Sprintf("post-write re-parse failed: %s", parseErrs[0].Error()),
 			}}, nil
 		}
-		// Step 4: sshd -t -C user=<u>,host=localhost,addr=127.0.0.1 — confirms
+		// Step 4: sshd -t -C user=<u>,host=localhost,addr=127.0.0.1 - confirms
 		// the chrooted Match block actually resolves under the just-written file.
 		stderr, err := ops.SshdTWithContext(ctx, sysops.SshdTContextOpts{
 			User: username, Host: "localhost", Addr: "127.0.0.1",
@@ -654,7 +654,7 @@ func countSelected(sel []bool) int {
 //   - phaseError: Critical/Warn errInline + "Esc back · any key retry".
 func (m *Model) View() string {
 	var b strings.Builder
-	b.WriteString(styles.Primary.Render("M-ADD-KEY — " + m.username))
+	b.WriteString(styles.Primary.Render("M-ADD-KEY - " + m.username))
 	b.WriteString("\n\n")
 
 	switch m.phase {
@@ -734,7 +734,7 @@ func (m *Model) renderReviewTable() string {
 		}
 		comment := r.Comment
 		if comment == "" {
-			comment = "—"
+			comment = "-"
 		}
 		row := fmt.Sprintf("%s%-3s  %-18s  %-50s  %-20s  %5d  %s",
 			marker, check,
@@ -773,13 +773,13 @@ func wrapModal(content string) string {
 
 // ---- KeyMap ----------------------------------------------------------------
 
-// KeyMap describes the modal's bindings — implements nav.KeyMap.
+// KeyMap describes the modal's bindings - implements nav.KeyMap.
 type KeyMap struct {
 	Submit nav.KeyBinding // Enter (in phaseInput / phaseReview)
 	Toggle nav.KeyBinding // space (in phaseReview)
 	CopyFP nav.KeyBinding // c (in phaseReview)
 	Cursor nav.KeyBinding // j/k/up/down (in phaseReview)
-	Cancel nav.KeyBinding // esc — back to input or pop
+	Cancel nav.KeyBinding // esc - back to input or pop
 }
 
 // DefaultKeyMap returns the canonical M-ADD-KEY bindings.

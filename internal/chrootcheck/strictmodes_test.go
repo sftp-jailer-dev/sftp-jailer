@@ -1,4 +1,4 @@
-// Package chrootcheck_test (strictmodes) exercises CheckAuthKeysFile —
+// Package chrootcheck_test (strictmodes) exercises CheckAuthKeysFile -
 // D-21 steps 1 (file/dir mode + owner) and 2 (path-walk down to
 // authorized_keys). Steps 3 (re-parse) and 4 (sshd -T -C) are the
 // M-ADD-KEY caller's concern (plan 03-08) and are NOT in this package.
@@ -130,7 +130,7 @@ func TestCheckAuthKeysFile(t *testing.T) {
 			setupStats: func() map[string]sysops.FileInfo {
 				s := cleanUserChain(user, uid, gid)
 				addSSH(s, user, uid, gid)
-				// Break /srv with group-write — path-walk should flag /srv
+				// Break /srv with group-write - path-walk should flag /srv
 				s["/srv"] = fileInfo("/srv", 0o775, 0, 0, false)
 				return s
 			},

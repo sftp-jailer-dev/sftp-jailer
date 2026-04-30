@@ -1,5 +1,5 @@
 # Requires goreleaser >= v2.15.4
-# goreleaser v2 configuration — Phase 1 stub.
+# goreleaser v2 configuration - Phase 1 stub.
 # Full .deb + nfpm + release config lands in Phase 5.
 # Local dev: `goreleaser build --snapshot --clean` uses this to produce a
 # CGO-free binary matching the Makefile's output.
@@ -32,11 +32,11 @@ before:
   hooks:
     - go mod download
     - go run ./cmd/gen-manpage
-    # Pre-compress man page — lintian requires gzip'd man pages in .deb packages
+    # Pre-compress man page - lintian requires gzip'd man pages in .deb packages
     # (lintian tag: uncompressed-manual-page). The .gz output is committed to
     # packaging/debian/ and referenced by the nfpm contents list below.
     - bash -c "gzip -9 -k -f docs/man/sftp-jailer.1 -c > packaging/debian/sftp-jailer.1.gz"
-    # Pre-compress Debian changelog — lintian requires changelog.Debian.gz
+    # Pre-compress Debian changelog - lintian requires changelog.Debian.gz
     # (lintian tag: no-changelog). Source changelog is packaging/debian/changelog.
     - bash -c "gzip -9 -k -f packaging/debian/changelog -c > packaging/debian/changelog.Debian.gz"
 
@@ -65,8 +65,8 @@ nfpms:
     priority: optional
     formats: [deb]
     # Per CONTEXT.md D-MP-02:
-    #   Depends — runtime requirements not in 'essential' set.
-    #   Recommends — passwd (chpasswd/gpasswd) is essential, so Recommends
+    #   Depends - runtime requirements not in 'essential' set.
+    #   Recommends - passwd (chpasswd/gpasswd) is essential, so Recommends
     #     not Depends to avoid lintian package-depends-on-essential-package.
     #   adduser is intentionally NOT listed (also essential).
     dependencies:
@@ -87,7 +87,7 @@ nfpms:
         type: file
         file_info:
           mode: 0644
-      # Man page — pre-compressed by the before hook. lintian requires
+      # Man page - pre-compressed by the before hook. lintian requires
       # man pages to be gzip'd (tag: uncompressed-manual-page).
       - src: packaging/debian/sftp-jailer.1.gz
         dst: /usr/share/man/man1/sftp-jailer.1.gz
@@ -101,7 +101,7 @@ nfpms:
         type: file
         file_info:
           mode: 0644
-      # Debian changelog — pre-compressed by the before hook. lintian requires
+      # Debian changelog - pre-compressed by the before hook. lintian requires
       # changelog.Debian.gz for non-native packages (tag: no-changelog).
       - src: packaging/debian/changelog.Debian.gz
         dst: /usr/share/doc/sftp-jailer/changelog.Debian.gz
@@ -115,7 +115,7 @@ nfpms:
         type: file
         file_info:
           mode: 0644
-      # State directory (D-LC-01 — owned by tool; postrm wipes on purge).
+      # State directory (D-LC-01 - owned by tool; postrm wipes on purge).
       - dst: /var/lib/sftp-jailer
         type: dir
         file_info:
@@ -127,7 +127,7 @@ nfpms:
       postremove: packaging/debian/postrm
     deb:
       compression: zstd
-      # No conffiles declared — sshd drop-in is NOT a dpkg conffile per
+      # No conffiles declared - sshd drop-in is NOT a dpkg conffile per
       # CONTEXT.md D-LC-02; runtime canonical writer owns it.
 
 release:

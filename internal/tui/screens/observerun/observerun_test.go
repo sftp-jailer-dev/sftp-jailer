@@ -1,7 +1,7 @@
-// Package observerunscreen tests for M-OBSERVE — wave-7 / plan 02-08.
+// Package observerunscreen tests for M-OBSERVE - wave-7 / plan 02-08.
 //
 // The goroutine + Program.Send pattern (RESEARCH Pattern 4) is intentionally
-// not exercised here — it requires a real *tea.Program. We test Update msg
+// not exercised here - it requires a real *tea.Program. We test Update msg
 // handlers directly (the bulk of the logic) and rely on the integration test
 // in HUMAN-UAT for the full goroutine path.
 package observerunscreen_test
@@ -32,7 +32,7 @@ func keyPress(s string) tea.KeyPressMsg {
 	return tea.KeyPressMsg(tea.Key{Code: r, Text: s})
 }
 
-// TestObserveRunScreen_implements_nav_Screen — compile-time check that *Model
+// TestObserveRunScreen_implements_nav_Screen - compile-time check that *Model
 // satisfies nav.Screen plus runtime checks on Title / KeyMap / WantsRawKeys.
 func TestObserveRunScreen_implements_nav_Screen(t *testing.T) {
 	var s nav.Screen = observerunscreen.New(nil, &sysops.Fake{}, sysops.ObserveRunSubprocessOpts{})
@@ -43,14 +43,14 @@ func TestObserveRunScreen_implements_nav_Screen(t *testing.T) {
 	require.NotEmpty(t, km.ShortHelp(), "ShortHelp must surface esc")
 }
 
-// TestObserveRunScreen_initial_phase_is_starting — before any progress
+// TestObserveRunScreen_initial_phase_is_starting - before any progress
 // message arrives, View shows the "starting…" placeholder.
 func TestObserveRunScreen_initial_phase_is_starting(t *testing.T) {
 	m := observerunscreen.New(nil, &sysops.Fake{}, sysops.ObserveRunSubprocessOpts{})
 	require.Contains(t, m.View(), "starting observe-run")
 }
 
-// TestObserveRunScreen_progress_phase_read — feeding a Progress{Phase:read}
+// TestObserveRunScreen_progress_phase_read - feeding a Progress{Phase:read}
 // via the test seam updates the read counter line.
 func TestObserveRunScreen_progress_phase_read(t *testing.T) {
 	m := observerunscreen.New(nil, &sysops.Fake{}, sysops.ObserveRunSubprocessOpts{})
@@ -60,7 +60,7 @@ func TestObserveRunScreen_progress_phase_read(t *testing.T) {
 	require.Contains(t, v, "42")
 }
 
-// TestObserveRunScreen_progress_phase_classify — Phase=classify Count=42
+// TestObserveRunScreen_progress_phase_classify - Phase=classify Count=42
 // renders the classify counter line.
 func TestObserveRunScreen_progress_phase_classify(t *testing.T) {
 	m := observerunscreen.New(nil, &sysops.Fake{}, sysops.ObserveRunSubprocessOpts{})
@@ -70,7 +70,7 @@ func TestObserveRunScreen_progress_phase_classify(t *testing.T) {
 	require.Contains(t, v, "42")
 }
 
-// TestObserveRunScreen_progress_phase_compact — every counter visible.
+// TestObserveRunScreen_progress_phase_compact - every counter visible.
 func TestObserveRunScreen_progress_phase_compact(t *testing.T) {
 	m := observerunscreen.New(nil, &sysops.Fake{}, sysops.ObserveRunSubprocessOpts{})
 	m.ApplyProgressForTest(observe.Progress{
@@ -84,8 +84,8 @@ func TestObserveRunScreen_progress_phase_compact(t *testing.T) {
 	require.Contains(t, v, "0")
 }
 
-// TestObserveRunScreen_skipped_phase_renders_message — skipped phase surfaces
-// the Reason text (UI-SPEC line 305 — "another run in progress").
+// TestObserveRunScreen_skipped_phase_renders_message - skipped phase surfaces
+// the Reason text (UI-SPEC line 305 - "another run in progress").
 func TestObserveRunScreen_skipped_phase_renders_message(t *testing.T) {
 	m := observerunscreen.New(nil, &sysops.Fake{}, sysops.ObserveRunSubprocessOpts{})
 	m.ApplyProgressForTest(observe.Progress{
@@ -94,7 +94,7 @@ func TestObserveRunScreen_skipped_phase_renders_message(t *testing.T) {
 	require.Contains(t, m.View(), "another run in progress")
 }
 
-// TestObserveRunScreen_done_emits_pop_status_refresh_and_complete_toast —
+// TestObserveRunScreen_done_emits_pop_status_refresh_and_complete_toast -
 // after the auto-pop tick fires, the returned tea.Cmd batch contains
 // nav.PopCmd, nav.StatusRefreshMsg, and nav.ObserveRunCompleteToast.
 func TestObserveRunScreen_done_emits_pop_status_refresh_and_complete_toast(t *testing.T) {
@@ -137,7 +137,7 @@ func TestObserveRunScreen_done_emits_pop_status_refresh_and_complete_toast(t *te
 	require.True(t, sawComplete, "auto-pop batch must include nav.ObserveRunCompleteToast")
 }
 
-// TestObserveRunScreen_esc_sets_cancelling_and_calls_cancelFn — pre-set
+// TestObserveRunScreen_esc_sets_cancelling_and_calls_cancelFn - pre-set
 // m.cancelFn via the test seam → keyPress("esc") → m.IsCancellingForTest()
 // is true; the recorded mock was called.
 func TestObserveRunScreen_esc_sets_cancelling_and_calls_cancelFn(t *testing.T) {
@@ -175,7 +175,7 @@ func TestObserveRunScreen_esc_sets_cancelling_and_calls_cancelFn(t *testing.T) {
 	require.Contains(t, m.View(), "cancelling")
 }
 
-// TestObserveRunScreen_other_keys_swallowed — UI-SPEC line 262: every key
+// TestObserveRunScreen_other_keys_swallowed - UI-SPEC line 262: every key
 // except esc is swallowed (returns nil cmd; no model-state side-effect).
 func TestObserveRunScreen_other_keys_swallowed(t *testing.T) {
 	m := observerunscreen.New(nil, &sysops.Fake{}, sysops.ObserveRunSubprocessOpts{})
@@ -187,7 +187,7 @@ func TestObserveRunScreen_other_keys_swallowed(t *testing.T) {
 	}
 }
 
-// TestObserveRunScreen_keymap_only_esc — ShortHelp surfaces a single binding
+// TestObserveRunScreen_keymap_only_esc - ShortHelp surfaces a single binding
 // for esc/cancel.
 func TestObserveRunScreen_keymap_only_esc(t *testing.T) {
 	km := observerunscreen.DefaultKeyMap()
@@ -196,7 +196,7 @@ func TestObserveRunScreen_keymap_only_esc(t *testing.T) {
 	require.Equal(t, []string{"esc"}, short[0].Keys)
 }
 
-// TestObserveRunScreen_view_renders_phase_after_progress — once compact phase
+// TestObserveRunScreen_view_renders_phase_after_progress - once compact phase
 // arrives, View shows phase: compact alongside the counters.
 func TestObserveRunScreen_view_renders_phase_after_progress(t *testing.T) {
 	m := observerunscreen.New(nil, &sysops.Fake{}, sysops.ObserveRunSubprocessOpts{})

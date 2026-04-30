@@ -11,8 +11,8 @@
 # internal/ takes a shortcut around the seam.
 #
 # Exit codes:
-#   0 — clean
-#   1 — at least one violation found
+#   0 - clean
+#   1 - at least one violation found
 #
 # Excludes:
 #   - internal/sysops/  (the canonical seam; AtomicWriteFile lives here)
@@ -33,7 +33,7 @@ violations=$(echo "$violations" | grep -v '_test\.go:' || true)
 # tag. This is the escape hatch for non-config writes (e.g. internal/tui's
 # /tmp/ recovery script per pitfall E2) that have nothing to do with
 # /etc/sftp-jailer/config.yaml. New uses must include the tag inline AND a
-# rationale comment explaining the carve-out — reviewer scrutiny is
+# rationale comment explaining the carve-out - reviewer scrutiny is
 # expected at the PR layer.
 violations=$(echo "$violations" | grep -v 'sftpj-allow-raw-write' || true)
 

@@ -10,7 +10,7 @@ import (
 
 // Toast is a short ephemeral confirmation shown at the bottom of the frame
 // (e.g. "copied to clipboard"). It self-expires after a fixed TTL. The
-// value-return pattern (C6 fix) makes state transitions explicit — calls
+// value-return pattern (C6 fix) makes state transitions explicit - calls
 // look like:
 //
 //	a.toast, cmd = a.toast.Flash("copied")

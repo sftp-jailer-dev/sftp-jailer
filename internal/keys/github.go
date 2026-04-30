@@ -33,12 +33,12 @@ const fetchTimeout = 5 * time.Second
 
 // FetchGitHub retrieves all public SSH keys for a GitHub username via
 // https://github.com/<user>.keys (plain text, newline-separated). Per
-// D-19, the tool does NOT auto-retry on 429 — the Retry-After header
+// D-19, the tool does NOT auto-retry on 429 - the Retry-After header
 // surfaces verbatim to the admin so they can decide. 5s context timeout
 // covers slow networks (RESEARCH A4).
 //
 // Each returned []byte is a fresh defensive copy from the bufio.Scanner
-// buffer — safe for the caller to retain across subsequent calls.
+// buffer - safe for the caller to retain across subsequent calls.
 //
 // Call-site invariant (T-03-04-02): the caller MUST validate `user`
 // against GitHub's allowed username charset ([A-Za-z0-9-]+) before
@@ -83,7 +83,7 @@ func FetchGitHub(ctx context.Context, user string) ([][]byte, error) {
 		if len(line) == 0 {
 			continue
 		}
-		// Defensive copy — Scanner reuses the underlying buffer.
+		// Defensive copy - Scanner reuses the underlying buffer.
 		cp := make([]byte, len(line))
 		copy(cp, line)
 		lines = append(lines, cp)
@@ -107,7 +107,7 @@ type ghAPIKey struct {
 // 5s timeout, same no-auto-retry posture as FetchGitHub. Used by D-19
 // gh:<user>/<id> source.
 //
-// Call-site invariant (T-03-04-07): same as FetchGitHub — the caller
+// Call-site invariant (T-03-04-07): same as FetchGitHub - the caller
 // MUST validate `user` against [A-Za-z0-9-]+ before invoking.
 func FetchGitHubByID(ctx context.Context, user string, id int) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)

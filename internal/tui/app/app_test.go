@@ -242,7 +242,7 @@ func TestApp_View_includes_modebar_above_screen_body(t *testing.T) {
 	rendered := v.Content
 	require.Contains(t, rendered, "MODE: OPEN")
 	require.Contains(t, rendered, "test:BODY")
-	// Modebar must render BEFORE the screen body in the composed output —
+	// Modebar must render BEFORE the screen body in the composed output -
 	// otherwise the global strip is no longer always-visible above the
 	// active screen (D-L0809-03 + D-S04-03).
 	require.Less(t,
@@ -263,7 +263,7 @@ func TestApp_Init_returns_modebar_tick_cmd(t *testing.T) {
 	tuitest.ResetResolvers(t)
 	a := app.New("v0", "http://example.com")
 	cmd := a.Init()
-	// Init must return a non-nil cmd carrying the TickCmd batch — without
+	// Init must return a non-nil cmd carrying the TickCmd batch - without
 	// it the countdown text never updates.
 	require.NotNil(t, cmd, "Init must return a non-nil cmd containing TickCmd")
 }
@@ -272,7 +272,7 @@ func TestApp_Update_routes_ModeBarTickMsg_and_re_arms(t *testing.T) {
 	tuitest.ResetResolvers(t)
 	a := app.New("v0", "http://example.com", &testScreen{name: "s"})
 	_, cmd := a.Update(widgets.ModeBarTickMsg{})
-	// Update must re-arm the next tick — without it the cycle dies after
+	// Update must re-arm the next tick - without it the cycle dies after
 	// the first tick and the countdown stops updating.
 	require.NotNil(t, cmd, "Update on ModeBarTickMsg must return a re-armed TickCmd")
 }
@@ -291,7 +291,7 @@ func TestApp_SetMode_passthrough_updates_modebar_render(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
-// WriteRecoveryScript tests live in this package for proximity — they
+// WriteRecoveryScript tests live in this package for proximity - they
 // exercise the tui package whose terminal.go is the companion to app.
 // -----------------------------------------------------------------------------
 
@@ -313,7 +313,7 @@ func TestWriteRecoveryScript_creates_executable_script(t *testing.T) {
 	require.Contains(t, string(b), "stty sane")
 	// The script stores escape sequences as shell-escaped literals (`\033`
 	// as four characters followed by `[?1049l`) rather than as the raw
-	// 0x1b byte — `printf` interprets them at script-run time. The plan's
+	// 0x1b byte - `printf` interprets them at script-run time. The plan's
 	// original assertion used the raw byte form; we assert the literal
 	// form since that's what's actually on disk.
 	require.Contains(t, string(b), `\033[?1049l`)

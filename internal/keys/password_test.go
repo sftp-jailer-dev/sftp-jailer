@@ -1,7 +1,7 @@
 // Package keys_test exercises the M-PASSWORD (D-13 / USER-06) auto-
 // generated strong-password helper. The generator must defeat
 // pwquality.conf hardening (minclass=4) which Ubuntu 24.04 admins
-// commonly apply — every output MUST contain at least one of upper, lower,
+// commonly apply - every output MUST contain at least one of upper, lower,
 // digit, symbol (pitfall 7).
 package keys_test
 
@@ -57,7 +57,7 @@ func TestGenerate_uses_only_chars_from_charset(t *testing.T) {
 }
 
 // TestGenerate_includes_all_four_classes verifies the minclass=4 hardening
-// gate (pitfall 7) — every output MUST contain at least one upper, one
+// gate (pitfall 7) - every output MUST contain at least one upper, one
 // lower, one digit, one symbol. The internal hasAllClasses helper is the
 // implementation contract; this test verifies it actually ships.
 func TestGenerate_includes_all_four_classes(t *testing.T) {
@@ -94,7 +94,7 @@ func TestGenerate_distinct_outputs(t *testing.T) {
 	require.Equal(t, 100, len(seen))
 }
 
-// TestGenerate_no_whitespace_in_output is a defensive check — the charset
+// TestGenerate_no_whitespace_in_output is a defensive check - the charset
 // has no whitespace; if it ever did, shells/copy-paste would corrupt the
 // password silently.
 func TestGenerate_no_whitespace_in_output(t *testing.T) {

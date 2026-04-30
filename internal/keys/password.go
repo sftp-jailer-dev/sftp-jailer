@@ -16,12 +16,12 @@ const passwordCharset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 // Generate returns a length-character password drawn uniformly at random
 // from passwordCharset using crypto/rand. Uses big.NewInt + rand.Int to
 // avoid modulo bias on the 73-character set. Re-rolls until the output
-// contains at least one of upper, lower, digit, symbol — defeats common
-// pwquality.conf hardening (minclass=4 — pitfall 7) which otherwise
+// contains at least one of upper, lower, digit, symbol - defeats common
+// pwquality.conf hardening (minclass=4 - pitfall 7) which otherwise
 // silently increases the chpasswd rejection rate on Ubuntu 24.04 boxes
 // with hardening profiles applied.
 //
-// Bounded retries (cap=100) — vanishingly small probability of hitting
+// Bounded retries (cap=100) - vanishingly small probability of hitting
 // the cap at length=24 (each draw has ~98% chance of containing all
 // four classes), but the explicit cap prevents a pathological infinite
 // loop on a broken crypto/rand (which cannot happen, but defense in
@@ -48,7 +48,7 @@ func Generate(length int) (string, error) {
 			return string(buf), nil
 		}
 	}
-	return "", fmt.Errorf("keys.Generate: 100 attempts failed to produce all four classes — broken RNG?")
+	return "", fmt.Errorf("keys.Generate: 100 attempts failed to produce all four classes - broken RNG?")
 }
 
 // hasAllClasses returns true iff b contains at least one upper-case

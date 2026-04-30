@@ -27,12 +27,12 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/store"
 )
 
-// Proposal is the per-user lockdown proposal — the IPs the editor seeds
+// Proposal is the per-user lockdown proposal - the IPs the editor seeds
 // the right pane with (D-L0204-04). ZeroConn is true when IPs is empty
 // after Generate; the S-LOCKDOWN screen surfaces this with the
 // "no observations in the last N days" warning row (D-L0204-03).
 //
-// Note that Generate itself does NOT emit ZeroConn proposals — it only
+// Note that Generate itself does NOT emit ZeroConn proposals - it only
 // returns users with ≥1 observation in the window. The S-LOCKDOWN
 // caller (Plan 04-08) augments by enumerating sftp-jailer-managed users
 // via internal/users.Enumerate and synthesising empty-IPs Proposal
@@ -49,9 +49,9 @@ type Proposal struct {
 // proposal window.
 //
 // Tier values:
-//   - "success" — observation tier=success (always included by default)
-//   - "targeted" — observation tier=targeted (only when includeTargeted=true)
-//   - "manual" — never produced by Generate; reserved for the editor's
+//   - "success" - observation tier=success (always included by default)
+//   - "targeted" - observation tier=targeted (only when includeTargeted=true)
+//   - "manual" - never produced by Generate; reserved for the editor's
 //     "I added this IP by hand" flow (Plan 04-08).
 type ProposedIP struct {
 	Source     string // CIDR or single IP from observations.source_ip
@@ -77,7 +77,7 @@ func NewGenerator(q *store.Queries) *Generator {
 
 // SetNowFnForTest overrides the time source for deterministic
 // window-cutoff arithmetic in tests. Production callers must NEVER use
-// this — the production seam is `time.Now`.
+// this - the production seam is `time.Now`.
 func (g *Generator) SetNowFnForTest(fn func() time.Time) {
 	if fn == nil {
 		g.nowFn = time.Now

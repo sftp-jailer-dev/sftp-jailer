@@ -1,4 +1,4 @@
-// Package settingsscreen tests for S-SETTINGS — wave-6 / plan 02-07.
+// Package settingsscreen tests for S-SETTINGS - wave-6 / plan 02-07.
 //
 // Mirrors the S-USERS / S-FIREWALL / S-LOGS test shape (key helper +
 // nav.Screen compile-time check + LoadXForTest seam) per UI-SPEC §S-SETTINGS.
@@ -41,7 +41,7 @@ func keyPress(s string) tea.KeyPressMsg {
 }
 
 // drainCmd recursively unwraps a tea.Cmd by calling it and returning the
-// resulting message — a tiny helper so we can inspect what handlers emit
+// resulting message - a tiny helper so we can inspect what handlers emit
 // without writing an entire tea.Program harness.
 func drainCmd(cmd tea.Cmd) tea.Msg {
 	if cmd == nil {
@@ -50,12 +50,12 @@ func drainCmd(cmd tea.Cmd) tea.Msg {
 	return cmd()
 }
 
-// configPath is the path used in every test — keeps assertions terse.
+// configPath is the path used in every test - keeps assertions terse.
 const configPath = "/etc/sftp-jailer/config.yaml"
 
 // --- nav.Screen contract ----------------------------------------------------
 
-// TestSettingsScreen_implements_nav_Screen — compile-time check that *Model
+// TestSettingsScreen_implements_nav_Screen - compile-time check that *Model
 // satisfies nav.Screen plus runtime checks on Title / KeyMap / WantsRawKeys.
 func TestSettingsScreen_implements_nav_Screen(t *testing.T) {
 	ops := sysops.NewFake()
@@ -68,7 +68,7 @@ func TestSettingsScreen_implements_nav_Screen(t *testing.T) {
 	require.NotEmpty(t, km.FullHelp())
 }
 
-// TestSettingsScreen_loading_state — initial View shows the loading copy.
+// TestSettingsScreen_loading_state - initial View shows the loading copy.
 func TestSettingsScreen_loading_state(t *testing.T) {
 	ops := sysops.NewFake()
 	m := settingsscreen.New(ops, configPath, nil, "")
@@ -77,7 +77,7 @@ func TestSettingsScreen_loading_state(t *testing.T) {
 
 // --- LoadSettingsForTest seam + render --------------------------------------
 
-// TestSettingsScreen_LoadSettingsForTest_renders_all_field_rows — feeding
+// TestSettingsScreen_LoadSettingsForTest_renders_all_field_rows - feeding
 // settings via the test seam bypasses Init; View must render every field
 // name (the three editable retention rows from Phase 2 plus the Phase 3
 // USER-13 password_authentication dispatch row) AND the corresponding
@@ -105,7 +105,7 @@ func TestSettingsScreen_LoadSettingsForTest_renders_all_field_rows(t *testing.T)
 	}
 }
 
-// TestSettingsScreen_renders_config_path — the footer breadcrumb shows the
+// TestSettingsScreen_renders_config_path - the footer breadcrumb shows the
 // config file path so admins know where the rewritten file lives.
 func TestSettingsScreen_renders_config_path(t *testing.T) {
 	ops := sysops.NewFake()
@@ -116,7 +116,7 @@ func TestSettingsScreen_renders_config_path(t *testing.T) {
 
 // --- Edit mode entry --------------------------------------------------------
 
-// TestSettingsScreen_e_enters_edit_mode — pressing `e` flips m.editing AND
+// TestSettingsScreen_e_enters_edit_mode - pressing `e` flips m.editing AND
 // flips WantsRawKeys() to true (so the root App forwards digits into the
 // textinput rather than acting on global `q`).
 func TestSettingsScreen_e_enters_edit_mode(t *testing.T) {
@@ -129,7 +129,7 @@ func TestSettingsScreen_e_enters_edit_mode(t *testing.T) {
 	require.True(t, m.WantsRawKeys(), "WantsRawKeys must be true after entering edit mode")
 }
 
-// TestSettingsScreen_enter_on_field_enters_edit_mode — Enter is a synonym
+// TestSettingsScreen_enter_on_field_enters_edit_mode - Enter is a synonym
 // for `e` when not editing (per UI-SPEC §S-SETTINGS line 470).
 func TestSettingsScreen_enter_on_field_enters_edit_mode(t *testing.T) {
 	ops := sysops.NewFake()
@@ -140,7 +140,7 @@ func TestSettingsScreen_enter_on_field_enters_edit_mode(t *testing.T) {
 	require.True(t, m.WantsRawKeys(), "Enter on a non-edit-mode row must enter edit mode")
 }
 
-// TestSettingsScreen_WantsRawKeys_false_when_not_editing — default state
+// TestSettingsScreen_WantsRawKeys_false_when_not_editing - default state
 // returns false so global `q` quits cleanly.
 func TestSettingsScreen_WantsRawKeys_false_when_not_editing(t *testing.T) {
 	ops := sysops.NewFake()
@@ -151,7 +151,7 @@ func TestSettingsScreen_WantsRawKeys_false_when_not_editing(t *testing.T) {
 
 // --- Edit mode cancel -------------------------------------------------------
 
-// TestSettingsScreen_esc_in_edit_cancels — Esc in edit mode reverts the
+// TestSettingsScreen_esc_in_edit_cancels - Esc in edit mode reverts the
 // textinput value (does NOT save) and exits edit mode. The original setting
 // remains unchanged in m.settings.
 func TestSettingsScreen_esc_in_edit_cancels(t *testing.T) {
@@ -164,7 +164,7 @@ func TestSettingsScreen_esc_in_edit_cancels(t *testing.T) {
 	_, _ = m.Update(keyPress("e"))
 	require.True(t, m.WantsRawKeys())
 
-	// Type some digits — they go into the textinput.
+	// Type some digits - they go into the textinput.
 	for _, r := range "999" {
 		_, _ = m.Update(keyPress(string(r)))
 	}
@@ -173,7 +173,7 @@ func TestSettingsScreen_esc_in_edit_cancels(t *testing.T) {
 	_, _ = m.Update(keyPress("esc"))
 	require.False(t, m.WantsRawKeys(), "Esc must exit edit mode")
 
-	// View must still show the original 90 — NOT 999.
+	// View must still show the original 90 - NOT 999.
 	out := m.View()
 	require.Contains(t, out, "90")
 	// AtomicWriteFile must NEVER have been called on a cancel.
@@ -184,7 +184,7 @@ func TestSettingsScreen_esc_in_edit_cancels(t *testing.T) {
 
 // --- Edit mode validation failure -------------------------------------------
 
-// TestSettingsScreen_save_validates_first_and_keeps_edit_on_failure — a
+// TestSettingsScreen_save_validates_first_and_keeps_edit_on_failure - a
 // below-floor value (50 MB on db_max_size_mb) keeps the screen in edit mode
 // AND surfaces an inline error AND does NOT write.
 func TestSettingsScreen_save_validates_first_and_keeps_edit_on_failure(t *testing.T) {
@@ -202,7 +202,7 @@ func TestSettingsScreen_save_validates_first_and_keeps_edit_on_failure(t *testin
 	for _, r := range "50" {
 		_, _ = m.Update(keyPress(string(r)))
 	}
-	// Press Enter — attempt save.
+	// Press Enter - attempt save.
 	_, _ = m.Update(keyPress("enter"))
 
 	require.True(t, m.WantsRawKeys(), "validation failure must keep the model in edit mode")
@@ -216,13 +216,13 @@ func TestSettingsScreen_save_validates_first_and_keeps_edit_on_failure(t *testin
 
 // --- Edit mode save success -------------------------------------------------
 
-// TestSettingsScreen_save_succeeds_writes_atomically — a valid edit on
+// TestSettingsScreen_save_succeeds_writes_atomically - a valid edit on
 // detail_retention_days writes via AtomicWriteFile (the ONLY mutation seam
 // per OBS-05 / D-07) and exits edit mode.
 //
 // Note: we type "100" not "60" because the cross-field rule
 // `compact_after_days ≤ detail_retention_days` (config.Validate line 129)
-// would otherwise fail — compact is still 90 from the seed, and 60 < 90.
+// would otherwise fail - compact is still 90 from the seed, and 60 < 90.
 // The plan's draft test value of "60" assumed compact would be re-baselined
 // implicitly; we honour the validation contract by raising detail past
 // compact instead. The behavioural assertion (write exactly once + toast
@@ -245,7 +245,7 @@ func TestSettingsScreen_save_succeeds_writes_atomically(t *testing.T) {
 	}
 	// Save.
 	_, cmd := m.Update(keyPress("enter"))
-	// Drain the cmd — the production handler emits a tea.Msg from the save
+	// Drain the cmd - the production handler emits a tea.Msg from the save
 	// goroutine; we feed it back into the model so the post-save state
 	// transitions (toast flash, exit edit mode) execute.
 	if msg := drainCmd(cmd); msg != nil {
@@ -272,7 +272,7 @@ func TestSettingsScreen_save_succeeds_writes_atomically(t *testing.T) {
 
 // --- KeyMap shape -----------------------------------------------------------
 
-// TestSettingsScreen_keymap_bindings_default — the ShortHelp surface must
+// TestSettingsScreen_keymap_bindings_default - the ShortHelp surface must
 // expose movement, edit, and back bindings.
 func TestSettingsScreen_keymap_bindings_default(t *testing.T) {
 	ops := sysops.NewFake()
@@ -283,7 +283,7 @@ func TestSettingsScreen_keymap_bindings_default(t *testing.T) {
 
 	require.True(t, containsHelpFor(flat, "edit"), "ShortHelp must include 'edit' binding")
 	require.True(t, containsHelpFor(flat, "back"), "ShortHelp must include 'back' binding")
-	// Movement binding — accept any of "↑↓", "j", "k" so the helper labels
+	// Movement binding - accept any of "↑↓", "j", "k" so the helper labels
 	// are not over-pinned at the test layer.
 	require.True(t,
 		containsHelpFor(flat, "move") || containsHelpFor(flat, "↑↓") || containsHelpFor(flat, "j"),
@@ -292,14 +292,14 @@ func TestSettingsScreen_keymap_bindings_default(t *testing.T) {
 
 // --- Cursor movement --------------------------------------------------------
 
-// TestSettingsScreen_j_k_move_cursor — j moves cursor down (within bounds);
+// TestSettingsScreen_j_k_move_cursor - j moves cursor down (within bounds);
 // k moves up.
 func TestSettingsScreen_j_k_move_cursor(t *testing.T) {
 	ops := sysops.NewFake()
 	m := settingsscreen.New(ops, configPath, nil, "")
 	m.LoadSettingsForTest(config.Defaults())
 
-	// Default cursor on field 0 — `> detail_retention_days`.
+	// Default cursor on field 0 - `> detail_retention_days`.
 	out := m.View()
 	require.Contains(t, out, "> detail_retention_days", "cursor must start on the first field")
 
@@ -316,7 +316,7 @@ func TestSettingsScreen_j_k_move_cursor(t *testing.T) {
 
 // --- Esc outside edit mode pops ---------------------------------------------
 
-// TestSettingsScreen_esc_outside_edit_pops — Esc when not editing returns
+// TestSettingsScreen_esc_outside_edit_pops - Esc when not editing returns
 // the nav.PopCmd intent (so the parent App pops this screen off the stack).
 func TestSettingsScreen_esc_outside_edit_pops(t *testing.T) {
 	ops := sysops.NewFake()
@@ -333,7 +333,7 @@ func TestSettingsScreen_esc_outside_edit_pops(t *testing.T) {
 
 // --- Init triggers config.Load ----------------------------------------------
 
-// TestSettingsScreen_init_loads_via_config_Load — Init returns a tea.Cmd
+// TestSettingsScreen_init_loads_via_config_Load - Init returns a tea.Cmd
 // that reads from sysops.ReadFile (config.Load's read seam). This pins the
 // behaviour: the screen never bypasses the seam.
 func TestSettingsScreen_init_loads_via_config_Load(t *testing.T) {
@@ -369,7 +369,7 @@ func TestSettingsScreen_init_loads_via_config_Load(t *testing.T) {
 
 // --- Phase 3 USER-13: fieldPasswordAuthN dispatch row ---------------------
 
-// TestSettings_pwAuth_loaded_msg_populates_current — Init's pwAuthLoadedMsg
+// TestSettings_pwAuth_loaded_msg_populates_current - Init's pwAuthLoadedMsg
 // updates m.pwAuthCurrent. Drives the message synthetically because the
 // real Init goroutine path is exercised by the integration test pin
 // (TestSettings_init_loads_pw_auth_via_sshd_dump).
@@ -382,7 +382,7 @@ func TestSettings_pwAuth_loaded_msg_populates_current(t *testing.T) {
 		"pre-load default must be 'unknown' (until pwAuthLoadedMsg arrives)")
 
 	// Synthesize the message via SetPwAuthCurrentForTest (the message itself
-	// is unexported — the seam lets us pin the post-message state without
+	// is unexported - the seam lets us pin the post-message state without
 	// reaching into the model's internals).
 	m.SetPwAuthCurrentForTest("yes")
 	require.Equal(t, "yes", m.PwAuthCurrentForTest())
@@ -395,7 +395,7 @@ func TestSettings_pwAuth_loaded_msg_populates_current(t *testing.T) {
 	require.Equal(t, "unknown", m.PwAuthCurrentForTest())
 }
 
-// TestSettings_init_loads_pw_auth_via_sshd_dump — the Init batch's second
+// TestSettings_init_loads_pw_auth_via_sshd_dump - the Init batch's second
 // branch calls ops.SshdDumpConfig and produces a pwAuthLoadedMsg; we drain
 // the batch, deliver the message, and assert m.pwAuthCurrent reflects the
 // scripted value.
@@ -436,7 +436,7 @@ func TestSettings_init_loads_pw_auth_via_sshd_dump(t *testing.T) {
 	require.Equal(t, 1, dumpCalls, "Init must call ops.SshdDumpConfig exactly once")
 }
 
-// TestSettings_init_pw_auth_dump_error_collapses_to_unknown — when
+// TestSettings_init_pw_auth_dump_error_collapses_to_unknown - when
 // SshdDumpConfig errors (sshd not installed, root not satisfied, etc.) the
 // row collapses to "unknown" rather than disappearing or panicking.
 func TestSettings_init_pw_auth_dump_error_collapses_to_unknown(t *testing.T) {
@@ -462,7 +462,7 @@ func TestSettings_init_pw_auth_dump_error_collapses_to_unknown(t *testing.T) {
 }
 
 // TestSettings_enter_on_pwAuth_pushes_modal_with_disable_when_current_is_yes
-// — cursor on the dispatch row, pwAuthCurrent=yes, Enter must push
+// - cursor on the dispatch row, pwAuthCurrent=yes, Enter must push
 // *pwauthdisable.Model with Action=Disable. We introspect the resulting
 // nav.Msg via cmd().
 func TestSettings_enter_on_pwAuth_pushes_modal_with_disable_when_current_is_yes(t *testing.T) {
@@ -485,11 +485,11 @@ func TestSettings_enter_on_pwAuth_pushes_modal_with_disable_when_current_is_yes(
 	pushed, ok := nm.Screen.(*pwauthdisable.Model)
 	require.True(t, ok, "expected *pwauthdisable.Model, got %T", nm.Screen)
 	require.Equal(t, "disable password authentication", pushed.Title(),
-		"yes-current must dispatch ActionDisable (Title proves Action — disable label)")
+		"yes-current must dispatch ActionDisable (Title proves Action - disable label)")
 }
 
 // TestSettings_enter_on_pwAuth_pushes_modal_with_enable_when_current_is_no
-// — symmetric to the above: pwAuthCurrent=no must dispatch ActionEnable.
+// - symmetric to the above: pwAuthCurrent=no must dispatch ActionEnable.
 func TestSettings_enter_on_pwAuth_pushes_modal_with_enable_when_current_is_no(t *testing.T) {
 	t.Parallel()
 	ops := sysops.NewFake()
@@ -508,11 +508,11 @@ func TestSettings_enter_on_pwAuth_pushes_modal_with_enable_when_current_is_no(t 
 	pushed, ok := nm.Screen.(*pwauthdisable.Model)
 	require.True(t, ok, "expected *pwauthdisable.Model, got %T", nm.Screen)
 	require.Equal(t, "enable password authentication", pushed.Title(),
-		"no-current must dispatch ActionEnable (Title proves Action — enable label)")
+		"no-current must dispatch ActionEnable (Title proves Action - enable label)")
 }
 
 // TestSettings_enter_on_pwAuth_pushes_modal_with_disable_when_current_is_unknown
-// — fall-back path: when sshd -T failed at startup, the row still works;
+// - fall-back path: when sshd -T failed at startup, the row still works;
 // the modal's preflight will surface lockout risk so even ActionDisable
 // against an unknown live state is safe.
 func TestSettings_enter_on_pwAuth_pushes_modal_with_disable_when_current_is_unknown(t *testing.T) {
@@ -532,10 +532,10 @@ func TestSettings_enter_on_pwAuth_pushes_modal_with_disable_when_current_is_unkn
 	pushed, ok := nm.Screen.(*pwauthdisable.Model)
 	require.True(t, ok)
 	require.Equal(t, "disable password authentication", pushed.Title(),
-		"unknown-current must dispatch ActionDisable as the safer default — modal preflight surfaces lockout risk")
+		"unknown-current must dispatch ActionDisable as the safer default - modal preflight surfaces lockout risk")
 }
 
-// TestSettings_view_renders_pwAuth_row_with_current_value — the row must
+// TestSettings_view_renders_pwAuth_row_with_current_value - the row must
 // display the cached value (yes/no/unknown) so admins can see the live
 // state at a glance before pressing Enter.
 func TestSettings_view_renders_pwAuth_row_with_current_value(t *testing.T) {
@@ -560,7 +560,7 @@ func TestSettings_view_renders_pwAuth_row_with_current_value(t *testing.T) {
 		"View must render 'unknown' when sshd -T value couldn't be loaded")
 }
 
-// TestSettings_pwAuth_row_does_NOT_enter_edit_mode_via_e — the dispatch
+// TestSettings_pwAuth_row_does_NOT_enter_edit_mode_via_e - the dispatch
 // row must skip inline edit-mode (the modal is the entire interaction).
 // Pressing 'e' on the row pushes the modal AND m.editing stays false.
 func TestSettings_pwAuth_row_does_NOT_enter_edit_mode_via_e(t *testing.T) {
@@ -577,14 +577,14 @@ func TestSettings_pwAuth_row_does_NOT_enter_edit_mode_via_e(t *testing.T) {
 	_, cmd := m.Update(keyPress("e"))
 	require.NotNil(t, cmd, "'e' on pwAuth row must still emit a Push cmd (dispatch shape)")
 	require.False(t, m.EditingForTest(),
-		"pwAuth row must NOT enter inline edit mode — dispatch path bypasses the textinput-toggle entirely")
+		"pwAuth row must NOT enter inline edit mode - dispatch path bypasses the textinput-toggle entirely")
 	require.False(t, m.WantsRawKeys(),
 		"WantsRawKeys must stay false on the pwAuth row (no textinput active)")
 }
 
 // --- Phase 4 LOCK-04: lockdown.proposal_window_days dispatch row ----------
 
-// TestSettings_view_renders_lockdownWindow_row — the new row must render
+// TestSettings_view_renders_lockdownWindow_row - the new row must render
 // the field label ("lockdown.proposal_window_days"), the current value
 // (90), and the "days" hint, all inside the same View() pass.
 func TestSettings_view_renders_lockdownWindow_row(t *testing.T) {
@@ -601,7 +601,7 @@ func TestSettings_view_renders_lockdownWindow_row(t *testing.T) {
 		"View must render the LockdownProposalWindowDays value (90)")
 }
 
-// TestSettings_lockdownWindow_save_succeeds_writes_atomically — moving the
+// TestSettings_lockdownWindow_save_succeeds_writes_atomically - moving the
 // cursor to the lockdown-window row, entering edit mode, typing a new
 // valid value, and pressing Enter must trigger config.Save (which writes
 // via AtomicWriteFile). The savedMsg drained from the cmd must update the
@@ -648,7 +648,7 @@ func TestSettings_lockdownWindow_save_succeeds_writes_atomically(t *testing.T) {
 		"Toast must announce the saved field by its koanf name")
 }
 
-// TestSettings_lockdownWindow_save_validates_first_rejects_zero — entering
+// TestSettings_lockdownWindow_save_validates_first_rejects_zero - entering
 // edit mode and typing "0" must surface an inline error and NOT write.
 // This pins the Validate-first contract for the new field.
 func TestSettings_lockdownWindow_save_validates_first_rejects_zero(t *testing.T) {

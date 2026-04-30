@@ -48,5 +48,5 @@ func (h HelpOverlay) Overlay(body string, fullHelp [][]nav.KeyBinding) string {
 		Border(lipgloss.NormalBorder()).
 		Padding(0, 1).
 		Render(panel)
-	return body + "\n" + styles.Dim.Render("— help —") + "\n" + panel
+	return body + "\n" + styles.Dim.Render("- help -") + "\n" + panel
 }

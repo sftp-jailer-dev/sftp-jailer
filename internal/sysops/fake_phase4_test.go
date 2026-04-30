@@ -185,7 +185,7 @@ func TestFakeSystemdRunOnActive_records_verbatim_command(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, f.Calls, 1)
 	require.Equal(t, "SystemdRunOnActive", f.Calls[0].Method)
-	// Critical pin (D-S04-08): the cmd= entry is the verbatim Command — no
+	// Critical pin (D-S04-08): the cmd= entry is the verbatim Command - no
 	// truncation, no shell-quoting, no normalization. Tests that golden-file
 	// ExecStart bodies depend on this contract.
 	require.Equal(t, []string{

@@ -1,22 +1,22 @@
 #!/bin/sh
-# postrm — sftp-jailer .deb maintainer script (Phase 5 plan 05-04).
+# postrm - sftp-jailer .deb maintainer script (Phase 5 plan 05-04).
 #
 # Implements DIST-05 (state-wipe half) and DIST-09 brownfield safety
 # (script ONLY touches /var/lib/sftp-jailer/ and the sftp-jailer system
-# group — never the sshd config or any sshd drop-in).
+# group - never the sshd config or any sshd drop-in).
 #
 # Per CONTEXT.md D-LC-01: `apt remove` retains state in /var/lib/
 # sftp-jailer (a reinstall picks up where the prior install left off);
 # `apt purge` wipes everything. Standard Debian convention.
 #
-# By postrm time the binary is GONE — we cannot dispatch sshd reload
+# By postrm time the binary is GONE - we cannot dispatch sshd reload
 # from here (prerm did it via /usr/bin/sftp-jailer purge-sshd-cleanup
 # while the binary was still on disk). The sshd drop-in at
 # sshd_config.d/50-sftp-jailer.conf is therefore already absent by
 # the time this script runs (or absent by virtue of never having been
 # written, on a brownfield host). DIST-09 brownfield safety: this
 # script never reads, writes, or removes anything in the sshd config
-# directory — the admin's main sshd_config and any non-tool drop-ins
+# directory - the admin's main sshd_config and any non-tool drop-ins
 # are byte-untouched.
 #
 # Per Debian Policy §10, postrm is invoked as one of:
@@ -42,7 +42,7 @@ case "$1" in
         # box where another package or admin pre-claimed the group.
         delgroup sftp-jailer 2>/dev/null || true
 
-        # NOTE: We do NOT touch the sshd drop-in here — it's already
+        # NOTE: We do NOT touch the sshd drop-in here - it's already
         # absent (prerm's purge-sshd-cleanup handled it) or never
         # existed. Touching the sshd config directory from postrm would
         # violate DIST-09 brownfield safety.
@@ -58,7 +58,7 @@ case "$1" in
         fi
     ;;
     remove|upgrade|abort-install|abort-upgrade|failed-upgrade|disappear)
-        # No-op — D-LC-01: `remove` retains state per Debian convention.
+        # No-op - D-LC-01: `remove` retains state per Debian convention.
         # All other cases are dpkg book-keeping; nothing for us to do.
         :
     ;;

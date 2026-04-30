@@ -2,7 +2,7 @@
 // global key bindings (q / ctrl+c / ?), and the resize broadcast down the
 // stack. Exactly one App is constructed per process (pitfall E1).
 //
-// App does NOT implement nav.Screen — it implements tea.Model. Screens are
+// App does NOT implement nav.Screen - it implements tea.Model. Screens are
 // added and removed via the nav.Msg / nav.ReplaceMsg tea.Cmd producers in
 // internal/tui/nav, which every screen can emit without coupling to the App.
 package app
@@ -46,7 +46,7 @@ type App struct {
 	height     int
 	help       widgets.HelpOverlay
 	toast      widgets.Toast
-	modebar    widgets.ModeBar // Phase 4 plan 04-09 — global MODE+countdown banner
+	modebar    widgets.ModeBar // Phase 4 plan 04-09 - global MODE+countdown banner
 	showHelp   bool
 	version    string
 	projectURL string
@@ -54,7 +54,7 @@ type App struct {
 
 // New constructs an App with the given initial screen stack. If
 // initialStack is empty, the App starts with no screens and the first View
-// returns an empty tea.View — main is expected to supply at least a splash.
+// returns an empty tea.View - main is expected to supply at least a splash.
 //
 // The modebar is constructed with a nil watcher reference; production
 // callers must call SetWatcher after the *revert.Watcher is built (see
@@ -73,7 +73,7 @@ func New(version, projectURL string, initialStack ...nav.Screen) *App {
 
 // SetWatcher binds the App's modebar to a revert.Watcher so the REVERTING
 // countdown branch fires when a SAFE-04 timer is armed (D-L0809-03 +
-// D-S04-03). Idempotent — pass nil to detach (tests). Called from
+// D-S04-03). Idempotent - pass nil to detach (tests). Called from
 // main.go::runTUI after the Watcher singleton is constructed.
 func (a *App) SetWatcher(w *revert.Watcher) {
 	a.modebar = widgets.NewModeBar(w)
@@ -101,7 +101,7 @@ func (a *App) ProjectURL() string { return a.projectURL }
 // updates during splash → home transitions.
 func (a *App) Init() tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(a.stack)+1)
-	// Phase 4 plan 04-09 — start the periodic modebar re-render so the
+	// Phase 4 plan 04-09 - start the periodic modebar re-render so the
 	// REVERTING countdown text updates every second.
 	cmds = append(cmds, widgets.TickCmd())
 	for i := range a.stack {
@@ -118,8 +118,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width, a.height = m.Width, m.Height
-		// Broadcast resize to every screen on the stack — including those
-		// currently hidden under a modal — so they render correctly when
+		// Broadcast resize to every screen on the stack - including those
+		// currently hidden under a modal - so they render correctly when
 		// popped back to. (TUI-05.)
 		var cmds []tea.Cmd
 		for i := range a.stack {
@@ -137,7 +137,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Quit
 		}
 		// `q` quits only if the top screen doesn't want raw keys. This is
-		// the textinput-safety gate — screens with a focused input flip
+		// the textinput-safety gate - screens with a focused input flip
 		// WantsRawKeys() true so the letter types instead of quitting.
 		if m.String() == "q" {
 			if len(a.stack) == 0 || !a.stack[len(a.stack)-1].WantsRawKeys() {
@@ -155,7 +155,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a.handleNav(m)
 
 	case widgets.ModeBarTickMsg:
-		// Phase 4 plan 04-09 — route the periodic countdown tick to the
+		// Phase 4 plan 04-09 - route the periodic countdown tick to the
 		// modebar widget and re-arm the next tick. View() reads the
 		// armed-revert state from the bound Watcher on each render so the
 		// modebar update itself is a no-op; what matters here is keeping
@@ -252,7 +252,7 @@ func (a *App) handleNav(m nav.Msg) (tea.Model, tea.Cmd) {
 // View composes the global modebar strip + the stack's top view + an
 // optional help overlay + an optional toast.
 //
-// Phase 4 plan 04-09 — the modebar is rendered ABOVE the active screen
+// Phase 4 plan 04-09 - the modebar is rendered ABOVE the active screen
 // body on every screen (D-L0809-03 + D-S04-03). When a SAFE-04 revert is
 // armed the modebar replaces the MODE words with the REVERTING countdown
 // (Critical-red); admins always see the live timer regardless of which
@@ -271,7 +271,7 @@ func (a *App) View() tea.View {
 	}
 	top := a.stack[len(a.stack)-1]
 	body := top.View()
-	// Phase 4 plan 04-09 — global MODE+countdown banner above the active
+	// Phase 4 plan 04-09 - global MODE+countdown banner above the active
 	// screen. The blank line between modebar and body lets the screen
 	// content visually breathe under the strip.
 	body = modebar + "\n\n" + body

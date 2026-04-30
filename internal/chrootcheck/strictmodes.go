@@ -13,17 +13,17 @@ import (
 // CheckAuthKeysFile verifies sshd's StrictModes prerequisites for a per-
 // user authorized_keys file (D-21 steps 1 and 2):
 //
-//  1. Path-walk from / down to <chrootRoot> — every component must be
+//  1. Path-walk from / down to <chrootRoot> - every component must be
 //     root-owned, no group/other-write, no symlinks (delegates to
 //     WalkRoot). This is the chroot-chain part that sshd's chroot check
 //     enforces.
 //  2. Per-user dir <chrootRoot>/<user> mode 0750 owner <user>:<user>
-//     (matches D-12 / SETUP-05 — the chroot writable subdir per user).
+//     (matches D-12 / SETUP-05 - the chroot writable subdir per user).
 //  3. .ssh/ dir mode 0700 owner <user>:<user>.
 //  4. authorized_keys file mode 0600 owner <user>:<user>.
 //
 // Steps 3 (re-parse the file content) and 4 (sshd -T -C user=...) of the
-// D-21 suite are out of scope for this package — they belong in the
+// D-21 suite are out of scope for this package - they belong in the
 // M-ADD-KEY caller (plan 03-08) because they involve reading file content
 // and invoking sshd directly via SshdTWithContext.
 //
@@ -38,7 +38,7 @@ func CheckAuthKeysFile(ctx context.Context, ops sysops.SystemOps, username, chro
 	}
 
 	// 1. Path-walk from / down to <chrootRoot>. NOT including the per-user
-	// subdir below — that subdir is intentionally user-owned (mode 0750)
+	// subdir below - that subdir is intentionally user-owned (mode 0750)
 	// and would be flagged as a violation by WalkRoot's root:root rule.
 	walkVio, err := WalkRoot(ctx, ops, chrootRoot)
 	if err != nil {
@@ -82,7 +82,7 @@ func checkPerUserDir(ctx context.Context, ops sysops.SystemOps, path string, u *
 	if fi.IsLink {
 		return Violation{
 			Path:   path,
-			Reason: fmt.Sprintf("%s is a symlink — sshd's StrictModes refuses .ssh symlinks", path),
+			Reason: fmt.Sprintf("%s is a symlink - sshd's StrictModes refuses .ssh symlinks", path),
 		}, false
 	}
 	if fi.Mode&fs.ModePerm != expectedMode {

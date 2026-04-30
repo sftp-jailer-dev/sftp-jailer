@@ -1,5 +1,5 @@
 // Package doctor composes six read-only detectors into a single
-// model.DoctorReport (SETUP-01). Every read goes through sysops.SystemOps —
+// model.DoctorReport (SETUP-01). Every read goes through sysops.SystemOps -
 // this package must NOT import os or os/exec (the check-no-exec-outside-sysops
 // guard enforces it). Detectors degrade gracefully: a missing binary or
 // unparseable output sets `Available: false` on its sub-report rather than
@@ -41,7 +41,7 @@ func New(ops sysops.SystemOps) *Service {
 
 // Ops exposes the SystemOps handle so the TUI doctor screen can pass it to
 // action modals (e.g. M-APPLY-SETUP) without re-plumbing the bootstrap.
-// Phase 3 / D-06 — the screen-level [A] action constructor needs ops to
+// Phase 3 / D-06 - the screen-level [A] action constructor needs ops to
 // build the modal that runs txn.CanonicalApplySetupSteps + Tx.Apply.
 //
 // Phase 1/2 callers should NOT use this accessor; the doctor service owns
@@ -69,7 +69,7 @@ func (s *Service) ChrootRoot() string { return s.chrootRoot }
 //     SETUP-06 advisory; the modal shows the advisory note even though
 //     auto-fix is deferred per RESEARCH OQ-5).
 //
-// False otherwise — including when ChrootChain is entirely Missing (no
+// False otherwise - including when ChrootChain is entirely Missing (no
 // chroot root exists yet to walk; first-launch flow takes the SETUP-02
 // branch via SshdDropIns instead).
 func NeedsCanonicalApply(rep model.DoctorReport) bool {
@@ -88,7 +88,7 @@ func NeedsCanonicalApply(rep model.DoctorReport) bool {
 }
 
 // Run executes all six detectors sequentially and returns the aggregated
-// report. Phase 1 never errors the whole report — each detector reports its
+// report. Phase 1 never errors the whole report - each detector reports its
 // own availability via its sub-report. The returned error is reserved for
 // future extensions (e.g. strict mode that stops on first detector failure).
 func (s *Service) Run(ctx context.Context) (model.DoctorReport, error) {
@@ -115,7 +115,7 @@ func (s *Service) detectSshdDropIns(ctx context.Context) (model.SshdDropInReport
 	for _, p := range paths {
 		b, err := s.ops.ReadFile(ctx, p)
 		if err != nil {
-			// Skip unreadable files — a single bad drop-in should not hide
+			// Skip unreadable files - a single bad drop-in should not hide
 			// the others from the report.
 			continue
 		}
@@ -156,7 +156,7 @@ func (s *Service) detectChrootChain(ctx context.Context, root string) (model.Chr
 		fi, err := s.ops.Lstat(ctx, p)
 		if err != nil {
 			links = append(links, model.ChrootChainLink{Path: p, Missing: true})
-			// Stop at the first missing link — nothing below it exists.
+			// Stop at the first missing link - nothing below it exists.
 			break
 		}
 		links = append(links, model.ChrootChainLink{
@@ -182,7 +182,7 @@ func (s *Service) detectUfwIPv6(ctx context.Context) (model.UfwIPv6Report, error
 		if errors.Is(err, fs.ErrNotExist) || strings.Contains(err.Error(), "no such") {
 			return model.UfwIPv6Report{Missing: true}, nil
 		}
-		// Unknown error reading the file — treat as missing for Phase 1.
+		// Unknown error reading the file - treat as missing for Phase 1.
 		return model.UfwIPv6Report{Missing: true}, nil
 	}
 	for _, line := range strings.Split(string(b), "\n") {

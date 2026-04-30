@@ -7,11 +7,11 @@
 // sysops.ObserveRunStream and spawns a goroutine that scans stdout
 // line-by-line, JSON-decodes each progress event, and Send-s it back into
 // the program via *tea.Program.Send. This is the only place in the codebase
-// that bridges from a long-lived subprocess into the tea program — every
+// that bridges from a long-lived subprocess into the tea program - every
 // other screen receives messages via tea.Cmd return values from Update.
 //
 // Esc cancels: m.cancelFn() (the context.CancelFunc returned by
-// context.WithCancel) sends SIGTERM to the subprocess — the cancel-on-ctx
+// context.WithCancel) sends SIGTERM to the subprocess - the cancel-on-ctx
 // hook is set up by the typed wrapper in sysops.ObserveRunStream (02-02).
 // The runner commits the current batch atomically before exit (cursor-file
 // integrity per OBS-02). Spinner replaced with `cancelling…` (Warn) until
@@ -20,7 +20,7 @@
 // On phase=done JSON line: spinner stops; modal renders the final summary
 // for ~500ms (tea.Tick); then auto-pops via nav.PopCmd AND emits
 // nav.StatusRefreshMsg + nav.ObserveRunCompleteToast (cross-package
-// routing — see internal/tui/nav/msgs.go).
+// routing - see internal/tui/nav/msgs.go).
 //
 // UI per UI-SPEC §M-OBSERVE (lines 257-263, 327-349):
 //   - Only key: Esc cancels.
@@ -93,7 +93,7 @@ type compactState struct {
 // Messages flowing from the subprocess goroutine into Update.
 //
 //nolint:unused // errMsg/streamClosedMsg are emitted in production code paths
-// — present for completeness and future inline error handling.
+// - present for completeness and future inline error handling.
 type (
 	progressMsg     observe.Progress
 	doneMsg         struct{ summary observe.RunSummary }
@@ -121,7 +121,7 @@ func New(p *tea.Program, ops sysops.SystemOps, opts sysops.ObserveRunSubprocessO
 	}
 }
 
-// KeyMap is the M-OBSERVE key bindings — implements nav.KeyMap.
+// KeyMap is the M-OBSERVE key bindings - implements nav.KeyMap.
 type KeyMap struct {
 	Cancel nav.KeyBinding
 }
@@ -134,7 +134,7 @@ func DefaultKeyMap() KeyMap {
 // ShortHelp surfaces the single Esc binding in the footer / `?` overlay.
 func (k KeyMap) ShortHelp() []nav.KeyBinding { return []nav.KeyBinding{k.Cancel} }
 
-// FullHelp mirrors ShortHelp — the modal has no power-user bindings.
+// FullHelp mirrors ShortHelp - the modal has no power-user bindings.
 func (k KeyMap) FullHelp() [][]nav.KeyBinding { return [][]nav.KeyBinding{{k.Cancel}} }
 
 // Title implements nav.Screen.
@@ -143,11 +143,11 @@ func (m *Model) Title() string { return "observe-run" }
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — false because the modal has no
+// WantsRawKeys implements nav.Screen - false because the modal has no
 // textinput. UI-SPEC line 262: every key except Esc is swallowed.
 func (m *Model) WantsRawKeys() bool { return false }
 
-// SetCancelFnForTest is the unit-test seam — callers can inject a recorded
+// SetCancelFnForTest is the unit-test seam - callers can inject a recorded
 // mock cancelFn to verify Esc behaviour without spinning up a real
 // subprocess.
 func (m *Model) SetCancelFnForTest(fn context.CancelFunc) { m.cancelFn = fn }
@@ -178,7 +178,7 @@ func (m *Model) AutoPopCmdForTest() tea.Cmd { return m.autoPopCmd() }
 func (m *Model) Init() tea.Cmd {
 	tickCmd := func() tea.Msg { return m.spinner.Tick() }
 	if m.program == nil {
-		// Test path — no subprocess. Spinner still ticks so View renders
+		// Test path - no subprocess. Spinner still ticks so View renders
 		// consistently.
 		return tickCmd
 	}
@@ -211,7 +211,7 @@ func (m *Model) startSubprocess() tea.Cmd {
 			for sc.Scan() {
 				var p observe.Progress
 				if jerr := json.Unmarshal(sc.Bytes(), &p); jerr != nil {
-					// Malformed line — skip but keep scanning (T-OBS-13).
+					// Malformed line - skip but keep scanning (T-OBS-13).
 					continue
 				}
 				if p.Summary != nil {
@@ -264,7 +264,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		return m, nil
 
 	case streamClosedMsg:
-		// Goroutine drained — nothing to do (the doneMsg path already
+		// Goroutine drained - nothing to do (the doneMsg path already
 		// scheduled the auto-pop). On cancellation the goroutine exits via
 		// the same path; the autoPopMsg from doneMsg's tick will pop the
 		// modal once the subprocess exits.
@@ -406,7 +406,7 @@ func (m *Model) View() string {
 }
 
 // wrapModal applies the M-OBSERVE-only NormalBorder + Padding(0, 2) per
-// UI-SPEC line 46. (Most screens use no border — this is the modal
+// UI-SPEC line 46. (Most screens use no border - this is the modal
 // exception.)
 func wrapModal(content string) string {
 	return lipgloss.NewStyle().

@@ -3,14 +3,14 @@
 // by the S-USERS screen (USER-01/USER-02). The membership filter is the
 // D-10 union (sftp* group ∪ ChrootDirectory home users). D-12 INFO
 // pseudo-rows surface orphan chroot dirs, missing Match Group sftp* blocks,
-// and missing ChrootDirectory directives — each carries the literal
+// and missing ChrootDirectory directives - each carries the literal
 // "[fix in Phase 3]" hint per UI-SPEC.
 //
 // Architectural invariants:
 //   - All filesystem reads + Glob calls + subprocess execution flow through
 //     sysops.SystemOps. This package never imports os, os/exec, or os/user
 //     (CI guard scripts/check-no-exec-outside-sysops.sh enforces).
-//   - sshd_config parsing reuses internal/sshdcfg.ParseDropIn (Phase 1) —
+//   - sshd_config parsing reuses internal/sshdcfg.ParseDropIn (Phase 1) -
 //     this package never re-implements the parser.
 //   - The literal hint string "[fix in Phase 3]" appears in source so a
 //     future grep-audit can confirm the contract holds.
@@ -57,7 +57,7 @@ const hintFixInPhase3 = "[fix in Phase 3]"
 
 // InfoRow is the D-12 pseudo-row shape rendered ABOVE the real user rows in
 // S-USERS. It is non-selectable in the UI; this package only exposes the
-// data — rendering is the screen's concern.
+// data - rendering is the screen's concern.
 //
 // Phase 3 (plan 03-07 / B-03): orphan rows additionally carry the absolute
 // directory path, the inferred UID, and the inferred GID (via Lstat on the
@@ -124,7 +124,7 @@ func New(ops sysops.SystemOps, queries *store.Queries) *Enumerator {
 // Enumerate returns the D-10 union of user rows + the D-12 INFO pseudo-rows.
 // Read-only: the caller decides how to render (S-USERS in plan 02-04).
 //
-// The pipeline (every step uses sysops methods — no direct os calls):
+// The pipeline (every step uses sysops methods - no direct os calls):
 //  1. Read /etc/group → collect members of every group whose name starts
 //     with "sftp" into a unique set.
 //  2. Glob /etc/ssh/sshd_config.d/*.conf → parse each via sshdcfg.ParseDropIn
@@ -273,7 +273,7 @@ func (e *Enumerator) readPasswdAndEnrich(ctx context.Context, sftpUsers map[stri
 	// Pre-clean chrootDirs once so the per-line homeUnderChroot check is fast.
 	cleanedChroots := make([]string, 0, len(chrootDirs))
 	for _, c := range chrootDirs {
-		// %u tokens expand per-user — for matching purposes the parent dir
+		// %u tokens expand per-user - for matching purposes the parent dir
 		// is what counts. /srv/sftp/%u → /srv/sftp.
 		c = strings.ReplaceAll(c, "/%u", "")
 		cleanedChroots = append(cleanedChroots, filepath.Clean(c))
@@ -321,7 +321,7 @@ func (e *Enumerator) readPasswdAndEnrich(ctx context.Context, sftpUsers map[stri
 
 // enrichKeys reads ~user/.ssh/authorized_keys via sysops.ReadFile and counts
 // non-empty non-comment lines. A missing or unreadable file silently leaves
-// KeysCount at 0 — the screen renders 0 the same way whether the file is
+// KeysCount at 0 - the screen renders 0 the same way whether the file is
 // missing or empty (the distinction is not actionable for the admin).
 func (e *Enumerator) enrichKeys(ctx context.Context, rows []Row) {
 	for i := range rows {
@@ -344,12 +344,12 @@ func (e *Enumerator) enrichKeys(ctx context.Context, rows []Row) {
 
 // enrichLogins joins LastLoginPerUser onto the row slice. A missing Queries
 // handle (e.g. tests that don't care about login enrichment) is tolerated;
-// query errors are silently dropped — the column renders "—" in the UI when
+// query errors are silently dropped - the column renders "-" in the UI when
 // LastLoginNs == 0 and that's a survivable degradation.
 //
 // First-seen-IP is best-effort and currently left empty: deriving it
 // requires a separate query that doesn't exist on Phase 1's Queries surface;
-// the column is documented to render "—" when empty per UI-SPEC line 380.
+// the column is documented to render "-" when empty per UI-SPEC line 380.
 // A future plan can add Queries.FirstSeenPerUser without breaking this API.
 func (e *Enumerator) enrichLogins(ctx context.Context, rows []Row) {
 	if e.queries == nil {
@@ -375,9 +375,9 @@ func (e *Enumerator) enrichLogins(ctx context.Context, rows []Row) {
 // sysops.ReadShadow. Mirrors the fail-silent contract of enrichKeys /
 // enrichLogins: any error (file unreadable, user missing, field empty,
 // parse failure) leaves both fields at their default (-1) so the
-// S-USERS column renders "—" via FormatPasswordAge.
+// S-USERS column renders "-" via FormatPasswordAge.
 //
-// Reads /etc/shadow once per row — cheap on Linux page cache. If a future
+// Reads /etc/shadow once per row - cheap on Linux page cache. If a future
 // profile shows this as a hotspot, batch the read once and look up rows
 // in a pre-computed map. Not worth the complexity at v1 row counts (≤200).
 //
@@ -402,7 +402,7 @@ func (e *Enumerator) enrichPasswordAge(ctx context.Context, rows []Row) {
 
 // enrichAllowlistCount runs firewall.Enumerate once and counts rules per
 // user, then writes the count back into each Row. Errors (ufw inactive,
-// not installed) silently leave the count at 0 — the column renders
+// not installed) silently leave the count at 0 - the column renders
 // 0 the same way as "ufw inactive" and the S-FIREWALL screen surfaces
 // the underlying state separately.
 func (e *Enumerator) enrichAllowlistCount(ctx context.Context, rows []Row) {
@@ -427,7 +427,7 @@ func (e *Enumerator) enrichAllowlistCount(ctx context.Context, rows []Row) {
 // that USER-04 (Phase 3) will handle reconciliation.
 //
 // A missing chroot root (ReadDir returns ErrNotExist) is silently treated
-// as "no orphans" — that's a different problem surfaced by the doctor.
+// as "no orphans" - that's a different problem surfaced by the doctor.
 func (e *Enumerator) detectOrphans(ctx context.Context, rows []Row) []InfoRow {
 	entries, err := e.ops.ReadDir(ctx, e.chrootRoot)
 	if err != nil {

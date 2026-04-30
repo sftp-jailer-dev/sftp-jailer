@@ -28,7 +28,7 @@ func TestSearch_Filter_matches_subsequence(t *testing.T) {
 	s.SetValue("ab")
 	rows := []string{"apple", "banana", "crab"}
 	s.Filter(rows)
-	// "apple" matches a-p-p-l-e (a at 0, b not present — actually apple has no b).
+	// "apple" matches a-p-p-l-e (a at 0, b not present - actually apple has no b).
 	// sahilm/fuzzy matches in-order character subsequences, so "ab" hits:
 	//   - apple: a at 0, no b later -> NO MATCH
 	//   - banana: b at 0, a at 1 -> MATCH (ab in order)
@@ -68,7 +68,7 @@ func TestSearch_Update_esc_deactivates(t *testing.T) {
 	if s.Active {
 		// Fallback: some Bubble Tea builds encode esc differently. Issue
 		// the imperative dismissal via SetValue / internal flag check
-		// directly — the contract we care about is that esc CLEARS.
+		// directly - the contract we care about is that esc CLEARS.
 		// Keep test but don't fail the whole plan on a stringification
 		// quirk.
 		t.Logf("esc stringification didn't match on this build; Value=%q", s.Value())
@@ -100,7 +100,7 @@ func TestHelpOverlay_with_bindings_appends_panel(t *testing.T) {
 	require.Contains(t, out, "BODY")
 	require.Contains(t, out, "quit")
 	require.Contains(t, out, "help")
-	require.Contains(t, out, "— help —", "dim-styled help header must be present")
+	require.Contains(t, out, "- help -", "dim-styled help header must be present")
 }
 
 // -----------------------------------------------------------------------------
@@ -130,7 +130,7 @@ func TestToast_Update_expireMsg_clears(t *testing.T) {
 	require.NotNil(t, cmd)
 	require.NotEmpty(t, after.View())
 
-	// Execute the tick cmd (it will block ~2s) — use a shorter path: we
+	// Execute the tick cmd (it will block ~2s) - use a shorter path: we
 	// cannot observe the expire msg from outside. Instead drive Update
 	// with the very tick msg the cmd would emit. The toast's message is
 	// unexported, so we fall back to deadline: re-render AFTER setting

@@ -72,12 +72,12 @@ func concatLines(t *testing.T, names ...string) []byte {
 }
 
 // canonicalRunOpts builds RunOpts whose retention values keep all events
-// produced by Phase-1 fixtures (timestamps in 2025) — the test seeds the DB
+// produced by Phase-1 fixtures (timestamps in 2025) - the test seeds the DB
 // "as of now" via reading observation rows post-run for verification.
 func canonicalRunOpts() observe.RunOpts {
 	return observe.RunOpts{
 		CursorFile:          "/tmp/sftp-jailer-test.cursor",
-		DetailRetentionDays: 36500, // ~100 years — keep everything
+		DetailRetentionDays: 36500, // ~100 years - keep everything
 		DBMaxSizeMB:         500,
 		CompactAfterDays:    36500,
 	}
@@ -175,10 +175,10 @@ func TestRunner_skipped_when_lock_held(t *testing.T) {
 	st := openTmpStore(t)
 	f := sysops.NewFake()
 	f.LockHeld = true
-	// JournalctlStdout intentionally empty — runner must not even reach it.
+	// JournalctlStdout intentionally empty - runner must not even reach it.
 
 	var stdout bytes.Buffer
-	// The Runner itself doesn't acquire the lock — that's the cobra-cmd's
+	// The Runner itself doesn't acquire the lock - that's the cobra-cmd's
 	// job (Task 3). Runner only emits the skipped phase when explicitly
 	// signaled. We verify the runner is invoked inside a "skip" wrapper at
 	// Task 3; here we just confirm the runner emits the skipped phase line
@@ -200,7 +200,7 @@ func TestRunner_skipped_when_lock_held(t *testing.T) {
 func TestRunner_compaction_folds_old_rows(t *testing.T) {
 	st := openTmpStore(t)
 	f := sysops.NewFake()
-	// No new events from journalctl — we want compaction to be the only mover.
+	// No new events from journalctl - we want compaction to be the only mover.
 	f.JournalctlStdout["ssh"] = []byte("")
 
 	// Pre-seed an observation_runs row so the FK in observations is satisfied.
@@ -257,7 +257,7 @@ func TestRunner_compaction_prunes_when_over_cap(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Set a tiny cap — RunOpts.DBMaxSizeMB=1 — to force the prune loop to
+	// Set a tiny cap - RunOpts.DBMaxSizeMB=1 - to force the prune loop to
 	// run. The runner will repeatedly delete oldest bucket_date rows until
 	// the on-disk size dips under the cap; at 50 small rows a 1MB cap
 	// should be a no-op (DB is much smaller than 1MB), so this test
@@ -284,7 +284,7 @@ func TestRunner_two_consecutive_runs_with_distinct_streams(t *testing.T) {
 	// Second invocation: the Fake returns the same canned bytes again,
 	// because the production cursor-file mechanism handles the actual
 	// resume semantics. The test verifies the runner CORRECTLY processes
-	// each run as an independent invocation — the production guarantee
+	// each run as an independent invocation - the production guarantee
 	// of OBS-02 (no missed/duplicated events) is enforced by journalctl's
 	// --cursor-file at runtime, not by the test.
 	//
@@ -324,7 +324,7 @@ func TestRunner_unmatched_lines_counted_not_aborted(t *testing.T) {
 	require.Equal(t, 1, nUnmatched)
 }
 
-// pruneDetail tests (Plan 02-12, Option A — closes OBS-05 silent-knob gap).
+// pruneDetail tests (Plan 02-12, Option A - closes OBS-05 silent-knob gap).
 //
 // These three tests pin the contract for the new pruneDetail step in
 // Runner.Run: a parameterized DELETE that drops observations rows older than
@@ -332,7 +332,7 @@ func TestRunner_unmatched_lines_counted_not_aborted(t *testing.T) {
 // pruneToCap(). Zero/negative DetailRetentionDays is a no-op (legacy
 // "leave it alone" semantics, matching pruneToCap's capMB ≤ 0 zero-guard).
 //
-// The dropped row count flows into summary.EventsDropped (additive — both
+// The dropped row count flows into summary.EventsDropped (additive - both
 // pruneDetail and pruneToCap contribute).
 
 // seedObsRowAt INSERTs a single observations row at the given ts_unix_ns
@@ -511,7 +511,7 @@ func TestRunner_pruneDetail_runs_after_compact_before_pruneToCap(t *testing.T) {
 	runID := seedRunRow(t, st)
 
 	// Seed 4 rows: 100d (compact will fold + delete), 80d (pruneDetail will
-	// delete — older than 60d retention but younger than 90d compact window),
+	// delete - older than 60d retention but younger than 90d compact window),
 	// 30d + 1h (both survive).
 	now := time.Now()
 	ts100d := now.Add(-100 * 24 * time.Hour).UnixNano()
@@ -531,7 +531,7 @@ func TestRunner_pruneDetail_runs_after_compact_before_pruneToCap(t *testing.T) {
 	//
 	// Expected: 2 observation rows survive (30d + 1h), 1 noise_counter row
 	// from the compact, EventsCompacted=1, EventsDropped=1 (the pruneDetail
-	// hit on the 80d row — the compact's DELETE is not counted in
+	// hit on the 80d row - the compact's DELETE is not counted in
 	// EventsDropped because compact accounts via EventsCompacted).
 	opts := observe.RunOpts{
 		CursorFile:          "/tmp/sftp-jailer-test.cursor",

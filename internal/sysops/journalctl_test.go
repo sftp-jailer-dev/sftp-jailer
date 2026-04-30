@@ -11,7 +11,7 @@ import (
 )
 
 // TestJournalctlFollowCmd_returns_unstarted_cmd: factory returns an *exec.Cmd
-// suitable for tea.ExecProcess — Process must be nil (not started); Args must
+// suitable for tea.ExecProcess - Process must be nil (not started); Args must
 // include the unit + -f + --no-pager flags.
 func TestJournalctlFollowCmd_returns_unstarted_cmd(t *testing.T) {
 	r, ok := NewReal().(*Real)
@@ -51,7 +51,7 @@ func TestJournalctlStream_returns_pipe(t *testing.T) {
 	require.True(t, ok)
 
 	if r.binJournalctl == "" {
-		// journalctl not installed in this Linux environment — confirm
+		// journalctl not installed in this Linux environment - confirm
 		// JournalctlStream surfaces an unambiguous error.
 		_, _, err := r.JournalctlStream(context.Background(), JournalctlStreamOpts{
 			CursorFile: "/tmp/sftp-jailer-test.cursor",
@@ -62,7 +62,7 @@ func TestJournalctlStream_returns_pipe(t *testing.T) {
 		return
 	}
 
-	// Real journalctl present — pass --since with a far-future date so the
+	// Real journalctl present - pass --since with a far-future date so the
 	// stream finishes immediately (zero events) instead of tailing forever.
 	proc, stdout, err := r.JournalctlStream(context.Background(), JournalctlStreamOpts{
 		CursorFile: filepath.Join(t.TempDir(), "test.cursor"),
@@ -91,7 +91,7 @@ func TestJournalctlStream_fake_canned_stdout(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, rc)
-	// proc may be nil for the fake — sentinel — that's fine.
+	// proc may be nil for the fake - sentinel - that's fine.
 	_ = proc
 
 	got, err := io.ReadAll(rc)

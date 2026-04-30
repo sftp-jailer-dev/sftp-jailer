@@ -14,7 +14,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 )
 
-// Task 1a tests — frame, state machine, admin-IP guard, augmenter.
+// Task 1a tests - frame, state machine, admin-IP guard, augmenter.
 
 func TestAugmentWithZeroConnUsers_adds_missing_users_with_ZeroConn_true(t *testing.T) {
 	t.Parallel()
@@ -27,7 +27,7 @@ func TestAugmentWithZeroConnUsers_adds_missing_users_with_ZeroConn_true(t *testi
 	}
 	out := augmentWithZeroConnUsers(props, all)
 	require.Len(t, out, 2)
-	// Sorted ASC by user — alice then bob.
+	// Sorted ASC by user - alice then bob.
 	require.Equal(t, "alice", out[0].User)
 	require.Equal(t, "bob", out[1].User)
 	require.False(t, out[0].ZeroConn, "alice has IPs → ZeroConn=false")
@@ -52,7 +52,7 @@ func TestAdminIPCovered_console_session_returns_true(t *testing.T) {
 	t.Parallel()
 	f := sysops.NewFake()
 	m := New(f, nil, nil, nil, "22", 90)
-	m.SetAdminIPForTest("") // console session — guard inactive
+	m.SetAdminIPForTest("") // console session - guard inactive
 	require.True(t, m.AdminIPCoveredForTest())
 }
 
@@ -124,10 +124,10 @@ func TestTitle_returns_progressive_lockdown(t *testing.T) {
 	require.Equal(t, "Progressive lockdown", m.Title())
 }
 
-// ---- Task 1b tests — commit + rollback + composeCommitReverseCmds + ----
+// ---- Task 1b tests - commit + rollback + composeCommitReverseCmds + ----
 // detectAddrFamily + RebuildUserIPs wiring.
 
-// fakeStore is a recording mock of storeQ — captures RebuildUserIPs
+// fakeStore is a recording mock of storeQ - captures RebuildUserIPs
 // invocations so we can assert post-commit / post-rollback wiring.
 type fakeStore struct {
 	calls int
@@ -181,7 +181,7 @@ func TestComposeCommitReverseCmds_mixed_batch_no_duplicate_reload(t *testing.T) 
 		{Op: lockdown.OpAdd, Rule: firewall.Rule{User: "bob", Source: "2.2.2.2/32", Port: "22"}},
 	}
 	out := composeCommitReverseCmds(muts, "22", false)
-	// Count occurrences of "ufw reload" — must be exactly 1 (the trailing finalizer).
+	// Count occurrences of "ufw reload" - must be exactly 1 (the trailing finalizer).
 	reloadCount := 0
 	for _, line := range out {
 		if line == "ufw reload" {
@@ -189,7 +189,7 @@ func TestComposeCommitReverseCmds_mixed_batch_no_duplicate_reload(t *testing.T) 
 		}
 	}
 	require.Equal(t, 1, reloadCount,
-		"mixed batch must emit exactly ONE `ufw reload` (W3 — strip RenderReverseCommands' own reload)")
+		"mixed batch must emit exactly ONE `ufw reload` (W3 - strip RenderReverseCommands' own reload)")
 }
 
 func TestComposeCommitReverseCmds_empty_returns_nil(t *testing.T) {
@@ -208,8 +208,8 @@ func TestComposeCommitReverseCmds_restoreCatchAll_prepends_ufw_allow_from_any(t 
 	}
 	out := composeCommitReverseCmds(muts, "22", true)
 	require.NotEmpty(t, out)
-	// First line must be the catch-all re-add — mirrors rollbackCmd's
-	// catch-all-re-add command shape (B3 — the inverse direction).
+	// First line must be the catch-all re-add - mirrors rollbackCmd's
+	// catch-all-re-add command shape (B3 - the inverse direction).
 	require.Equal(t, "ufw allow proto tcp from any to any port 22", out[0],
 		"BUG-04-A/C SAFE-04 reverse: restoreCatchAll=true must prepend catch-all re-add line")
 	require.Equal(t, "ufw reload", out[len(out)-1],
@@ -244,7 +244,7 @@ func TestDetectAddrFamily_empty_falls_back_to_v4(t *testing.T) {
 // pins the BUG-04-A + BUG-04-C gap-closure refactor: buildPendingMutations
 // no longer emits OpDelete entries for catch-alls. The catch-all-removal
 // responsibility moves to commitCmd's step list via
-// txn.NewUfwDeleteCatchAllByEnumerateStep — a position-independent
+// txn.NewUfwDeleteCatchAllByEnumerateStep - a position-independent
 // dual-family-aware step landed by Plan 04-12.
 //
 // Pre-fix shape (the original test name was *_one_add_per_ip_plus_catchall_delete*):
@@ -256,7 +256,7 @@ func TestDetectAddrFamily_empty_falls_back_to_v4(t *testing.T) {
 //
 // The pre-fix shape suffered BUG-04-A (stale id after position-shift) +
 // BUG-04-C (only one of the v4/v6 catch-alls deleted on dual-family
-// hosts) — both empirically caught by Plan 04-10's UAT.
+// hosts) - both empirically caught by Plan 04-10's UAT.
 func TestBuildPendingMutations_emits_only_OpAdd_in_OPEN_mode_post_BUG_04_A(t *testing.T) {
 	t.Parallel()
 	f := sysops.NewFake()
@@ -277,7 +277,7 @@ func TestBuildPendingMutations_emits_only_OpAdd_in_OPEN_mode_post_BUG_04_A(t *te
 
 	for _, mut := range muts {
 		require.Equal(t, lockdown.OpAdd, mut.Op,
-			"BUG-04-A/C: zero OpDelete entries — catch-all removal handled by NewUfwDeleteCatchAllByEnumerateStep at Apply time")
+			"BUG-04-A/C: zero OpDelete entries - catch-all removal handled by NewUfwDeleteCatchAllByEnumerateStep at Apply time")
 		require.Equal(t, "alice", mut.Rule.User)
 		require.Equal(t, "22", mut.Rule.Port)
 		require.Equal(t, "v4", mut.Rule.Proto)
@@ -305,7 +305,7 @@ func TestCommitCmd_calls_RebuildUserIPs_when_store_set(t *testing.T) {
 	// Fake ops scripted: SystemdRunOnActive nil; UfwInsert nil;
 	// UfwDelete nil; UfwReload nil; Exec ufw status numbered returns
 	// a minimal valid output (no rules → empty Enumerate; that's fine
-	// for the rebuild assertion — we just need the path to run).
+	// for the rebuild assertion - we just need the path to run).
 	f := sysops.NewFake()
 	f.ExecResponses["ufw status numbered"] = sysops.ExecResult{
 		ExitCode: 0,
@@ -442,7 +442,7 @@ func ufwStatusSftpjOnlyFixture() []byte {
 }
 
 // TestCommitCmd_OPEN_mode_appends_NewUfwDeleteCatchAllByEnumerateStep is
-// the headline regression test for BUG-04-A + BUG-04-C — the empirical
+// the headline regression test for BUG-04-A + BUG-04-C - the empirical
 // failure modes from Plan 04-10's UAT. This test PROVES the production
 // commitCmd path emits the dual-family catch-all deletion sequence on a
 // realistic Ubuntu 24.04 fixture.
@@ -463,7 +463,7 @@ func TestCommitCmd_OPEN_mode_appends_NewUfwDeleteCatchAllByEnumerateStep(t *test
 	// delete, sftpj-only after the second delete (loop terminates), then
 	// one more for the post-Apply FW-08 mirror-rebuild.
 	// Production order of Enumerate calls during commitCmd:
-	//   - Inside NewUfwDeleteCatchAllByEnumerateStep.Apply (3 calls — see below)
+	//   - Inside NewUfwDeleteCatchAllByEnumerateStep.Apply (3 calls - see below)
 	//   - Post-Apply FW-08 rebuild (1 call)
 	// Total: 4 scripted responses queued.
 	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
@@ -619,12 +619,12 @@ func TestCommitCmd_LOCKED_mode_does_NOT_append_catchall_step(t *testing.T) {
 // time (id=1) was deleted by `ufw insert 1` shifting it to id=2; the
 // OLD UfwDelete(stale-id-1) would have hit the just-inserted alice rule.
 // Post-fix, NewUfwDeleteCatchAllByEnumerateStep re-Enumerates at Apply
-// time and finds the fresh id (whatever it is — id=2 after the inserts,
+// time and finds the fresh id (whatever it is - id=2 after the inserts,
 // or compacted to id=1 if ufw renumbers eagerly).
 func TestCommitCmd_OPEN_mode_position_shift_does_NOT_break_commit(t *testing.T) {
 	t.Parallel()
 	f := sysops.NewFake()
-	// Same dual-family fixture sequence as above — the test expectation
+	// Same dual-family fixture sequence as above - the test expectation
 	// is structural (no stale id in the txn batch) rather than a
 	// numerical id assertion (which is brittle vs. ufw's renumbering).
 	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
@@ -659,12 +659,12 @@ func TestCommitCmd_OPEN_mode_position_shift_does_NOT_break_commit(t *testing.T) 
 			"→ correct catch-all deleted regardless of position shift.")
 
 	// The deletion path must NOT have targeted any of the alice sftpj
-	// rules — assert by inspecting the recorded UfwDelete calls. The
+	// rules - assert by inspecting the recorded UfwDelete calls. The
 	// dual-family fixture's first Enumerate sees alice at id=3; if the
 	// pre-fix code had captured id=1 at SetCurrentRulesForTest time,
 	// after `ufw insert 1` × 2 alice's rule would have shifted to id=3
 	// and the catch-all to id=3 (or id=2 depending on renumbering). The
-	// new step deletes catch-alls only — never sftpj rules.
+	// new step deletes catch-alls only - never sftpj rules.
 	deleteIDs := []string{}
 	for _, c := range f.Calls {
 		if c.Method == "UfwDelete" {

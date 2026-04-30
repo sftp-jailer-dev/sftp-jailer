@@ -13,7 +13,7 @@ import (
 
 // TestTheme_Info_defined asserts the Info style exists and renders its
 // argument. We intentionally do NOT assert exact ANSI bytes (fragile across
-// terminal profile changes) — only that the rendered string contains the
+// terminal profile changes) - only that the rendered string contains the
 // input substring and is non-empty.
 func TestTheme_Info_defined(t *testing.T) {
 	out := styles.Info.Render("noise")

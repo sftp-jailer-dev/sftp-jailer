@@ -26,12 +26,12 @@ func fixKeyPress(s string) tea.KeyPressMsg {
 	return tea.KeyPressMsg(tea.Key{Code: r, Text: s})
 }
 
-// TestNewIPv6Fix_initial_phase_is_confirm — fresh model is in
+// TestNewIPv6Fix_initial_phase_is_confirm - fresh model is in
 // ipv6PhaseConfirm; banner contains the leak detail.
 func TestNewIPv6Fix_initial_phase_is_confirm(t *testing.T) {
 	t.Parallel()
 
-	const detail = "FW-06: ufw IPV6=no but eth0 has 2001:db8::1/64 — lockdown would silently leak v6."
+	const detail = "FW-06: ufw IPV6=no but eth0 has 2001:db8::1/64 - lockdown would silently leak v6."
 	m := firewallrule.NewIPv6Fix(nil, nil, detail)
 
 	require.Equal(t, firewallrule.IPv6PhaseConfirmForTest, m.PhaseForTest(),
@@ -43,7 +43,7 @@ func TestNewIPv6Fix_initial_phase_is_confirm(t *testing.T) {
 	require.Contains(t, m.View(), "[C]ancel")
 }
 
-// TestIPv6Fix_apply_runs_txn_batch — pressing 'a' transitions to
+// TestIPv6Fix_apply_runs_txn_batch - pressing 'a' transitions to
 // ipv6PhaseApplying and returns a non-nil tea.Cmd. Driving the
 // returned cmd against a nil ops surfaces the test-path "ops is nil"
 // error rather than panicking.
@@ -64,7 +64,7 @@ func TestIPv6Fix_apply_runs_txn_batch(t *testing.T) {
 	require.NotNil(t, msg, "applyCmd's tea.Msg must be non-nil")
 }
 
-// TestIPv6Fix_apply_uppercase_A_also_triggers — case-insensitive 'A'.
+// TestIPv6Fix_apply_uppercase_A_also_triggers - case-insensitive 'A'.
 func TestIPv6Fix_apply_uppercase_A_also_triggers(t *testing.T) {
 	t.Parallel()
 
@@ -75,7 +75,7 @@ func TestIPv6Fix_apply_uppercase_A_also_triggers(t *testing.T) {
 	require.NotNil(t, cmd)
 }
 
-// TestIPv6Fix_cancel_pops — 'c' / 'C' / esc all pop the modal.
+// TestIPv6Fix_cancel_pops - 'c' / 'C' / esc all pop the modal.
 func TestIPv6Fix_cancel_pops(t *testing.T) {
 	t.Parallel()
 
@@ -91,7 +91,7 @@ func TestIPv6Fix_cancel_pops(t *testing.T) {
 	}
 }
 
-// TestIPv6Fix_apply_error_transitions_to_phaseError — feed an
+// TestIPv6Fix_apply_error_transitions_to_phaseError - feed an
 // ipv6AppliedMsg{err:...} via FeedAppliedMsgForTest; phase must
 // transition to ipv6PhaseError and View must contain the error.
 func TestIPv6Fix_apply_error_transitions_to_phaseError(t *testing.T) {
@@ -107,7 +107,7 @@ func TestIPv6Fix_apply_error_transitions_to_phaseError(t *testing.T) {
 	require.Contains(t, m.View(), "[esc] back")
 }
 
-// TestIPv6Fix_apply_success_transitions_to_phaseDone_and_auto_pops —
+// TestIPv6Fix_apply_success_transitions_to_phaseDone_and_auto_pops -
 // feeding a nil-error applied msg transitions to phaseDone and the
 // returned cmd is a tea.Tick (eventually emits nav.Pop via autoPopMsg).
 func TestIPv6Fix_apply_success_transitions_to_phaseDone_and_auto_pops(t *testing.T) {
@@ -122,7 +122,7 @@ func TestIPv6Fix_apply_success_transitions_to_phaseDone_and_auto_pops(t *testing
 	require.NotNil(t, cmd, "phaseDone must return a tea.Tick cmd")
 }
 
-// TestIPv6Fix_implements_nav_Screen — compile-time + runtime check.
+// TestIPv6Fix_implements_nav_Screen - compile-time + runtime check.
 func TestIPv6Fix_implements_nav_Screen(t *testing.T) {
 	t.Parallel()
 

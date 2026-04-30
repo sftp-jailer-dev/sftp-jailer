@@ -1,8 +1,8 @@
-# .github/workflows/release.yml — Phase 5 plan 05-05 (DIST-08).
+# .github/workflows/release.yml - Phase 5 plan 05-05 (DIST-08).
 #
 # Tag-push-only release pipeline. Triggered EXCLUSIVELY when a tag matching
 # vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rcN is pushed (CONTEXT.md D-RW-03).
-# No nightly, no workflow_dispatch, no main-push builds — the trigger surface
+# No nightly, no workflow_dispatch, no main-push builds - the trigger surface
 # stays narrow on purpose (REQUIREMENTS.md §Out of Scope).
 #
 # Job sequence (D-RW-01):
@@ -20,7 +20,7 @@
 #
 # The "doubled gate" (re-running CI checks the tagged commit may have already
 # passed on main) is INTENTIONAL per D-RW-01: a release ≠ a flaky main pass.
-# Estimated wall time: 10–15 min on the ubuntu-24.04 runner.
+# Estimated wall time: 10-15 min on the ubuntu-24.04 runner.
 
 name: Release
 
@@ -38,19 +38,19 @@ jobs:
     name: build + lintian + publish
     runs-on: ubuntu-24.04
     steps:
-      # 1. Checkout — full history needed for git-describe / changelog generation.
+      # 1. Checkout - full history needed for git-describe / changelog generation.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2. Setup Go — pinned to 1.25.x per CLAUDE.md TL;DR pin list (Bubble Tea v2 floor).
+      # 2. Setup Go - pinned to 1.25.x per CLAUDE.md TL;DR pin list (Bubble Tea v2 floor).
       - name: Setup Go 1.25
         uses: actions/setup-go@v5
         with:
           go-version: '1.25.x'
           cache: true
 
-      # 3. Module integrity — must match go.sum verbatim.
+      # 3. Module integrity - must match go.sum verbatim.
       - name: go mod verify
         run: go mod verify
 
@@ -58,13 +58,13 @@ jobs:
       - name: Test
         run: go test -race -count=1 ./...
 
-      # 5. golangci-lint — v2.11 per ci.yml (built with Go 1.25; v2.1 was Go 1.24 → exit 3).
+      # 5. golangci-lint - v2.11 per ci.yml (built with Go 1.25; v2.1 was Go 1.24 → exit 3).
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.11
 
-      # 6. govulncheck — Go vulnerability scanner.
+      # 6. govulncheck - Go vulnerability scanner.
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -97,7 +97,7 @@ jobs:
             exit 1
           fi
 
-      # 8. goreleaser — builds + archives + .debs + uploads to GitHub Release.
+      # 8. goreleaser - builds + archives + .debs + uploads to GitHub Release.
       #    The action installs goreleaser at the pinned version, then runs the
       #    `release --clean` command. GITHUB_TOKEN is the auto-provisioned
       #    secret with `contents: write` (per the permissions block above).
@@ -110,7 +110,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 9. lintian --pedantic — DIST-03 zero-tolerance gate.
+      # 9. lintian --pedantic - DIST-03 zero-tolerance gate.
       #    Installs lintian via apt (not preinstalled on ubuntu-24.04 runner).
       #    Runs against EVERY .deb produced; any non-overridden warning fails
       #    the workflow. The lintian-overrides file is shipped INSIDE the .deb

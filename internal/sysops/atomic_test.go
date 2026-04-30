@@ -17,7 +17,7 @@ func TestAtomicWriteFile_creates_file_with_mode(t *testing.T) {
 	require.True(t, ok)
 
 	dir := t.TempDir()
-	// The Phase 4 path allowlist rejects arbitrary tmpdirs — extend it for the test.
+	// The Phase 4 path allowlist rejects arbitrary tmpdirs - extend it for the test.
 	SetAtomicWriteAllowlistForTest([]string{dir + "/"})
 	t.Cleanup(ResetAtomicWriteAllowlistForTest)
 
@@ -82,7 +82,7 @@ func TestAtomicWriteFile_cleanup_on_write_error(t *testing.T) {
 	SetAtomicWriteAllowlistForTest([]string{dir + "/"})
 	t.Cleanup(ResetAtomicWriteAllowlistForTest)
 
-	// A directory that does not exist — CreateTemp will fail in the parent dir.
+	// A directory that does not exist - CreateTemp will fail in the parent dir.
 	bogus := filepath.Join(dir, "nonexistent-subdir-xyz", "file.yaml")
 	err := r.AtomicWriteFile(context.Background(), bogus, []byte("ignored"), 0o644)
 	require.Error(t, err)
@@ -95,7 +95,7 @@ func TestAtomicWriteFile_cleanup_on_write_error(t *testing.T) {
 
 // TestAtomicWriteFile_tmp_in_same_dir: confirm the temp file is created in the
 // same directory as the target (cross-FS rename is non-atomic, RESEARCH §616).
-// We verify by inspecting the directory after a successful write — the rename
+// We verify by inspecting the directory after a successful write - the rename
 // only succeeds when the tmp lives in the same parent directory.
 func TestAtomicWriteFile_tmp_in_same_dir(t *testing.T) {
 	r, ok := NewReal().(*Real)
@@ -109,7 +109,7 @@ func TestAtomicWriteFile_tmp_in_same_dir(t *testing.T) {
 
 	require.NoError(t, r.AtomicWriteFile(context.Background(), path, []byte("ok"), 0o600))
 
-	// After a successful write the temp file is renamed away — but the
+	// After a successful write the temp file is renamed away - but the
 	// rename only succeeds atomically when source + dest share a filesystem,
 	// which the same-dir choice guarantees. The presence of the renamed
 	// file at `path` plus the absence of any `.tmp` suffix in `dir` confirms

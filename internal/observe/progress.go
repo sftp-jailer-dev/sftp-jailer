@@ -43,7 +43,7 @@ type Emitter interface {
 
 // JSONEmitter serializes each Progress to a single line of NDJSON on W.
 // When Quiet is true, only the terminal phases (`done`, `skipped`) are
-// emitted — useful for systemd-timer runs that only want a final summary
+// emitted - useful for systemd-timer runs that only want a final summary
 // line in journald.
 type JSONEmitter struct {
 	W     io.Writer

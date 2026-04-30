@@ -1,4 +1,4 @@
-// Package deleteuser tests for M-DELETE-USER — D-15 Permanent
+// Package deleteuser tests for M-DELETE-USER - D-15 Permanent
 // (type-username gate) + Archive (mkdir+tar+userdel batch + size+keys
 // async load).
 package deleteuser_test
@@ -50,19 +50,19 @@ func frozenNow() func() time.Time {
 
 const frozenStamp = "20260426T123456Z"
 
-// TestDeleteUser_implements_nav_Screen — compile-time check + Title +
+// TestDeleteUser_implements_nav_Screen - compile-time check + Title +
 // KeyMap shape.
 func TestDeleteUser_implements_nav_Screen(t *testing.T) {
 	t.Parallel()
 	var s nav.Screen = deleteuser.New(nil, testChrootRoot, testUsername, testHome)
-	require.Equal(t, "delete user — alice", s.Title())
+	require.Equal(t, "delete user - alice", s.Title())
 	km := s.KeyMap()
 	require.NotNil(t, km)
 	require.NotEmpty(t, km.ShortHelp())
 	require.NotEmpty(t, km.FullHelp())
 }
 
-// TestDeleteUser_default_mode_is_Permanent — D-15 requires Permanent
+// TestDeleteUser_default_mode_is_Permanent - D-15 requires Permanent
 // to be the default focus.
 func TestDeleteUser_default_mode_is_Permanent(t *testing.T) {
 	t.Parallel()
@@ -71,7 +71,7 @@ func TestDeleteUser_default_mode_is_Permanent(t *testing.T) {
 		"D-15 contract: default mode is Permanent (admin sees the destructive option focused so the friction is in the typing-username gate, not in a wrong-default)")
 }
 
-// TestDeleteUser_tab_toggles_mode — pressing tab in review phase flips
+// TestDeleteUser_tab_toggles_mode - pressing tab in review phase flips
 // the mode between Permanent and Archive.
 func TestDeleteUser_tab_toggles_mode(t *testing.T) {
 	t.Parallel()
@@ -85,7 +85,7 @@ func TestDeleteUser_tab_toggles_mode(t *testing.T) {
 	require.Equal(t, deleteuser.ModePermanent, m.ModeForTest(), "tab again → Permanent")
 }
 
-// TestDeleteUser_enter_review_modePermanent_enters_confirm_phase —
+// TestDeleteUser_enter_review_modePermanent_enters_confirm_phase -
 // from phase=Review with mode=Permanent, Enter advances to
 // phaseConfirmingPermanent (textinput focused).
 func TestDeleteUser_enter_review_modePermanent_enters_confirm_phase(t *testing.T) {
@@ -99,7 +99,7 @@ func TestDeleteUser_enter_review_modePermanent_enters_confirm_phase(t *testing.T
 		"Permanent + Enter from Review → ConfirmingPermanent (admin must type username verbatim)")
 }
 
-// TestDeleteUser_enter_confirm_blocks_when_text_does_not_match_username —
+// TestDeleteUser_enter_confirm_blocks_when_text_does_not_match_username -
 // the irreversibility gate: phase stays at confirm + errInline mentions
 // 'verbatim'.
 func TestDeleteUser_enter_confirm_blocks_when_text_does_not_match_username(t *testing.T) {
@@ -111,12 +111,12 @@ func TestDeleteUser_enter_confirm_blocks_when_text_does_not_match_username(t *te
 
 	_, _ = m.Update(keyPress("enter"))
 	require.Equal(t, deleteuser.PhaseConfirmingPermanentForTest, m.PhaseForTest(),
-		"mismatched text MUST NOT advance the phase — irreversibility gate")
+		"mismatched text MUST NOT advance the phase - irreversibility gate")
 	require.Contains(t, m.ErrInlineForTest(), "verbatim",
 		"mismatched text must produce an errInline that mentions 'verbatim' so admin understands the gate")
 }
 
-// TestDeleteUser_enter_confirm_proceeds_when_text_matches — typing the
+// TestDeleteUser_enter_confirm_proceeds_when_text_matches - typing the
 // username verbatim activates submit (phase advances to Submitting).
 func TestDeleteUser_enter_confirm_proceeds_when_text_matches(t *testing.T) {
 	t.Parallel()
@@ -131,7 +131,7 @@ func TestDeleteUser_enter_confirm_proceeds_when_text_matches(t *testing.T) {
 		"matching confirm text → phaseSubmitting (txn batch in flight)")
 }
 
-// TestDeleteUser_modeArchive_enter_review_starts_submit_immediately —
+// TestDeleteUser_modeArchive_enter_review_starts_submit_immediately -
 // Archive path skips the type-username gate. Enter from Review →
 // Submitting directly.
 func TestDeleteUser_modeArchive_enter_review_starts_submit_immediately(t *testing.T) {
@@ -144,10 +144,10 @@ func TestDeleteUser_modeArchive_enter_review_starts_submit_immediately(t *testin
 
 	_, _ = m.Update(keyPress("enter"))
 	require.Equal(t, deleteuser.PhaseSubmittingForTest, m.PhaseForTest(),
-		"Archive path skips the type-username confirm gate — Enter from Review → Submitting directly (admin already chose tabbed-to-Archive deliberately)")
+		"Archive path skips the type-username confirm gate - Enter from Review → Submitting directly (admin already chose tabbed-to-Archive deliberately)")
 }
 
-// TestDeleteUser_compose_steps_modePermanent_runs_userdel_dash_r —
+// TestDeleteUser_compose_steps_modePermanent_runs_userdel_dash_r -
 // composeSteps for Permanent is [Userdel(removeHome=true)] (1 step).
 func TestDeleteUser_compose_steps_modePermanent_runs_userdel_dash_r(t *testing.T) {
 	t.Parallel()
@@ -165,13 +165,13 @@ func TestDeleteUser_compose_steps_modePermanent_runs_userdel_dash_r(t *testing.T
 		if c.Method == "Userdel" {
 			require.Equal(t, testUsername, c.Args[0])
 			require.Equal(t, "removeHome=true", c.Args[1],
-				"Permanent path uses userdel -r (irreversible — deletes home)")
+				"Permanent path uses userdel -r (irreversible - deletes home)")
 		}
 	}
 }
 
 // TestDeleteUser_compose_steps_modeArchive_runs_mkdir_then_tar_then_userdel_no_r
-// — composeSteps for Archive is [MkdirAll, Tar, Userdel] in order.
+// - composeSteps for Archive is [MkdirAll, Tar, Userdel] in order.
 func TestDeleteUser_compose_steps_modeArchive_runs_mkdir_then_tar_then_userdel_no_r(t *testing.T) {
 	t.Parallel()
 	m := deleteuser.New(nil, testChrootRoot, testUsername, testHome)
@@ -219,7 +219,7 @@ func TestDeleteUser_compose_steps_modeArchive_runs_mkdir_then_tar_then_userdel_n
 	require.True(t, sawUserdel, "Userdel must run after Tar")
 }
 
-// TestDeleteUser_archive_path_rolls_back_partial_tarball_on_userdel_failure —
+// TestDeleteUser_archive_path_rolls_back_partial_tarball_on_userdel_failure -
 // script Userdel to fail; assert (a) Tar's compensator removes the
 // partial tarball via ops.RemoveAll, AND (b) MkdirAll's compensator
 // removes the archive dir we created (W-02 typed wrappers).
@@ -236,7 +236,7 @@ func TestDeleteUser_archive_path_rolls_back_partial_tarball_on_userdel_failure(t
 	f := sysops.NewFake()
 	f.UserdelError = errors.New("simulated userdel failure")
 
-	// Apply manually — first two succeed, Userdel fails.
+	// Apply manually - first two succeed, Userdel fails.
 	require.NoError(t, steps[0].Apply(context.Background(), f), "MkdirAll")
 	require.NoError(t, steps[1].Apply(context.Background(), f), "Tar")
 	err := steps[2].Apply(context.Background(), f)
@@ -261,10 +261,10 @@ func TestDeleteUser_archive_path_rolls_back_partial_tarball_on_userdel_failure(t
 	require.Contains(t, removeAllCalls, expectedArchive,
 		"Tar compensator must remove the partial tarball via ops.RemoveAll (W-02 typed wrapper)")
 	require.Contains(t, removeAllCalls, deleteuser.ArchiveDir,
-		"MkdirAll compensator must remove the archive dir we created via ops.RemoveAll (W-02 typed wrapper) — the dir didn't exist before this batch")
+		"MkdirAll compensator must remove the archive dir we created via ops.RemoveAll (W-02 typed wrapper) - the dir didn't exist before this batch")
 }
 
-// TestDeleteUser_metaLoadedMsg_populates_size_and_keysCount — a
+// TestDeleteUser_metaLoadedMsg_populates_size_and_keysCount - a
 // LoadMetaForTest poke pre-populates the dirSize + keysCount; the View
 // surface includes the humanized size and keys count.
 func TestDeleteUser_metaLoadedMsg_populates_size_and_keysCount(t *testing.T) {
@@ -274,11 +274,11 @@ func TestDeleteUser_metaLoadedMsg_populates_size_and_keysCount(t *testing.T) {
 
 	v := m.View()
 	require.Contains(t, v, "1.0 MiB",
-		"humanize.IBytes(1024*1024) renders '1.0 MiB' — review surface must show it; got View=%s", v)
+		"humanize.IBytes(1024*1024) renders '1.0 MiB' - review surface must show it; got View=%s", v)
 	require.Contains(t, v, "3 keys")
 }
 
-// TestDeleteUser_review_surface_shows_archive_path_when_modeArchive —
+// TestDeleteUser_review_surface_shows_archive_path_when_modeArchive -
 // the review-surface preview includes the archive path so admin sees
 // where the tarball will land before submitting.
 func TestDeleteUser_review_surface_shows_archive_path_when_modeArchive(t *testing.T) {
@@ -294,7 +294,7 @@ func TestDeleteUser_review_surface_shows_archive_path_when_modeArchive(t *testin
 		"review must show the exact archive filename so admin sees the destination")
 }
 
-// TestDeleteUser_submit_done_msg_advances_to_done_phase — feeding a
+// TestDeleteUser_submit_done_msg_advances_to_done_phase - feeding a
 // successful submitDoneMsg flips phase to Done and emits an auto-pop
 // tick batch.
 func TestDeleteUser_submit_done_msg_advances_to_done_phase(t *testing.T) {
@@ -307,7 +307,7 @@ func TestDeleteUser_submit_done_msg_advances_to_done_phase(t *testing.T) {
 	require.NotNil(t, cmd, "successful submit must emit toast.Flash + auto-pop tick batch")
 }
 
-// TestDeleteUser_submit_done_msg_with_error_advances_to_error_phase —
+// TestDeleteUser_submit_done_msg_with_error_advances_to_error_phase -
 // txn-batch failure surfaces inline and lets admin Esc out.
 func TestDeleteUser_submit_done_msg_with_error_advances_to_error_phase(t *testing.T) {
 	t.Parallel()
@@ -320,7 +320,7 @@ func TestDeleteUser_submit_done_msg_with_error_advances_to_error_phase(t *testin
 		"errInline must surface the txn-batch error verbatim")
 }
 
-// TestDeleteUser_esc_from_review_pops — Esc on the review screen pops
+// TestDeleteUser_esc_from_review_pops - Esc on the review screen pops
 // the modal back to S-USERS.
 func TestDeleteUser_esc_from_review_pops(t *testing.T) {
 	t.Parallel()
@@ -334,9 +334,9 @@ func TestDeleteUser_esc_from_review_pops(t *testing.T) {
 	require.Equal(t, nav.Pop, nm.Intent)
 }
 
-// TestDeleteUser_esc_from_confirm_returns_to_review — Esc on the
+// TestDeleteUser_esc_from_confirm_returns_to_review - Esc on the
 // confirm-typing surface backs out to review (without losing typed
-// text — admin can re-enter or tab to Archive).
+// text - admin can re-enter or tab to Archive).
 func TestDeleteUser_esc_from_confirm_returns_to_review(t *testing.T) {
 	t.Parallel()
 	m := deleteuser.New(nil, testChrootRoot, testUsername, testHome)
@@ -346,11 +346,11 @@ func TestDeleteUser_esc_from_confirm_returns_to_review(t *testing.T) {
 
 	_, cmd := m.Update(keyPress("esc"))
 	require.Equal(t, deleteuser.PhaseReviewForTest, m.PhaseForTest(),
-		"Esc from confirm returns to review — does NOT pop the whole modal (admin can change mind without re-loading meta)")
+		"Esc from confirm returns to review - does NOT pop the whole modal (admin can change mind without re-loading meta)")
 	require.Nil(t, cmd, "Esc-back-to-review must NOT emit a Pop")
 }
 
-// TestDeleteUser_WantsRawKeys_only_in_confirm_phase — type-username
+// TestDeleteUser_WantsRawKeys_only_in_confirm_phase - type-username
 // confirm phase needs raw keys (admin types arbitrary chars including
 // 'q' if their username contains it). Other phases swallow.
 func TestDeleteUser_WantsRawKeys_only_in_confirm_phase(t *testing.T) {
@@ -365,7 +365,7 @@ func TestDeleteUser_WantsRawKeys_only_in_confirm_phase(t *testing.T) {
 	require.True(t, m.WantsRawKeys(), "ConfirmingPermanent phase MUST want raw keys (admin types username including any chars)")
 }
 
-// TestDeleteUser_archive_path_uses_typed_sysops_wrappers_w02 — the
+// TestDeleteUser_archive_path_uses_typed_sysops_wrappers_w02 - the
 // Archive composeSteps must use ops.MkdirAll + ops.RemoveAll typed
 // wrappers (W-02). The Fake records every typed-wrapper call; if the
 // step regresses to raw os calls, the Fake won't see them.
@@ -393,7 +393,7 @@ func TestDeleteUser_archive_path_uses_typed_sysops_wrappers_w02(t *testing.T) {
 		"W-02: archive path must invoke ops.MkdirAll (the Fake records it; raw os.MkdirAll would be invisible to the Fake)")
 }
 
-// TestDeleteUser_metaLoad_async_path_walks_home_via_sysops — exercises
+// TestDeleteUser_metaLoad_async_path_walks_home_via_sysops - exercises
 // startMetaLoad's async path with a real Fake-backed home tree. Drives
 // Init's cmd to completion and feeds metaLoadedMsg back through
 // Update; assert View shows the summed size + key count.
@@ -414,7 +414,7 @@ func TestDeleteUser_metaLoad_async_path_walks_home_via_sysops(t *testing.T) {
 	cmd := m.Init()
 	require.NotNil(t, cmd)
 
-	// Init returns a tea.Batch — we want to specifically execute the
+	// Init returns a tea.Batch - we want to specifically execute the
 	// meta-load cmd (not the spinner tick which schedules another tick).
 	// Walk the batch and find a msg that's a metaLoadedMsg by feeding
 	// each non-tick message back through Update.
@@ -445,7 +445,7 @@ func (e simpleDirEntry) IsDir() bool                { return false }
 func (e simpleDirEntry) Type() fs.FileMode          { return 0 }
 func (e simpleDirEntry) Info() (fs.FileInfo, error) { return nil, nil }
 
-// Sanity that strings.Builder still compiles — quiets unused import.
+// Sanity that strings.Builder still compiles - quiets unused import.
 func TestDeleteUser_strings_builder_compiles(t *testing.T) {
 	t.Parallel()
 	var b strings.Builder

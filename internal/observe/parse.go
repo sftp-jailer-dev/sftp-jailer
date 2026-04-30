@@ -2,7 +2,7 @@
 // each event into one of four tiers (success / targeted / noise / unmatched)
 // per REQUIREMENTS.md LOG-05.
 //
-// Phase 1 scope is purely structural — the classifier decides the tier from
+// Phase 1 scope is purely structural - the classifier decides the tier from
 // the log line's shape alone. Phase 2 layers external lookups on top (is
 // the user in the managed set? is the source IP in the firewall allowlist?)
 // to refine "targeted" vs "noise" beyond the single-word sshd distinction.
@@ -27,7 +27,7 @@ type SshdEvent struct {
 	PID        int
 	Raw        string // MESSAGE field verbatim
 	Identifier string // SYSLOG_IDENTIFIER (e.g. "sshd")
-	Priority   string // PRIORITY (syslog level, kept as string — journald sends "5", "6", ...)
+	Priority   string // PRIORITY (syslog level, kept as string - journald sends "5", "6", ...)
 }
 
 // journalJSONLine is the subset of journalctl --output=json fields we
@@ -45,7 +45,7 @@ type journalJSONLine struct {
 // Parse decodes one journalctl --output=json line into an SshdEvent.
 // Returns a non-nil error for malformed JSON or a missing MESSAGE field.
 // Timestamp conversion failures degrade to a zero time.Time but do not
-// fail the parse — the raw message is the primary payload.
+// fail the parse - the raw message is the primary payload.
 func Parse(line []byte) (SshdEvent, error) {
 	var j journalJSONLine
 	if err := json.Unmarshal(line, &j); err != nil {

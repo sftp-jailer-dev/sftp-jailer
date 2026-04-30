@@ -4,7 +4,7 @@
 //
 // The split exists because WAL mode in SQLite (and in modernc.org/sqlite
 // specifically) gives best throughput when a single connection is
-// dedicated to writes while readers draw from a pool — this avoids
+// dedicated to writes while readers draw from a pool - this avoids
 // SQLITE_BUSY under the TUI + cron concurrency pattern this project
 // exhibits (the user browses the observation view while the weekly
 // systemd timer ingests new journal lines).
@@ -40,7 +40,7 @@ const ExpectedSchemaVersion = 3
 // Store splits read and write traffic into two separate *sql.DB handles
 // pointing at the same on-disk database. R is a pooled reader
 // (MaxOpenConns=8); W is a single-connection writer (MaxOpenConns=1).
-// The split is enforced by the separate handles — callers must write
+// The split is enforced by the separate handles - callers must write
 // through W and read through R. A lint rule in a future phase will
 // enforce call-site discipline.
 type Store struct {
@@ -62,7 +62,7 @@ type Store struct {
 func Open(path string) (*Store, error) {
 	// modernc.org/sqlite supports ?_pragma=key(value) in the DSN, and the
 	// query param is repeatable. journal_mode=WAL sticks across connections
-	// once any connection turns it on for the database file — but we
+	// once any connection turns it on for the database file - but we
 	// specify it on every connection for belt-and-suspenders.
 	dsn := fmt.Sprintf(
 		"%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)",
@@ -104,11 +104,11 @@ func Open(path string) (*Store, error) {
 // Behavior corner cases:
 //   - If the file does not exist, the sqlite driver auto-creates it. The
 //     newly-created file has user_version=0, so this function returns 0
-//     with no error — the caller's subsequent Migrate() will bring it
+//     with no error - the caller's subsequent Migrate() will bring it
 //     forward.
 //   - PeekUserVersion does NOT acquire the writer lock, so it is safe to
 //     call concurrently with an in-flight Open()/Migrate() on the same
-//     file (although the race is academic in practice — the OBS-04 gate
+//     file (although the race is academic in practice - the OBS-04 gate
 //     runs once, before Open).
 func PeekUserVersion(ctx context.Context, path string) (int, error) {
 	// Mirror Open()'s busy_timeout pragma so PeekUserVersion plays nicely
@@ -131,7 +131,7 @@ func PeekUserVersion(ctx context.Context, path string) (int, error) {
 
 // Close closes both the reader and writer handles. If both return an
 // error, the reader error is returned (the writer error is logged via
-// the returned error chain only when reader close succeeds) — consistent
+// the returned error chain only when reader close succeeds) - consistent
 // with standard Go "first error wins" convention.
 func (s *Store) Close() error {
 	errR := s.R.Close()

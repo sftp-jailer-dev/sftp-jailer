@@ -1,6 +1,6 @@
-// Package logsscreen — detailpane.go renders the per-event key/value
+// Package logsscreen - detailpane.go renders the per-event key/value
 // detail block consumed by (a) the wide-mode right pane and (b) the
-// narrow-mode modal. Pure-string output; no Lip Gloss styling here —
+// narrow-mode modal. Pure-string output; no Lip Gloss styling here -
 // the parent View applies width / padding.
 //
 // Mirrors the doctor service's `RenderText`-as-single-source-of-truth
@@ -24,7 +24,7 @@ import (
 // hard-wrap because Lip Gloss applies hard width clipping at the parent
 // layer; long lines will overflow at the data layer and the parent style
 // truncates with ellipsis if configured to do so. Soft wrapping is
-// deliberately deferred — see UI-SPEC §S-LOGS detail-pane spec which
+// deliberately deferred - see UI-SPEC §S-LOGS detail-pane spec which
 // allows the raw MESSAGE to overflow into a horizontal-scroll viewport
 // in v1.x.
 func RenderDetail(e store.Event, width int) string {
@@ -42,12 +42,12 @@ func RenderDetail(e store.Event, width int) string {
 	return b.String()
 }
 
-// displayOrDash returns "—" for the empty string so missing values are
+// displayOrDash returns "-" for the empty string so missing values are
 // visibly distinct from intentional blanks. Used by both the detail
 // pane and the flat-list cell renderer.
 func displayOrDash(s string) string {
 	if s == "" {
-		return "—"
+		return "-"
 	}
 	return s
 }

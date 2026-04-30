@@ -13,16 +13,16 @@ import (
 // atomicWritePathAllowlist is the canonical write-allowlist for AtomicWriteFile.
 // Consumers MUST land in one of these prefixes / exact-paths:
 //
-//   - /etc/sftp-jailer/config.yaml         — Phase 2 (D-07 carve-out).
-//   - /etc/ssh/sshd_config.d/              — Phase 3 (D-09 drop-in writes via
+//   - /etc/sftp-jailer/config.yaml         - Phase 2 (D-07 carve-out).
+//   - /etc/ssh/sshd_config.d/              - Phase 3 (D-09 drop-in writes via
 //     NewWriteSshdDropInStep; the tool owns this directory end-to-end).
-//   - /etc/default/ufw                     — Phase 4 (D-FW-03 IPV6 rewrite).
-//   - /srv/sftp-jailer/                    — Phase 3 (chrootRoot default;
+//   - /etc/default/ufw                     - Phase 4 (D-FW-03 IPV6 rewrite).
+//   - /srv/sftp-jailer/                    - Phase 3 (chrootRoot default;
 //     WriteAuthorizedKeys writes <root>/<user>/.ssh/authorized_keys).
-//   - /srv/sftp/                           — Phase 3 (alt default chrootRoot).
-//   - /var/lib/sftp-jailer/                — Phase 4 (D-S04-06 revert pointer
+//   - /srv/sftp/                           - Phase 3 (alt default chrootRoot).
+//   - /var/lib/sftp-jailer/                - Phase 4 (D-S04-06 revert pointer
 //     + Phase 3 apply-flow drop-in backups via applysetup.BackupDir).
-//   - /var/backups/sftp-jailer/            — Phase 5 (BUG-05-A fix): prerm
+//   - /var/backups/sftp-jailer/            - Phase 5 (BUG-05-A fix): prerm
 //     purge-sshd-cleanup drop-in backup via purge_cleanup.purgeBackupDir.
 //
 // Entries ending in `/` are prefix matches; bare paths are exact matches.
@@ -44,11 +44,11 @@ func defaultAtomicWriteAllowlist() []string {
 	return []string{
 		"/etc/sftp-jailer/config.yaml",
 		"/etc/default/ufw",
-		"/etc/ssh/sshd_config.d/", // prefix — sshd drop-in writes
-		"/srv/sftp-jailer/",       // prefix — chrootRoot default
-		"/srv/sftp/",              // prefix — alt chrootRoot default
-		"/var/lib/sftp-jailer/",   // prefix — backups + revert pointer (apply flow)
-		"/var/backups/sftp-jailer/", // prefix — purge-sshd-cleanup drop-in backup (prerm flow)
+		"/etc/ssh/sshd_config.d/", // prefix - sshd drop-in writes
+		"/srv/sftp-jailer/",       // prefix - chrootRoot default
+		"/srv/sftp/",              // prefix - alt chrootRoot default
+		"/var/lib/sftp-jailer/",   // prefix - backups + revert pointer (apply flow)
+		"/var/backups/sftp-jailer/", // prefix - purge-sshd-cleanup drop-in backup (prerm flow)
 	}
 }
 
@@ -90,12 +90,12 @@ func ResetAtomicWriteAllowlistForTest() {
 // AtomicWriteFile writes data to path with the standard tmp+fsync+rename
 // dance. The temp file is created in the SAME directory as path so the
 // final os.Rename is atomic on POSIX filesystems (cross-filesystem rename
-// is non-atomic — RESEARCH §"Anti-Patterns" line 616).
+// is non-atomic - RESEARCH §"Anti-Patterns" line 616).
 //
 // On any failure path the temp file is removed (best effort) so partial
 // writes never leave .tmp orphans on disk.
 //
-// The mode argument is applied via os.Chmod after Write+Close — necessary
+// The mode argument is applied via os.Chmod after Write+Close - necessary
 // because os.CreateTemp creates the file with mode 0600, which is too
 // restrictive for /etc/sftp-jailer/config.yaml (D-07 wants 0644).
 //
@@ -108,7 +108,7 @@ func ResetAtomicWriteAllowlistForTest() {
 //
 // Path allowlist: Phase 2 carved out /etc/sftp-jailer/config.yaml; Phase 4
 // adds /etc/default/ufw (D-FW-03) and /var/lib/sftp-jailer/ (D-S04-06).
-// Writes outside the allowlist are rejected — see atomicWritePathAllowlist.
+// Writes outside the allowlist are rejected - see atomicWritePathAllowlist.
 // Tests can extend via SetAtomicWriteAllowlistForTest.
 func (r *Real) AtomicWriteFile(_ context.Context, path string, data []byte, mode fs.FileMode) error {
 	if !isAllowedAtomicWritePath(path) {

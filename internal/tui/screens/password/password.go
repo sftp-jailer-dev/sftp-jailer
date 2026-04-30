@@ -1,4 +1,4 @@
-// Package password renders the M-PASSWORD modal — the chained-from-M-NEW-USER
+// Package password renders the M-PASSWORD modal - the chained-from-M-NEW-USER
 // password-set surface (D-11) AND the standalone-from-S-USERS password-reset
 // surface ('p' on a selected row).
 //
@@ -85,15 +85,15 @@ const (
 type phase int
 
 const (
-	// phaseShowing — auto-gen displayed; admin can c/r/s/Enter/Esc.
+	// phaseShowing - auto-gen displayed; admin can c/r/s/Enter/Esc.
 	phaseShowing phase = iota
-	// phaseExplicit — explicit-mode textinputs focused for typing.
+	// phaseExplicit - explicit-mode textinputs focused for typing.
 	phaseExplicit
-	// phaseSubmitting — chpasswd (+ chage) in flight.
+	// phaseSubmitting - chpasswd (+ chage) in flight.
 	phaseSubmitting
-	// phaseDone — submit succeeded; auto-pop after AutoPopDelay.
+	// phaseDone - submit succeeded; auto-pop after AutoPopDelay.
 	phaseDone
-	// phaseError — submit failed (pam_pwquality OR chage); errInline
+	// phaseError - submit failed (pam_pwquality OR chage); errInline
 	// surfaced; Enter retries.
 	phaseError
 )
@@ -121,7 +121,7 @@ type Model struct {
 	confirmTI textinput.Model
 	pwFocused bool // true = pwTI focused; false = confirmTI focused
 
-	// Force-change checkbox (chage -d 0) — DEFAULT OFF per D-13. Warn-styled
+	// Force-change checkbox (chage -d 0) - DEFAULT OFF per D-13. Warn-styled
 	// helper text below it explains the chrooted-SFTP lockout risk.
 	forceChangeChecked bool
 
@@ -242,12 +242,12 @@ const (
 )
 
 // Title implements nav.Screen.
-func (m *Model) Title() string { return "set password — " + m.username }
+func (m *Model) Title() string { return "set password - " + m.username }
 
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — true while in ExplicitMode so the
+// WantsRawKeys implements nav.Screen - true while in ExplicitMode so the
 // root App forwards every key into the textinputs (including 'q', 's', 'c').
 func (m *Model) WantsRawKeys() bool {
 	return m.mode == ExplicitMode && (m.phase == phaseExplicit)
@@ -330,7 +330,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 	case phaseError:
 		return m.handleErrorKey(msg)
 	case phaseSubmitting, phaseDone:
-		// Spinner / done phases ignore key input — Esc still backs out of
+		// Spinner / done phases ignore key input - Esc still backs out of
 		// done so admins can leave fast.
 		if msg.String() == "esc" || msg.String() == "q" {
 			return m, nav.PopCmd()
@@ -397,7 +397,7 @@ func (m *Model) handleExplicitKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 			return m, nil
 		}
 		if len(pw) < 8 {
-			m.errInline = "password too short — min 8 chars"
+			m.errInline = "password too short - min 8 chars"
 			m.errFatal = false
 			return m, nil
 		}
@@ -444,7 +444,7 @@ func (m *Model) handleErrorKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 func (m *Model) attemptSubmit() tea.Cmd {
 	pw := m.pw
 	if strings.TrimSpace(pw) == "" {
-		m.errInline = "no password to submit — regenerate or type one"
+		m.errInline = "no password to submit - regenerate or type one"
 		m.errFatal = false
 		return nil
 	}
@@ -477,7 +477,7 @@ func (m *Model) View() string {
 	var b strings.Builder
 	switch m.phase {
 	case phaseShowing:
-		b.WriteString(styles.Primary.Render("M-PASSWORD — " + m.username))
+		b.WriteString(styles.Primary.Render("M-PASSWORD - " + m.username))
 		b.WriteString("\n\n")
 		b.WriteString("generated password (display once):\n  ")
 		b.WriteString(monoFont(m.pw))
@@ -486,11 +486,11 @@ func (m *Model) View() string {
 		if m.forceChangeChecked {
 			b.WriteString("\n  ")
 			b.WriteString(styles.Warn.Render(
-				"⚠ chrooted SFTP-only users have no shell to host the change-password prompt — enabling this will lock them out on next connection per pitfall 2 / RH solution 24758. Use only with an OOB reset workflow."))
+				"⚠ chrooted SFTP-only users have no shell to host the change-password prompt - enabling this will lock them out on next connection per pitfall 2 / RH solution 24758. Use only with an OOB reset workflow."))
 		}
 		b.WriteString("\n\n[c] copy   [r] regenerate   [s] switch to explicit   [enter] submit   [esc] cancel")
 	case phaseExplicit:
-		b.WriteString(styles.Primary.Render("M-PASSWORD (explicit) — " + m.username))
+		b.WriteString(styles.Primary.Render("M-PASSWORD (explicit) - " + m.username))
 		b.WriteString("\n\npassword:\n  " + m.pwTI.View())
 		b.WriteString("\n\nconfirm:\n  " + m.confirmTI.View())
 		if m.errInline != "" {
@@ -501,7 +501,7 @@ func (m *Model) View() string {
 		if m.forceChangeChecked {
 			b.WriteString("\n  ")
 			b.WriteString(styles.Warn.Render(
-				"⚠ chrooted SFTP-only users have no shell to host the change-password prompt — enabling this will lock them out on next connection per pitfall 2 / RH solution 24758. Use only with an OOB reset workflow."))
+				"⚠ chrooted SFTP-only users have no shell to host the change-password prompt - enabling this will lock them out on next connection per pitfall 2 / RH solution 24758. Use only with an OOB reset workflow."))
 		}
 		b.WriteString("\n\n[tab] switch field   [enter] submit   [esc] cancel")
 	case phaseSubmitting:
@@ -530,7 +530,7 @@ func (m *Model) checkboxRow() string {
 
 // monoFont applies a faint border around the password block so it visually
 // stands out from prose. lipgloss does not have a true monospace toggle in
-// v2 — every terminal renders Go strings as monospace anyway — but the
+// v2 - every terminal renders Go strings as monospace anyway - but the
 // surrounding block makes the value easy to copy by eye.
 func monoFont(s string) string {
 	return lipgloss.NewStyle().

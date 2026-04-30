@@ -57,7 +57,7 @@ type Fake struct {
 	// and returned; the map entry is updated to the tail. Empty queue or
 	// absent key falls through to ExecResponses → ExecResponsesByPrefix.
 	//
-	// Used by tests that need STATEFUL responses across successive calls —
+	// Used by tests that need STATEFUL responses across successive calls -
 	// e.g. plan 04-12's NewUfwDeleteCatchAllByEnumerateStep tests, where
 	// `ufw status numbered` must return DIFFERENT rule listings on each
 	// re-enumerate-and-delete iteration to model ufw's ID compaction
@@ -74,7 +74,7 @@ type Fake struct {
 	// names; values are a slice of space-joined argument strings.
 	SshdConfig map[string][]string
 
-	// Phase 2 additions — scripted-response mirrors of the new sysops methods.
+	// Phase 2 additions - scripted-response mirrors of the new sysops methods.
 
 	// AtomicWriteError, if non-nil, is returned from AtomicWriteFile before
 	// any state mutation. Used to simulate write failures.
@@ -106,7 +106,7 @@ type Fake struct {
 	LockError error
 
 	// ----------------------------------------------------------------
-	// Phase 3 additions — scripted-response mirrors of the new sysops
+	// Phase 3 additions - scripted-response mirrors of the new sysops
 	// mutation methods. Each *Error field, if non-nil, is returned from
 	// the corresponding method AFTER the call is recorded (parity with
 	// AtomicWriteError convention). Tests script the error path by
@@ -179,7 +179,7 @@ type Fake struct {
 	// TarError, if non-nil, is returned from Tar after recording.
 	TarError error
 
-	// SshdConfigResponse is returned from SshdDumpConfig (W-04 — fakeable
+	// SshdConfigResponse is returned from SshdDumpConfig (W-04 - fakeable
 	// post-reload verifier in plan 03-09 + advisory checks in plan 03-08b).
 	// nil → empty map (callers don't need nil-checks).
 	SshdConfigResponse map[string][]string
@@ -189,7 +189,7 @@ type Fake struct {
 	SshdDumpConfigError error
 
 	// ----------------------------------------------------------------
-	// Phase 4 additions — scripted-response mirrors of the new ufw /
+	// Phase 4 additions - scripted-response mirrors of the new ufw /
 	// systemd-run / systemctl / ip mutation methods. Each *Error field,
 	// if non-nil, is returned from the corresponding method AFTER the
 	// call is recorded (parity with AtomicWriteError convention). Result
@@ -223,7 +223,7 @@ type Fake struct {
 
 	// SystemdRunError, if non-nil, is returned from SystemdRunOnActive
 	// after recording. Tests typically assert on f.Calls argv to verify
-	// the inline /bin/sh -c '<reverse>' shell-script body — the Fake
+	// the inline /bin/sh -c '<reverse>' shell-script body - the Fake
 	// records the FULL Command string verbatim per D-S04-08.
 	SystemdRunError error
 
@@ -407,7 +407,7 @@ func (f *Fake) Exec(_ context.Context, name string, args ...string) (ExecResult,
 
 // SshdDumpConfig implements [SystemOps.SshdDumpConfig]. Phase 3 (W-04)
 // adds two new ways to script:
-//   - SshdConfigResponse (preferred for Phase 3+ tests) — set the field to
+//   - SshdConfigResponse (preferred for Phase 3+ tests) - set the field to
 //     the desired map directly. Default nil → empty map (no nil-check needed).
 //   - SshdDumpConfigError, if non-nil, takes precedence and is returned.
 //
@@ -457,7 +457,7 @@ func (f *Fake) AtomicWriteFile(_ context.Context, path string, data []byte, mode
 // JournalctlStream implements [SystemOps.JournalctlStream]. Returns a fresh
 // io.NopCloser over the canned bytes for opts.Unit; the *os.Process return
 // is always nil for the Fake (the runner does not call proc.Wait when proc
-// is nil — see internal/observe/runner.go).
+// is nil - see internal/observe/runner.go).
 func (f *Fake) JournalctlStream(_ context.Context, opts JournalctlStreamOpts) (*os.Process, io.ReadCloser, error) {
 	f.record("JournalctlStream", opts.CursorFile, opts.Unit, opts.Since)
 	if f.JournalctlStreamError != nil {
@@ -469,7 +469,7 @@ func (f *Fake) JournalctlStream(_ context.Context, opts JournalctlStreamOpts) (*
 
 // JournalctlFollowCmd implements [SystemOps.JournalctlFollowCmd]. Returns a
 // no-op *exec.Cmd whose program name is the literal "journalctl" and whose
-// args mirror Real. The returned Cmd is never Run by the unit tests — the
+// args mirror Real. The returned Cmd is never Run by the unit tests - the
 // production caller (live-tail screen, plan 02-06) hands it to tea.ExecProcess.
 func (f *Fake) JournalctlFollowCmd(unit string) *exec.Cmd {
 	f.record("JournalctlFollowCmd", unit)
@@ -510,7 +510,7 @@ func (f *Fake) AcquireRunLock(_ context.Context, path string) (release func(), e
 // ============================================================================
 // Phase 3 Fake methods. Each records the call into f.Calls (under f.mu in
 // record()), then consults the matching scripted-error field. Argv is the
-// typed-string representation documented in plan 03-01 — exactly mirrors
+// typed-string representation documented in plan 03-01 - exactly mirrors
 // the test expectations to keep the contract evident.
 // ============================================================================
 
@@ -549,7 +549,7 @@ func (f *Fake) Gpasswd(_ context.Context, op GpasswdOp, username, group string) 
 }
 
 // Chpasswd implements [SystemOps.Chpasswd] (Fake). The password is NEVER
-// recorded — only its length appears in the recorded args (security
+// recorded - only its length appears in the recorded args (security
 // invariant per pitfall E3 / D-13). On scripted error, returns *ChpasswdError
 // matching the Real implementation's typed return.
 func (f *Fake) Chpasswd(_ context.Context, username, password string) error {
@@ -590,7 +590,7 @@ func (f *Fake) MkdirAll(_ context.Context, path string, mode fs.FileMode) error 
 
 // RemoveAll implements [SystemOps.RemoveAll] (Fake). On the success path
 // (RemoveAllError is nil) it also removes path from f.Files so subsequent
-// ReadFile round-trips on the same path return fs.ErrNotExist — parity
+// ReadFile round-trips on the same path return fs.ErrNotExist - parity
 // with os.RemoveAll's filesystem semantics. Files whose key has `path/`
 // as a prefix are removed too (directory-removal parity). Error path
 // returns BEFORE state mutation (parity with AtomicWriteFile fake).
@@ -697,7 +697,7 @@ func (f *Fake) Tar(_ context.Context, opts TarOpts) error {
 // ============================================================================
 // Phase 4 Fake methods. Each records the call into f.Calls (under f.mu in
 // record()), then consults the matching scripted-error / result field. Argv
-// is the typed-string representation pinned by plan 04-01 — exactly mirrors
+// is the typed-string representation pinned by plan 04-01 - exactly mirrors
 // the test expectations to keep the contract evident.
 //
 // Critical: SystemdRunOnActive records the FULL opts.Command string verbatim
@@ -742,7 +742,7 @@ func (f *Fake) UfwReload(_ context.Context) error {
 
 // HasPublicIPv6 implements [SystemOps.HasPublicIPv6] (Fake). Returns the
 // scripted (HasPublicIPv6Result, HasPublicIPv6Error) pair. Default zero
-// value is (false, nil) — appropriate for tests that don't care about v6
+// value is (false, nil) - appropriate for tests that don't care about v6
 // detection.
 func (f *Fake) HasPublicIPv6(_ context.Context) (bool, error) {
 	f.record("HasPublicIPv6")
@@ -777,7 +777,7 @@ func (f *Fake) SystemctlStop(_ context.Context, unitName string) error {
 
 // SystemctlIsActive implements [SystemOps.SystemctlIsActive] (Fake). Returns
 // the scripted (SystemctlIsActiveResult, SystemctlIsActiveError) pair.
-// Default zero value is (false, nil) — parity with the systemctl exit-3
+// Default zero value is (false, nil) - parity with the systemctl exit-3
 // "inactive" state on a fresh fixture.
 func (f *Fake) SystemctlIsActive(_ context.Context, unitName string) (bool, error) {
 	f.record("SystemctlIsActive", "unit="+unitName)

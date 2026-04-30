@@ -4,7 +4,7 @@ import "strings"
 
 // Mode is the OPEN / STAGING / LOCKED / UNKNOWN classification of the
 // firewall's posture toward the SFTP port (D-L0809-02). It's a derived
-// value — recomputed from `ufw status numbered` output. There is NO
+// value - recomputed from `ufw status numbered` output. There is NO
 // persistent flag; admin tampering between sessions never causes drift
 // (pitfall C3 retired by avoiding dual sources of truth).
 type Mode int
@@ -50,14 +50,14 @@ func (m Mode) String() string {
 //
 // Detection rules (D-L0809-02):
 //   - "catch-all" = Action contains "ALLOW" AND Source matches
-//     "Anywhere" (case-insensitive — ufw emits "Anywhere" for both
+//     "Anywhere" (case-insensitive - ufw emits "Anywhere" for both
 //     v4 and v6) AND Port matches sftpPort (literal or "<p>/tcp" /
 //     "<p>/udp" variant) AND RawComment == "" (catch-all rules carry
 //     no sftpj comment).
 //   - "sftpj rule" = ParseErr == nil AND User != "" AND Port matches
 //     sftpPort. ParseErr != nil rules (forward-compat ErrBadVersion
 //     from a v=2-writing newer binary, or ErrNotOurs from foreign
-//     comments) are treated as opaque — they do NOT count toward the
+//     comments) are treated as opaque - they do NOT count toward the
 //     sftpj predicate per the v>=2 forward-compat contract from
 //     internal/ufwcomment.
 //   - The two predicates are evaluated independently; both can be

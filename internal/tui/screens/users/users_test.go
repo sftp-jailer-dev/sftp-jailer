@@ -1,4 +1,4 @@
-// Package usersscreen tests for S-USERS — the wave-3 first screen, pushed
+// Package usersscreen tests for S-USERS - the wave-3 first screen, pushed
 // from home `u`. Mirrors the doctor screen's test shape (key helper +
 // nav.Screen compile-time check + LoadXForTest seam) per UI-SPEC §"Async /
 // Loading State Contract" line 313.
@@ -41,7 +41,7 @@ func keyPress(s string) tea.KeyPressMsg {
 	return tea.KeyPressMsg(tea.Key{Code: r, Text: s})
 }
 
-// TestUsersScreen_implements_nav_Screen — compile-time check that Model
+// TestUsersScreen_implements_nav_Screen - compile-time check that Model
 // satisfies nav.Screen plus runtime checks on Title / KeyMap / WantsRawKeys.
 func TestUsersScreen_implements_nav_Screen(t *testing.T) {
 	var s nav.Screen = usersscreen.New(nil)
@@ -53,14 +53,14 @@ func TestUsersScreen_implements_nav_Screen(t *testing.T) {
 	require.NotEmpty(t, km.FullHelp())
 }
 
-// TestUsersScreen_loading_state — initial View shows the loading copy
+// TestUsersScreen_loading_state - initial View shows the loading copy
 // (UI-SPEC line 320: "loading users…").
 func TestUsersScreen_loading_state(t *testing.T) {
 	m := usersscreen.New(nil)
 	require.Contains(t, m.View(), "loading users…")
 }
 
-// TestUsersScreen_LoadRowsForTest_renders_rows — feeding rows via the test
+// TestUsersScreen_LoadRowsForTest_renders_rows - feeding rows via the test
 // seam bypasses Init+enumerate; View must render every supplied row's
 // username, uid, and chroot.
 func TestUsersScreen_LoadRowsForTest_renders_rows(t *testing.T) {
@@ -74,14 +74,14 @@ func TestUsersScreen_LoadRowsForTest_renders_rows(t *testing.T) {
 	require.Contains(t, v, "/srv/sftp/alice")
 }
 
-// TestUsersScreen_renders_INFO_rows_in_Info_style — the D-12 INFO rows must
+// TestUsersScreen_renders_INFO_rows_in_Info_style - the D-12 INFO rows must
 // (a) appear at all, (b) carry the literal `[INFO]` prefix, (c) carry the
 // orphan detail, and (d) carry the `[fix in Phase 3]` hint.
 func TestUsersScreen_renders_INFO_rows_in_Info_style(t *testing.T) {
 	m := usersscreen.New(nil)
 	m.LoadRowsForTest(nil, []users.InfoRow{{
 		Kind:   users.InfoOrphan,
-		Detail: "/srv/sftp/wendy (uid 1042) — no backing system user",
+		Detail: "/srv/sftp/wendy (uid 1042) - no backing system user",
 		Hint:   "[fix in Phase 3]",
 	}})
 	v := m.View()
@@ -90,7 +90,7 @@ func TestUsersScreen_renders_INFO_rows_in_Info_style(t *testing.T) {
 	require.Contains(t, v, "[fix in Phase 3]")
 }
 
-// TestUsersScreen_keymap_bindings — assert the S-USERS bindings list
+// TestUsersScreen_keymap_bindings - assert the S-USERS bindings list
 // (UI-SPEC §S-USERS): esc/q (back), / (search), enter (detail), s (sort),
 // S (reverse sort, full-help only), c (copy).
 func TestUsersScreen_keymap_bindings(t *testing.T) {
@@ -119,7 +119,7 @@ func TestUsersScreen_keymap_bindings(t *testing.T) {
 	require.True(t, foundFull["S"], "FullHelp must surface the reverse-sort `S` binding")
 }
 
-// TestUsersScreen_search_active_flips_WantsRawKeys — pressing `/` activates
+// TestUsersScreen_search_active_flips_WantsRawKeys - pressing `/` activates
 // the search widget so the root App must forward subsequent keystrokes (q
 // included) into the textinput. Pressing esc deactivates.
 func TestUsersScreen_search_active_flips_WantsRawKeys(t *testing.T) {
@@ -132,7 +132,7 @@ func TestUsersScreen_search_active_flips_WantsRawKeys(t *testing.T) {
 	require.False(t, m.WantsRawKeys(), "after esc, search must clear and WantsRawKeys back to false")
 }
 
-// TestUsersScreen_sort_cycle — UI-SPEC line 214: 5 successive `s` presses
+// TestUsersScreen_sort_cycle - UI-SPEC line 214: 5 successive `s` presses
 // must cycle through username → uid → last-login → first-seen-IP →
 // allowlist-count → username and back. The footer renders the active sort
 // label so View() can be substring-asserted.
@@ -149,7 +149,7 @@ func TestUsersScreen_sort_cycle(t *testing.T) {
 	}
 }
 
-// TestUsersScreen_sort_reverse_toggles_arrow — `S` toggles the direction;
+// TestUsersScreen_sort_reverse_toggles_arrow - `S` toggles the direction;
 // the footer renders `↓` (default) or `↑` (reversed).
 func TestUsersScreen_sort_reverse_toggles_arrow(t *testing.T) {
 	m := usersscreen.New(nil)
@@ -159,12 +159,12 @@ func TestUsersScreen_sort_reverse_toggles_arrow(t *testing.T) {
 	require.Contains(t, m.View(), "↑", "after `S`, direction toggles to ↑")
 }
 
-// TestUsersScreen_copy_emits_clipboard_cmd — pressing `c` on a loaded row
+// TestUsersScreen_copy_emits_clipboard_cmd - pressing `c` on a loaded row
 // returns a non-nil tea.Cmd; invoking it produces a tea.BatchMsg whose
 // concatenated message string contains the expected TSV row content. We
 // cannot assert on the exact internal SetClipboardMsg type (it is
 // unexported in bubbletea v2), so we walk the batch and stringify each
-// produced message — the OSC52 setClipboardMsg is `type setClipboardMsg
+// produced message - the OSC52 setClipboardMsg is `type setClipboardMsg
 // string`, so its fmt.Sprintf form contains the row text.
 func TestUsersScreen_copy_emits_clipboard_cmd(t *testing.T) {
 	m := usersscreen.New(nil)
@@ -194,7 +194,7 @@ func TestUsersScreen_copy_emits_clipboard_cmd(t *testing.T) {
 	require.Contains(t, m.View(), "copied user row via OSC 52")
 }
 
-// TestUsersScreen_copy_no_op_when_no_rows — `c` with no rows must not panic
+// TestUsersScreen_copy_no_op_when_no_rows - `c` with no rows must not panic
 // and must not emit a clipboard write.
 func TestUsersScreen_copy_no_op_when_no_rows(t *testing.T) {
 	m := usersscreen.New(nil)
@@ -217,14 +217,14 @@ func TestUsersScreen_copy_no_op_when_no_rows(t *testing.T) {
 	}
 }
 
-// TestUsersScreen_empty_state — UI-SPEC line 354: "No SFTP users found."
+// TestUsersScreen_empty_state - UI-SPEC line 354: "No SFTP users found."
 func TestUsersScreen_empty_state(t *testing.T) {
 	m := usersscreen.New(nil)
 	m.LoadRowsForTest(nil, nil)
 	require.Contains(t, m.View(), "No SFTP users found.")
 }
 
-// TestUsersScreen_esc_pops — UI-SPEC §S-USERS: esc/q pops back to home.
+// TestUsersScreen_esc_pops - UI-SPEC §S-USERS: esc/q pops back to home.
 func TestUsersScreen_esc_pops(t *testing.T) {
 	m := usersscreen.New(nil)
 	m.LoadRowsForTest([]users.Row{{Username: "alice", UID: 1001}}, nil)
@@ -244,7 +244,7 @@ func TestUsersScreen_q_pops(t *testing.T) {
 	require.Equal(t, nav.Pop, nm.Intent)
 }
 
-// TestUsersScreen_cursor_movement — j/k (and arrow keys) move the cursor
+// TestUsersScreen_cursor_movement - j/k (and arrow keys) move the cursor
 // among the real-row indices; selected row carries a marker (e.g. `▌` or
 // reverse-video) so a substring assertion on View can detect it. We rely
 // on the cursor position rendering ahead of the username for the selected
@@ -267,10 +267,10 @@ func TestUsersScreen_cursor_movement(t *testing.T) {
 	require.Contains(t, v2, "bob", "bob still rendered after cursor moves")
 }
 
-// TestUsersScreen_renders_legend_with_threshold_values — UI-SPEC §S-USERS
+// TestUsersScreen_renders_legend_with_threshold_values - UI-SPEC §S-USERS
 // password-age legend (02-11 / SC #3 A+): a single muted line below the
 // table that explains the four buckets and substitutes the live cfg
-// thresholds. The exact wording is part of the contract — admins read
+// thresholds. The exact wording is part of the contract - admins read
 // this to understand the colored "fresh / aging / stale" hints.
 func TestUsersScreen_renders_legend_with_threshold_values(t *testing.T) {
 	cfg := &config.Settings{PasswordAgingDays: 180, PasswordStaleDays: 365}
@@ -282,7 +282,7 @@ func TestUsersScreen_renders_legend_with_threshold_values(t *testing.T) {
 		"legend wording must substitute cfg thresholds verbatim; got View=%s", v)
 }
 
-// TestUsersScreen_renders_legend_with_custom_thresholds — verifies the
+// TestUsersScreen_renders_legend_with_custom_thresholds - verifies the
 // legend reflects whatever the admin configured rather than hardcoded
 // defaults. Sanity-check on the substitution path.
 func TestUsersScreen_renders_legend_with_custom_thresholds(t *testing.T) {
@@ -295,7 +295,7 @@ func TestUsersScreen_renders_legend_with_custom_thresholds(t *testing.T) {
 	require.Contains(t, v, "stale ≥ 90d", "legend must use cfg.PasswordStaleDays for stale floor")
 }
 
-// TestUsersScreen_renders_indefinite_for_max_99999 — when a row carries
+// TestUsersScreen_renders_indefinite_for_max_99999 - when a row carries
 // PasswordMaxDays >= 99999, the rendered "pwd age" cell shows the ∞
 // sentinel rather than a numeric "Nd (…)" form.
 func TestUsersScreen_renders_indefinite_for_max_99999(t *testing.T) {
@@ -312,7 +312,7 @@ func TestUsersScreen_renders_indefinite_for_max_99999(t *testing.T) {
 		"the indefinite branch wins over the numeric branch; got View=%s", v)
 }
 
-// TestUsersScreen_renders_status_hint_for_aging — exercises the live
+// TestUsersScreen_renders_status_hint_for_aging - exercises the live
 // rendering path for the "Nd (aging)" bucket. Verifies that the screen
 // calls FormatPasswordAge rather than the old `Nd` form.
 func TestUsersScreen_renders_status_hint_for_aging(t *testing.T) {
@@ -327,7 +327,7 @@ func TestUsersScreen_renders_status_hint_for_aging(t *testing.T) {
 		"age=200, aging=180, stale=365 must render the (aging) hint; got View=%s", v)
 }
 
-// TestUsersScreen_search_filters_rows — typing into the active search
+// TestUsersScreen_search_filters_rows - typing into the active search
 // widget restricts which rows the View renders. After typing `bob`, the
 // rendered View must include `bob` and exclude `alice`.
 func TestUsersScreen_search_filters_rows(t *testing.T) {
@@ -349,10 +349,10 @@ func TestUsersScreen_search_filters_rows(t *testing.T) {
 }
 
 // ============================================================================
-// Phase 3 plan 03-07 tests — n / p / Enter-on-INFO + cursor extension
+// Phase 3 plan 03-07 tests - n / p / Enter-on-INFO + cursor extension
 // ============================================================================
 
-// TestUsersScreen_n_keybinding_pushes_new_user_when_ops_set — pressing 'n'
+// TestUsersScreen_n_keybinding_pushes_new_user_when_ops_set - pressing 'n'
 // with ops != nil pushes a *newuser.Model onto the nav stack.
 func TestUsersScreen_n_keybinding_pushes_new_user_when_ops_set(t *testing.T) {
 	f := sysops.NewFake()
@@ -369,7 +369,7 @@ func TestUsersScreen_n_keybinding_pushes_new_user_when_ops_set(t *testing.T) {
 	require.True(t, isNewUser, "pushed screen must be *newuser.Model, got %T", nm.Screen)
 }
 
-// TestUsersScreen_n_keybinding_noop_when_ops_nil — pressing 'n' on a
+// TestUsersScreen_n_keybinding_noop_when_ops_nil - pressing 'n' on a
 // model constructed via the legacy New() (ops=nil) is a no-op.
 func TestUsersScreen_n_keybinding_noop_when_ops_nil(t *testing.T) {
 	m := usersscreen.New(nil)
@@ -379,7 +379,7 @@ func TestUsersScreen_n_keybinding_noop_when_ops_nil(t *testing.T) {
 }
 
 // TestUsersScreen_p_keybinding_pushes_password_modal_with_selected_username
-// — pressing 'p' on a selected real row pushes M-PASSWORD with that user.
+// - pressing 'p' on a selected real row pushes M-PASSWORD with that user.
 func TestUsersScreen_p_keybinding_pushes_password_modal_with_selected_username(t *testing.T) {
 	f := sysops.NewFake()
 	cfg := config.Defaults()
@@ -398,7 +398,7 @@ func TestUsersScreen_p_keybinding_pushes_password_modal_with_selected_username(t
 		"M-PASSWORD must carry the selected row's username")
 }
 
-// TestUsersScreen_p_keybinding_noop_when_no_selected_row — pressing 'p'
+// TestUsersScreen_p_keybinding_noop_when_no_selected_row - pressing 'p'
 // with no real rows is a no-op.
 func TestUsersScreen_p_keybinding_noop_when_no_selected_row(t *testing.T) {
 	f := sysops.NewFake()
@@ -409,7 +409,7 @@ func TestUsersScreen_p_keybinding_noop_when_no_selected_row(t *testing.T) {
 	require.Nil(t, cmd, "pressing 'p' with no selectable rows must be a no-op")
 }
 
-// TestUsersScreen_enter_on_orphan_INFO_pushes_newuser_NewFromOrphan —
+// TestUsersScreen_enter_on_orphan_INFO_pushes_newuser_NewFromOrphan -
 // Enter on an orphan-kind INFO row pushes M-NEW-USER constructed via
 // NewFromOrphan (carrying the UID + GID for B-03).
 func TestUsersScreen_enter_on_orphan_INFO_pushes_newuser_NewFromOrphan(t *testing.T) {
@@ -431,12 +431,12 @@ func TestUsersScreen_enter_on_orphan_INFO_pushes_newuser_NewFromOrphan(t *testin
 	nu, isNewUser := nm.Screen.(*newuser.Model)
 	require.True(t, isNewUser, "pushed screen must be *newuser.Model, got %T", nm.Screen)
 	require.True(t, nu.IsOrphanForTest(),
-		"Enter-on-orphan-INFO must push NewFromOrphan (isOrphan=true) — B-03 contract")
+		"Enter-on-orphan-INFO must push NewFromOrphan (isOrphan=true) - B-03 contract")
 	require.Equal(t, 5555, nu.OrphanGIDForTest(),
 		"orphan GID must propagate from InfoRow into the new-user modal (B-03)")
 }
 
-// TestUsersScreen_enter_on_missing_config_INFO_toasts_doctor_pointer —
+// TestUsersScreen_enter_on_missing_config_INFO_toasts_doctor_pointer -
 // Enter on a missing-match / missing-chroot INFO row flashes a toast
 // pointing the admin at the doctor [A] action; no Push.
 func TestUsersScreen_enter_on_missing_config_INFO_toasts_doctor_pointer(t *testing.T) {
@@ -450,7 +450,7 @@ func TestUsersScreen_enter_on_missing_config_INFO_toasts_doctor_pointer(t *testi
 	}})
 	m.SetInfoCursorForTest(0)
 	_, cmd := m.Update(keyPress("enter"))
-	// Toast.Flash returns a tea.Cmd that ticks expire — we don't drive it
+	// Toast.Flash returns a tea.Cmd that ticks expire - we don't drive it
 	// (would block 2s). Existence of the cmd + toast text in View is the
 	// assertion.
 	require.NotNil(t, cmd, "missing-config Enter must Flash a toast")
@@ -460,7 +460,7 @@ func TestUsersScreen_enter_on_missing_config_INFO_toasts_doctor_pointer(t *testi
 		"missing-config Enter must mention the [A] apply action")
 }
 
-// TestUsersScreen_KeyMap_includes_New_and_Password_bindings — the KeyMap
+// TestUsersScreen_KeyMap_includes_New_and_Password_bindings - the KeyMap
 // surfaces 'n' (New) and 'p' (Password) bindings with help text.
 func TestUsersScreen_KeyMap_includes_New_and_Password_bindings(t *testing.T) {
 	km := usersscreen.DefaultKeyMap()
@@ -473,11 +473,11 @@ func TestUsersScreen_KeyMap_includes_New_and_Password_bindings(t *testing.T) {
 }
 
 // ============================================================================
-// Phase 3 plan 03-08a tests — k / d / Enter-on-real-row routing
+// Phase 3 plan 03-08a tests - k / d / Enter-on-real-row routing
 // + W-03 regression guards (n/p still wired)
 // ============================================================================
 
-// TestUsersScreen_k_keybinding_pushes_userdetail — pressing 'k' on a
+// TestUsersScreen_k_keybinding_pushes_userdetail - pressing 'k' on a
 // selected real row pushes a *userdetail.Model.
 func TestUsersScreen_k_keybinding_pushes_userdetail(t *testing.T) {
 	t.Parallel()
@@ -498,7 +498,7 @@ func TestUsersScreen_k_keybinding_pushes_userdetail(t *testing.T) {
 		"S-USER-DETAIL must carry the selected row's username")
 }
 
-// TestUsersScreen_d_keybinding_pushes_deleteuser — pressing 'd' on a
+// TestUsersScreen_d_keybinding_pushes_deleteuser - pressing 'd' on a
 // selected real row pushes a *deleteuser.Model.
 func TestUsersScreen_d_keybinding_pushes_deleteuser(t *testing.T) {
 	t.Parallel()
@@ -517,7 +517,7 @@ func TestUsersScreen_d_keybinding_pushes_deleteuser(t *testing.T) {
 	require.True(t, isDU, "pushed screen must be *deleteuser.Model, got %T", nm.Screen)
 }
 
-// TestUsersScreen_enter_on_real_row_pushes_userdetail — Enter on a real
+// TestUsersScreen_enter_on_real_row_pushes_userdetail - Enter on a real
 // row pushes S-USER-DETAIL (the slot reserved by plan 03-07's
 // handleEnter).
 func TestUsersScreen_enter_on_real_row_pushes_userdetail(t *testing.T) {
@@ -538,7 +538,7 @@ func TestUsersScreen_enter_on_real_row_pushes_userdetail(t *testing.T) {
 	require.True(t, isUD, "Enter on real row pushes *userdetail.Model, got %T", nm.Screen)
 }
 
-// TestUsersScreen_k_with_no_selected_row_is_noop_or_navigates — pressing
+// TestUsersScreen_k_with_no_selected_row_is_noop_or_navigates - pressing
 // 'k' with no real row selected (e.g. cursor on INFO) must NOT push
 // S-USER-DETAIL; it falls through to cursor-up navigation.
 func TestUsersScreen_k_with_no_real_row_does_not_push(t *testing.T) {
@@ -561,7 +561,7 @@ func TestUsersScreen_k_with_no_real_row_does_not_push(t *testing.T) {
 	}
 }
 
-// TestUsersScreen_d_with_no_selected_row_is_noop — pressing 'd' with
+// TestUsersScreen_d_with_no_selected_row_is_noop - pressing 'd' with
 // cursor on INFO row (or empty list) must be a no-op.
 func TestUsersScreen_d_with_no_selected_row_is_noop(t *testing.T) {
 	t.Parallel()
@@ -574,7 +574,7 @@ func TestUsersScreen_d_with_no_selected_row_is_noop(t *testing.T) {
 	require.Nil(t, cmd, "pressing 'd' with no rows must be a no-op")
 }
 
-// TestUsersScreen_KeyMap_includes_Keys_and_Delete_bindings — KeyMap.Keys
+// TestUsersScreen_KeyMap_includes_Keys_and_Delete_bindings - KeyMap.Keys
 // and KeyMap.Delete fields exist with help text.
 func TestUsersScreen_KeyMap_includes_Keys_and_Delete_bindings(t *testing.T) {
 	t.Parallel()
@@ -588,7 +588,7 @@ func TestUsersScreen_KeyMap_includes_Keys_and_Delete_bindings(t *testing.T) {
 }
 
 // TestUsersScreen_KeyMap_preserves_New_and_Password_bindings_from_03_07
-// — W-03 regression guard. KeyMap.New AND KeyMap.Password fields must
+// - W-03 regression guard. KeyMap.New AND KeyMap.Password fields must
 // STILL exist after plan 03-08a's wiring change. If a regression deletes
 // the n/p bindings this test fails to build.
 func TestUsersScreen_KeyMap_preserves_New_and_Password_bindings_from_03_07(t *testing.T) {
@@ -601,7 +601,7 @@ func TestUsersScreen_KeyMap_preserves_New_and_Password_bindings_from_03_07(t *te
 }
 
 // TestUsersScreen_n_and_p_keybindings_still_route_to_newuser_and_password
-// — W-03 regression guard. Re-execute the corresponding plan-03-07
+// - W-03 regression guard. Re-execute the corresponding plan-03-07
 // dispatch behavior against the new code: 'n' still pushes
 // *newuser.Model; 'p' on a selected row still pushes *password.Model.
 func TestUsersScreen_n_and_p_keybindings_still_route_to_newuser_and_password(t *testing.T) {
@@ -628,7 +628,7 @@ func TestUsersScreen_n_and_p_keybindings_still_route_to_newuser_and_password(t *
 
 // --- Plan 04-06: M-DELETE-RULE keybind tests --------------------------------
 
-// ---- Plan 04-08 Task 3 — STAGING column glyph tests --------------------
+// ---- Plan 04-08 Task 3 - STAGING column glyph tests --------------------
 
 // TestRenderAllowlistCell_staging_mode_shows_open_glyph asserts the
 // per-row IP-allowlist column displays "<count> (open) ⚠️" when the
@@ -644,7 +644,7 @@ func TestRenderAllowlistCell_staging_mode_shows_open_glyph(t *testing.T) {
 }
 
 // TestRenderAllowlistCell_locked_mode_just_shows_count asserts LOCKED
-// mode renders the bare count — no `(open)` annotation, no warning
+// mode renders the bare count - no `(open)` annotation, no warning
 // glyph (rules are enforcement-effective).
 func TestRenderAllowlistCell_locked_mode_just_shows_count(t *testing.T) {
 	t.Parallel()
@@ -668,7 +668,7 @@ func TestRenderAllowlistCell_zero_count(t *testing.T) {
 }
 
 // TestRenderAllowlistCell_open_mode_count_plain asserts OPEN mode (no
-// sftpj rules, just the catch-all) shows the bare count — no `(open)`
+// sftpj rules, just the catch-all) shows the bare count - no `(open)`
 // because no per-user rules exist yet.
 func TestRenderAllowlistCell_open_mode_count_plain(t *testing.T) {
 	t.Parallel()
@@ -691,7 +691,7 @@ type usersStubKeyMap struct{}
 func (usersStubKeyMap) ShortHelp() []nav.KeyBinding  { return nil }
 func (usersStubKeyMap) FullHelp() [][]nav.KeyBinding { return nil }
 
-// TestSUsers_D_pushes_deleterule_byuser_factory_set — pressing 'D'
+// TestSUsers_D_pushes_deleterule_byuser_factory_set - pressing 'D'
 // (uppercase) on a real-row selection must invoke the
 // deleteUserFwRulesFactory with the selected username. The W1 keybind
 // deviation (lowercase 'd' = delete user account from Phase 3 03-08a;
@@ -725,7 +725,7 @@ func TestSUsers_D_pushes_deleterule_byuser_factory_set(t *testing.T) {
 		"deleteUserFwRulesFactory must be invoked with the selected username")
 }
 
-// TestSUsers_D_noop_when_factory_nil — pressing 'D' with no factory
+// TestSUsers_D_noop_when_factory_nil - pressing 'D' with no factory
 // registered is a clean no-op.
 func TestSUsers_D_noop_when_factory_nil(t *testing.T) {
 	usersscreen.SetDeleteUserFwRulesFactory(nil)
@@ -740,7 +740,7 @@ func TestSUsers_D_noop_when_factory_nil(t *testing.T) {
 	require.Nil(t, cmd, "'D' without factory must be a no-op")
 }
 
-// TestSUsers_d_still_pushes_deleteuser_modal_phase3_preserved — W-03
+// TestSUsers_d_still_pushes_deleteuser_modal_phase3_preserved - W-03
 // regression guard for the Phase 3 03-08a contract: lowercase 'd' on
 // S-USERS still pushes M-DELETE-USER (delete user account), NOT
 // M-DELETE-RULE. The W1 keybind deviation in 04-06 reserves uppercase

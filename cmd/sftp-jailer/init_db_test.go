@@ -58,7 +58,7 @@ func TestRootCmd_HelpOutputExcludesInitDB(t *testing.T) {
 }
 
 // TestInitDB_FreshInstall_CreatesAndMigrates exercises the production code
-// path against a clean t.TempDir() — no DB exists, the subcommand creates
+// path against a clean t.TempDir() - no DB exists, the subcommand creates
 // it via store.Open's DSN and migrates to ExpectedSchemaVersion.
 func TestInitDB_FreshInstall_CreatesAndMigrates(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "observations.db")
@@ -97,11 +97,11 @@ func TestInitDB_Idempotent_ReinvokeNoOp(t *testing.T) {
 	cmd := initDBCmd()
 	cmd.SetContext(context.Background())
 
-	// First invocation — create + migrate.
+	// First invocation - create + migrate.
 	if err := cmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("first RunE: %v", err)
 	}
-	// Second invocation — must be a no-op.
+	// Second invocation - must be a no-op.
 	if err := cmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("second RunE (idempotent): %v", err)
 	}

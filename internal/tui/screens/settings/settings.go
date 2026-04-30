@@ -52,7 +52,7 @@ import (
 )
 
 // fieldKind enumerates the editable retention rows plus the Phase 3 USER-13
-// dispatch row. Order matches UI-SPEC §S-SETTINGS — the cursor cycle goes
+// dispatch row. Order matches UI-SPEC §S-SETTINGS - the cursor cycle goes
 // top-to-bottom from detail_retention_days through password_authentication.
 //
 // Editable rows live in /etc/sftp-jailer/config.yaml and route through
@@ -78,7 +78,7 @@ const (
 	// the modal's preflight will surface the lockout risk before any
 	// write).
 	fieldPasswordAuthN
-	// fieldLockdownWindow is the Phase 4 LOCK-04 / D-L0204-01 knob —
+	// fieldLockdownWindow is the Phase 4 LOCK-04 / D-L0204-01 knob -
 	// observation lookback window the LOCK-02 proposal generator uses.
 	// Routes through the standard inline-edit mechanic (textinput +
 	// validate-on-Enter + atomic Save). Default 90; range [1, 3650].
@@ -89,7 +89,7 @@ const (
 	fieldKindCount
 )
 
-// name returns the snake_case yaml key for a field — also the toast suffix
+// name returns the snake_case yaml key for a field - also the toast suffix
 // shown after a successful save.
 func (k fieldKind) name() string {
 	switch k {
@@ -117,7 +117,7 @@ func (k fieldKind) hint() string {
 	case fieldCompact:
 		return "(must be ≤ detail_retention_days)"
 	case fieldPasswordAuthN:
-		return "(globally allow / disallow password auth — managed users without keys block disable)"
+		return "(globally allow / disallow password auth - managed users without keys block disable)"
 	case fieldLockdownWindow:
 		return "days (proposal lookback; default 90)"
 	}
@@ -144,7 +144,7 @@ type savedMsg struct {
 // pwAuthLoadedMsg (Phase 3 / USER-13) carries the live sshd -T value of
 // passwordauthentication back from the Init's async dump. value is one of
 // "yes", "no", or "unknown" (the latter when SshdDumpConfig errors or the
-// directive is absent — both of which mean we cannot pre-compute the modal
+// directive is absent - both of which mean we cannot pre-compute the modal
 // Action and must fall back to the safer ActionDisable when the admin
 // presses Enter).
 type pwAuthLoadedMsg struct {
@@ -168,7 +168,7 @@ type Model struct {
 	errInline string // either validation Warn copy or Critical save-error copy
 	errFatal  bool   // true when errInline should render in Critical (save-error)
 
-	// Phase 3 USER-13 — dependencies + cached live state for the
+	// Phase 3 USER-13 - dependencies + cached live state for the
 	// fieldPasswordAuthN dispatch row. usersEnum + chrootRoot are passed
 	// straight through to pwauthdisable.New on Push; pwAuthCurrent is
 	// populated by Init's async sshd -T branch.
@@ -194,7 +194,7 @@ type Model struct {
 func New(ops sysops.SystemOps, path string, usersEnum *users.Enumerator, chrootRoot string) *Model {
 	ti := textinput.New()
 	ti.Prompt = ""
-	ti.CharLimit = 8 // 99999999 — way more than any retention or MB knob.
+	ti.CharLimit = 8 // 99999999 - way more than any retention or MB knob.
 	return &Model{
 		ops:           ops,
 		path:          path,
@@ -209,7 +209,7 @@ func New(ops sysops.SystemOps, path string, usersEnum *users.Enumerator, chrootR
 
 // Init kicks off the async config.Load PLUS the Phase 3 sshd -T dump that
 // surfaces the live PasswordAuthentication value into the dispatch row.
-// If ops is nil (test path), Init returns nil — the test is expected to
+// If ops is nil (test path), Init returns nil - the test is expected to
 // call LoadSettingsForTest (and optionally feed pwAuthLoadedMsg) before
 // any View().
 func (m *Model) Init() tea.Cmd {
@@ -218,7 +218,7 @@ func (m *Model) Init() tea.Cmd {
 		return nil
 	}
 	loadCmd := func() tea.Msg {
-		// Generous timeout — config.Load reads a tiny YAML file via the
+		// Generous timeout - config.Load reads a tiny YAML file via the
 		// sysops seam. 30s mirrors the doctor / users defensive bound.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -226,7 +226,7 @@ func (m *Model) Init() tea.Cmd {
 		return settingsLoadedMsg{settings: s, err: err}
 	}
 	pwAuthCmd := func() tea.Msg {
-		// `sshd -T` (no -C) reports global directives only — exactly what
+		// `sshd -T` (no -C) reports global directives only - exactly what
 		// we need for the top-level PasswordAuthentication value. Any
 		// error or absent key collapses to "unknown" so the row still
 		// renders something the admin can act on.
@@ -260,7 +260,7 @@ func (m *Model) LoadSettingsForTest(s config.Settings) {
 // SetPwAuthCurrentForTest pokes the cached sshd -T value of
 // passwordauthentication so tests can drive the fieldPasswordAuthN
 // dispatch row without staging a Fake SshdConfigResponse + waiting on
-// the async pwAuthLoadedMsg. Accepted: "yes", "no", "unknown" — any
+// the async pwAuthLoadedMsg. Accepted: "yes", "no", "unknown" - any
 // other value is normalised to "unknown" (matching pwAuthLoadedMsg's
 // own clamp in Init).
 func (m *Model) SetPwAuthCurrentForTest(value string) {
@@ -309,7 +309,7 @@ func (m *Model) Title() string { return "settings" }
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — true while the textinput is focused
+// WantsRawKeys implements nav.Screen - true while the textinput is focused
 // (m.editing) so the root App forwards every keystroke (including `q` and
 // digits) into the input rather than acting on global key bindings.
 //
@@ -334,7 +334,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		return m, nil
 
 	case pwAuthLoadedMsg:
-		// Phase 3 USER-13 — cache the live value for the dispatch row.
+		// Phase 3 USER-13 - cache the live value for the dispatch row.
 		// "unknown" is a legal terminal value (caller handles the
 		// fall-back to ActionDisable inside handleNavKey).
 		m.pwAuthCurrent = msg.value
@@ -366,7 +366,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		return m.handleNavKey(msg)
 	}
 
-	// Toast TTL — every non-key, non-load message lets the toast tick down.
+	// Toast TTL - every non-key, non-load message lets the toast tick down.
 	m.toast = m.toast.Update(msg)
 	return m, nil
 }
@@ -387,7 +387,7 @@ func (m *Model) handleNavKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		}
 		return m, nil
 	case "e", "enter":
-		// Phase 3 USER-13 — fieldPasswordAuthN dispatches to
+		// Phase 3 USER-13 - fieldPasswordAuthN dispatches to
 		// M-DISABLE-PWAUTH instead of entering inline-edit mode. The
 		// modal carries its own preflight + override gate (D-16); we
 		// just pick the Action based on the cached live value.
@@ -395,7 +395,7 @@ func (m *Model) handleNavKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		// Action selection:
 		//   "yes" → ActionDisable (the typical USER-13 path)
 		//   "no"  → ActionEnable  (re-enable; no preflight gate per D-16)
-		//   "unknown" → ActionDisable as the safe default — the modal's
+		//   "unknown" → ActionDisable as the safe default - the modal's
 		//               preflight will surface lockout risk before any
 		//               write so even a wrongly-guessed direction still
 		//               cannot lock users out without the override.
@@ -406,7 +406,7 @@ func (m *Model) handleNavKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 			}
 			return m, nav.PushCmd(pwauthdisable.New(m.ops, m.usersEnum, m.chrootRoot, action))
 		}
-		// Enter edit mode — focus the textinput. The current value is
+		// Enter edit mode - focus the textinput. The current value is
 		// rendered as the textinput's placeholder so the admin sees what
 		// they're replacing; pressing keys appends to an empty input. This
 		// keeps the typing semantics simple (no in-place edit-cursor
@@ -428,7 +428,7 @@ func (m *Model) handleNavKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 func (m *Model) handleEditKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		// Cancel — restore the textinput state but do NOT touch m.settings.
+		// Cancel - restore the textinput state but do NOT touch m.settings.
 		m.editing = false
 		m.errInline = ""
 		m.errFatal = false
@@ -460,7 +460,7 @@ func (m *Model) currentValue() int {
 }
 
 // valueFor returns the value for an arbitrary field (used by the row
-// renderer in View — independent of cursor position).
+// renderer in View - independent of cursor position).
 func (m *Model) valueFor(k fieldKind) int {
 	switch k {
 	case fieldDetail:
@@ -498,13 +498,13 @@ func (m *Model) attemptSave() tea.Cmd {
 		candidate.LockdownProposalWindowDays = v
 	}
 	if errs := config.Validate(candidate); len(errs) > 0 {
-		// First error per field is the most relevant — surfaces the
+		// First error per field is the most relevant - surfaces the
 		// floor/ceiling/range message to the admin.
 		m.errInline = errs[0].Error()
 		m.errFatal = false
 		return nil
 	}
-	// Validation passed — perform the atomic write off the main loop. The
+	// Validation passed - perform the atomic write off the main loop. The
 	// goroutine emits a savedMsg back into Update.
 	ops, path, field := m.ops, m.path, m.cursor
 	return func() tea.Msg {
@@ -526,7 +526,7 @@ func (m *Model) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(styles.Primary.Render("settings — retention"))
+	b.WriteString(styles.Primary.Render("settings - retention"))
 	b.WriteString("\n\n")
 
 	// Render the field rows. Editable rows render their numeric value via
@@ -542,7 +542,7 @@ func (m *Model) View() string {
 		var valStr string
 		switch {
 		case k == fieldPasswordAuthN:
-			// Dispatch row — render the cached sshd -T value with a
+			// Dispatch row - render the cached sshd -T value with a
 			// directional colour cue: yes=Warn (an open footgun), no=Success
 			// (the safe state), unknown=Dim (we couldn't tell).
 			switch m.pwAuthCurrent {
@@ -585,7 +585,7 @@ func (m *Model) View() string {
 	b.WriteString(styles.Dim.Render("  config file: " + m.path))
 	b.WriteString("\n")
 
-	// Footer — different copy depending on edit mode.
+	// Footer - different copy depending on edit mode.
 	b.WriteString("\n")
 	if m.editing {
 		b.WriteString(styles.Dim.Render("enter·save  esc·cancel  ?·rules"))
@@ -601,7 +601,7 @@ func (m *Model) View() string {
 	return b.String()
 }
 
-// KeyMap holds the S-SETTINGS bindings — implements nav.KeyMap.
+// KeyMap holds the S-SETTINGS bindings - implements nav.KeyMap.
 type KeyMap struct {
 	Move        nav.KeyBinding
 	Edit        nav.KeyBinding

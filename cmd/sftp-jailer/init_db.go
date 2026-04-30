@@ -1,6 +1,6 @@
 // Package main (init_db.go): the hidden `sftp-jailer init-db` Cobra subcommand
 // invoked by the .deb postinst script to initialize the observation DB at
-// the current schema version IMMEDIATELY at install time — closing the
+// the current schema version IMMEDIATELY at install time - closing the
 // gap from 05-VERIFICATION.md where the DB was previously created lazily
 // by the first timer-triggered observe-run instead.
 //
@@ -36,7 +36,7 @@
 //	On `apt upgrade`, the existing DB at the prior version is opened,
 //	Migrate is forward-only, no destructive operation occurs. CRITICAL
 //	anti-parity with WR-01: this subcommand NEVER truncates or
-//	overwrites state — unlike the existing `: > observer.cursor`
+//	overwrites state - unlike the existing `: > observer.cursor`
 //	postinst line which does (a known WR-01 issue out of scope here).
 package main
 
@@ -71,12 +71,12 @@ var initDBOsExit = os.Exit
 //
 // Exit codes:
 //
-//	0  success — DB exists at ExpectedSchemaVersion (fresh create OR idempotent re-run)
-//	1  generic failure (sqlite open / migrate error) — RunE returns the error
-//	2  schema drift — on-disk user_version > ExpectedSchemaVersion (downgrade install)
+//	0  success - DB exists at ExpectedSchemaVersion (fresh create OR idempotent re-run)
+//	1  generic failure (sqlite open / migrate error) - RunE returns the error
+//	2  schema drift - on-disk user_version > ExpectedSchemaVersion (downgrade install)
 //
 // postinst invokes this without `|| true` so set -e propagates a non-zero
-// exit and dpkg marks the configure step failed — admin sees the failure.
+// exit and dpkg marks the configure step failed - admin sees the failure.
 func initDBCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:    "init-db",
@@ -89,7 +89,7 @@ runs PRAGMA user_version against the on-disk file BEFORE applying any
 migration (the OBS-04 schema-drift gate), and on no-drift dispatches
 Store.Migrate to advance user_version to ExpectedSchemaVersion.
 
-This subcommand is idempotent — running it on an already-migrated DB is
+This subcommand is idempotent - running it on an already-migrated DB is
 a no-op (Store.Migrate's documented contract). On a downgrade-install
 scenario where the on-disk DB has a higher schema version than this
 binary expects, init-db refuses with exit code 2.`,
@@ -99,7 +99,7 @@ binary expects, init-db refuses with exit code 2.`,
 
 			dbPath := initDBPath()
 
-			// OBS-04 schema-drift gate — BEFORE store.Open + Migrate.
+			// OBS-04 schema-drift gate - BEFORE store.Open + Migrate.
 			// Mirrors cmd/sftp-jailer/observe.go::schemaCheck.
 			current, err := store.PeekUserVersion(ctx, dbPath)
 			if err != nil {

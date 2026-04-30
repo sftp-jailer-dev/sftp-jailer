@@ -68,7 +68,7 @@ func TestRenderReverseCommands_empty_input_returns_nil(t *testing.T) {
 
 func TestRenderReverseCommands_delete_with_empty_comment_omits_comment_field(t *testing.T) {
 	t.Parallel()
-	// Catch-all rules (no sftpj comment) — reverse must omit comment clause
+	// Catch-all rules (no sftpj comment) - reverse must omit comment clause
 	// rather than emit an empty `comment ''`.
 	muts := []PendingMutation{
 		{Op: OpDelete, Rule: firewall.Rule{

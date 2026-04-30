@@ -88,7 +88,7 @@ func TestApplySetup_apply_blocked_when_violations_present(t *testing.T) {
 
 // Test 4: Apply runs the txn batch when the proposal is clean. Pressing 'a'
 // transitions to phaseApplying and returns a non-nil tea.Cmd. (We don't
-// actually invoke the cmd here — that's an integration concern.)
+// actually invoke the cmd here - that's an integration concern.)
 func TestApplySetup_apply_runs_txn_batch_when_clean(t *testing.T) {
 	m, _ := newSeededModel()
 	m.LoadProposalForTest([]byte(""), "/srv/sftp-jailer", nil, false)
@@ -210,7 +210,7 @@ func TestApplySetup_esc_in_edit_returns_to_review_without_applying_change(t *tes
 	require.Equal(t, "preserved across esc", m.ViolationsForTest()[0].Reason)
 }
 
-// Test 10: Esc in review pops the modal — the returned tea.Cmd produces a
+// Test 10: Esc in review pops the modal - the returned tea.Cmd produces a
 // nav.Msg with Intent=Pop.
 func TestApplySetup_esc_in_review_pops_modal(t *testing.T) {
 	m, _ := newSeededModel()
@@ -238,7 +238,7 @@ func TestApplySetup_apply_done_with_error_renders_critical_inline_and_phase_erro
 
 // Test 12: applyDoneMsg with no error transitions to phaseDone and emits
 // a tea.Cmd that ultimately produces autoPopMsg (we don't unwind the Tick
-// here — Bubble Tea timers are not test-friendly without a fake clock —
+// here - Bubble Tea timers are not test-friendly without a fake clock -
 // but we do assert the cmd is non-nil and the phase advanced).
 func TestApplySetup_apply_done_success_transitions_to_done_then_autopops(t *testing.T) {
 	m, _ := newSeededModel()
@@ -251,7 +251,7 @@ func TestApplySetup_apply_done_success_transitions_to_done_then_autopops(t *test
 
 // Test 13 (W-05 explicit pin): editing the root re-runs chrootcheck against
 // the NEW root, NOT the prior root. Asserted via the sysops.Fake's recorded
-// Lstat calls — the Fake's chrootcheck.WalkRoot will issue Lstat for each
+// Lstat calls - the Fake's chrootcheck.WalkRoot will issue Lstat for each
 // component of the new root path during the re-walk.
 func TestApplySetup_edit_root_re_runs_chrootcheck_against_new_root(t *testing.T) {
 	f := sysops.NewFake()
@@ -304,9 +304,9 @@ func TestApplySetup_edit_root_re_runs_chrootcheck_against_new_root(t *testing.T)
 		}
 	}
 	require.Contains(t, lstatPaths, "/srv/new",
-		"re-walk MUST Lstat the NEW root (/srv/new) — W-05 contract")
+		"re-walk MUST Lstat the NEW root (/srv/new) - W-05 contract")
 	require.NotContains(t, lstatPaths, "/srv/sftp-jailer",
-		"re-walk MUST NOT Lstat the OLD root (/srv/sftp-jailer) — W-05 contract")
+		"re-walk MUST NOT Lstat the OLD root (/srv/sftp-jailer) - W-05 contract")
 }
 
 // Test 14: M-APPLY-SETUP implements nav.Screen.

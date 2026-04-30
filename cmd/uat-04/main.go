@@ -14,10 +14,10 @@
 // speed (NOT the production 3-minute). It also temporarily mutates the
 // live firewall + /etc/default/ufw and adds rules with the comment
 // "sftpj-uat-04-test" or "sftpj:v=1:user=ubuntu". Run on a STAGING box
-// dedicated to testing — phases 3 and 4 will briefly LOCK the box (the
+// dedicated to testing - phases 3 and 4 will briefly LOCK the box (the
 // SAFE-04 timer is the safety net if the helper crashes mid-run).
 //
-// Helper is intentionally one-shot — it should be removed from cmd/ after
+// Helper is intentionally one-shot - it should be removed from cmd/ after
 // the empirical UAT completes, mirroring the Phase 3 pattern documented in
 // 03-08b/03-09 SUMMARYs.
 package main
@@ -81,7 +81,7 @@ func main() {
 // (simulating a TUI crash). Waits past the deadline and asserts the
 // systemd-run unit fired (rule removed, unit no longer active).
 func phase1SafeRevert(ctx context.Context, ops sysops.SystemOps, watcher *revert.Watcher) error {
-	// 1. Confirm starting state — ufw active + catch-all present
+	// 1. Confirm starting state - ufw active + catch-all present
 	rules, err := firewall.Enumerate(ctx, ops)
 	if err != nil {
 		return fmt.Errorf("Enumerate failed: %w", err)
@@ -109,7 +109,7 @@ func phase1SafeRevert(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	deadline := nowFn().Add(30 * time.Second)
 
 	// 4. Compose the inserted-rule's reverse cmd: `ufw status numbered | grep …`
-	//    placeholder pattern (B1+B5 from Plan 04-05) — we don't know the
+	//    placeholder pattern (B1+B5 from Plan 04-05) - we don't know the
 	//    assigned ID until after Apply, so resolve at fire time.
 	reverseCmds := []string{
 		fmt.Sprintf("ufw status numbered | grep '%s' | head -1 | sed 's/[^0-9]*\\([0-9]*\\).*/\\1/' | xargs -I{} ufw --force delete {}", testComment),
@@ -142,7 +142,7 @@ func phase1SafeRevert(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	if err != nil {
 		return fmt.Errorf("post-insert Enumerate failed: %w", err)
 	}
-	// Match on RawComment alone — ufw normalizes /32 sources to bare IP in
+	// Match on RawComment alone - ufw normalizes /32 sources to bare IP in
 	// its display column, so comparing testSrc literally would never match.
 	// The test comment is unique to this UAT run.
 	var foundTest bool
@@ -198,7 +198,7 @@ func phase1SafeRevert(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	if stillPresent {
 		return fmt.Errorf("CRITICAL: test rule still present 20s after revert window expired (timer did not fire or reverse cmd failed)")
 	}
-	fmt.Println("  test rule REMOVED — timer fired as expected")
+	fmt.Println("  test rule REMOVED - timer fired as expected")
 
 	// 11. Verify the unit is no longer active (cleanup)
 	active, err := ops.SystemctlIsActive(ctx, st.UnitName)
@@ -206,7 +206,7 @@ func phase1SafeRevert(ctx context.Context, ops sysops.SystemOps, watcher *revert
 		return fmt.Errorf("SystemctlIsActive after fire: %w", err)
 	}
 	if active {
-		return fmt.Errorf("unit %s is still active after fire — should have cleaned up", st.UnitName)
+		return fmt.Errorf("unit %s is still active after fire - should have cleaned up", st.UnitName)
 	}
 	fmt.Printf("  unit %s is no longer active\n", st.UnitName)
 
@@ -220,7 +220,7 @@ func phase1SafeRevert(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	}
 	fmt.Println("  Watcher.Restore detected fired state and cleaned pointer")
 
-	// 13. Final rule count check — should be back to baseline
+	// 13. Final rule count check - should be back to baseline
 	if got := len(rules); got != preCount {
 		fmt.Printf("  WARN: rule count post-revert = %d, pre-mutation = %d (may be benign if other rules shifted)\n", got, preCount)
 	}
@@ -283,7 +283,7 @@ func phase2FW06HardBlock(ctx context.Context, ops sysops.SystemOps, _ *revert.Wa
 	}
 	fmt.Println("  public IPv6 detected")
 
-	// 4. Re-read /etc/default/ufw — confirm IPV6=no
+	// 4. Re-read /etc/default/ufw - confirm IPV6=no
 	nowBytes, err := ops.ReadFile(ctx, "/etc/default/ufw")
 	if err != nil {
 		return fmt.Errorf("re-read /etc/default/ufw: %w", err)
@@ -301,13 +301,13 @@ func phase2FW06HardBlock(ctx context.Context, ops sysops.SystemOps, _ *revert.Wa
 	}
 	fmt.Printf("  /etc/default/ufw confirms IPV6=%s\n", gotIPV6)
 
-	// 5. Run M-ADD-RULE preflight logic — assert leak detection.
+	// 5. Run M-ADD-RULE preflight logic - assert leak detection.
 	//    The production preflight in internal/tui/screens/firewallrule
 	//    checks the same conjunction: HasPublicIPv6 && (IPV6 file says
 	//    "no"). If both are true, the modal pushes M-FW-IPV6-FIX.
 	leak := (gotIPV6 == "no") && hasIPv6
 	if !leak {
-		return fmt.Errorf("CRITICAL: leak=false despite IPV6=no AND public IPv6 — preflight logic broken")
+		return fmt.Errorf("CRITICAL: leak=false despite IPV6=no AND public IPv6 - preflight logic broken")
 	}
 	fmt.Println("  preflight logic correctly detects leak: M-ADD-RULE would have triggered M-FW-IPV6-FIX")
 
@@ -333,7 +333,7 @@ func phase2FW06HardBlock(ctx context.Context, ops sysops.SystemOps, _ *revert.Wa
 //
 // Also runs a best-effort LOCK-07 empirical assertion: while in the
 // LOCKED window, journalctl -u ssh is grep'd for connection-refused /
-// disconnected entries — these would map to tier='targeted' observation
+// disconnected entries - these would map to tier='targeted' observation
 // rows in the production observer pipeline. The assertion is best-effort
 // per D-L0809-06; absence of journal evidence is logged as a SKIP toast,
 // not a hard failure.
@@ -345,7 +345,7 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	}
 	mode := firewall.DetectMode(rules, "22")
 	if mode != firewall.ModeOpen {
-		return fmt.Errorf("expected starting MODE=Open, got %s — phase 3 needs catch-all baseline", mode)
+		return fmt.Errorf("expected starting MODE=Open, got %s - phase 3 needs catch-all baseline", mode)
 	}
 	fmt.Println("  starting state: MODE: OPEN")
 
@@ -363,7 +363,7 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	}
 	fmt.Printf("  catch-all rule ID: %d\n", catchAllID)
 
-	// 2. Choose a test user. We hardcode "ubuntu" — present on most cloud
+	// 2. Choose a test user. We hardcode "ubuntu" - present on most cloud
 	//    Ubuntu images. The UAT exercises the txn batch; user allowlist
 	//    semantics are validated elsewhere.
 	const testIP = "198.51.100.42/32"
@@ -373,7 +373,7 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	//    fallback can scope its search.
 	lockWindowStart := time.Now()
 
-	// 4. Build the SAFE-04 revert window — 30 sec for testing.
+	// 4. Build the SAFE-04 revert window - 30 sec for testing.
 	nowFn := time.Now
 	deadline := nowFn().Add(30 * time.Second)
 	// Reverse cmd: re-add catch-all + delete the test rule by comment grep.
@@ -383,7 +383,7 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 		"ufw reload",
 	}
 
-	// LOCK-06 commit sequence — broken into explicit ops calls to sidestep
+	// LOCK-06 commit sequence - broken into explicit ops calls to sidestep
 	// two real ufw / production quirks that the empirical UAT discovered:
 	//
 	//   BUG-04-A (production): internal/tui/screens/lockdown/lockdown.go::
@@ -402,7 +402,7 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	// To prove the SAFE-04 mechanism + LOCK-06 transition without conflating
 	// these two bugs, the UAT does:
 	//   1. Arm SAFE-04 timer first (rollback restores OPEN if anything goes
-	//      sideways — including this UAT's own SSH session)
+	//      sideways - including this UAT's own SSH session)
 	//   2. UfwInsert sftpj rule at pos 1 (catch-all is still present, so v4
 	//      list has 1 rule and pos 1 is valid; rule lands at pos 1, catch-all
 	//      shifts to pos 2)
@@ -420,7 +420,7 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 		return fmt.Errorf("UfwInsert sftpj: %w", err)
 	}
 	// Delete ALL catch-all rules (both v4 and v6) by repeatedly
-	// re-enumerating + deleting. Reason: BUG-04-C — `firewall.DetectMode`
+	// re-enumerating + deleting. Reason: BUG-04-C - `firewall.DetectMode`
 	// classifies on the union of v4+v6 rules and doesn't distinguish
 	// address family (Source=="Anywhere" for both after stripV6Suffix).
 	// On a default Ubuntu 24.04 box with IPV6=yes, ufw maintains a v4 AND
@@ -506,7 +506,7 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	if mode != firewall.ModeOpen {
 		return fmt.Errorf("post-fire MODE = %s, expected Open after polling 20s past deadline (revert should have restored catch-all)", mode)
 	}
-	fmt.Println("  MODE rolled back to OPEN — timer fired as expected")
+	fmt.Println("  MODE rolled back to OPEN - timer fired as expected")
 
 	// 9. Cleanup any leftover test rules
 	for _, r := range rules {
@@ -521,7 +521,7 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 
 // phase4LockRollback exercises the LOCK-08 rollback path: sets up an
 // artificial LOCKED state (insert sftpj rule, find + delete catch-all by
-// signature match — the I1 fix re-Enumerates AFTER the insert so the
+// signature match - the I1 fix re-Enumerates AFTER the insert so the
 // catch-all is located correctly even if its ID shifted), then runs the
 // rollback batch (re-add catch-all under a 30s SAFE-04 window), asserts
 // MODE → Staging, then explicitly cancels the timer (the rollback rules
@@ -555,7 +555,7 @@ func phase4LockRollback(ctx context.Context, ops sysops.SystemOps, watcher *reve
 
 	// 3. (I1 fix) re-Enumerate AFTER the insert and delete ALL catch-alls
 	//    by signature match (Source="Anywhere", ALLOW, empty comment).
-	//    Iterating until none remain handles BUG-04-C — both the v4 AND
+	//    Iterating until none remain handles BUG-04-C - both the v4 AND
 	//    v6 catch-all need to be removed for DetectMode to report LOCKED
 	//    on a default Ubuntu 24.04 box with IPV6=yes.
 	for i := 0; i < 4; i++ {
@@ -591,7 +591,7 @@ func phase4LockRollback(ctx context.Context, ops sysops.SystemOps, watcher *reve
 				_ = ops.UfwDelete(ctx, r.ID)
 			}
 		}
-		return fmt.Errorf("expected LOCKED setup state, got %s — abort phase 4", mode)
+		return fmt.Errorf("expected LOCKED setup state, got %s - abort phase 4", mode)
 	}
 	fmt.Println("  artificial LOCKED state set up")
 
@@ -638,7 +638,7 @@ func phase4LockRollback(ctx context.Context, ops sysops.SystemOps, watcher *reve
 	// where unitName is the .service name. systemd-run with --on-active
 	// creates BOTH a .service AND a .timer unit; stopping only the
 	// .service leaves the .timer ticking, which fires the .service again
-	// at the original deadline — undoing the just-confirmed mutation.
+	// at the original deadline - undoing the just-confirmed mutation.
 	// Tracked as a Phase 4 follow-up; the UAT works around it by
 	// explicitly stopping both .timer and .service derived from
 	// st.UnitName (which has the .service suffix).
@@ -652,7 +652,7 @@ func phase4LockRollback(ctx context.Context, ops sysops.SystemOps, watcher *reve
 			fmt.Printf("  WARN: SystemctlStop on .service: %v\n", err)
 		}
 		_ = watcher.Clear(ctx)
-		fmt.Printf("  revert unit %s cancelled (both .timer and .service stopped) — rollback rules now permanent\n", st.UnitName)
+		fmt.Printf("  revert unit %s cancelled (both .timer and .service stopped) - rollback rules now permanent\n", st.UnitName)
 	}
 
 	// 7. Cleanup test rules

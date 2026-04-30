@@ -527,7 +527,7 @@ func TestStepsFile_does_not_import_sshdcfg(t *testing.T) {
 }
 
 // ============================================================================
-// Plan 03-08a — NewUserdelStep / NewMkdirAllStep / NewVerifyAuthKeysStep
+// Plan 03-08a - NewUserdelStep / NewMkdirAllStep / NewVerifyAuthKeysStep
 // ============================================================================
 
 func TestNewUserdelStep_apply_records_Userdel_compensate_is_noop(t *testing.T) {
@@ -553,7 +553,7 @@ func TestNewUserdelStep_apply_records_Userdel_compensate_is_noop(t *testing.T) {
 	beforeCount := len(f.Calls)
 	require.NoError(t, step.Compensate(ctx, f))
 	require.Equal(t, beforeCount, len(f.Calls),
-		"Compensate must NOT record any sysops call (D-15 irreversibility — no-op)")
+		"Compensate must NOT record any sysops call (D-15 irreversibility - no-op)")
 }
 
 func TestNewUserdelStep_archive_path_uses_removeHome_false(t *testing.T) {
@@ -578,14 +578,14 @@ func TestNewMkdirAllStep_apply_calls_ops_MkdirAll_then_Chmod_then_Chown(t *testi
 
 	const dir = "/var/lib/sftp-jailer/archive"
 	f := sysops.NewFake()
-	// No prior FileStats entry — Lstat returns ErrNotExist → existedBefore stays false.
+	// No prior FileStats entry - Lstat returns ErrNotExist → existedBefore stays false.
 	step := NewMkdirAllStep(dir, 0o700, 0, 0)
 
 	ctx := context.Background()
 	require.NoError(t, step.Apply(ctx, f))
 
 	// Assert the typed-wrapper sequence: Lstat → MkdirAll → Chmod → Chown.
-	// (W-02 — NOT direct os.MkdirAll; the typed wrapper IS the seam.)
+	// (W-02 - NOT direct os.MkdirAll; the typed wrapper IS the seam.)
 	var seen []string
 	for _, c := range f.Calls {
 		switch c.Method {
@@ -594,7 +594,7 @@ func TestNewMkdirAllStep_apply_calls_ops_MkdirAll_then_Chmod_then_Chown(t *testi
 		}
 	}
 	require.Equal(t, []string{"Lstat", "MkdirAll", "Chmod", "Chown"}, seen,
-		"Apply must call ops.Lstat (existed-before probe), then ops.MkdirAll, then ops.Chmod, then ops.Chown — in that order, all via the typed wrappers (W-02)")
+		"Apply must call ops.Lstat (existed-before probe), then ops.MkdirAll, then ops.Chmod, then ops.Chown - in that order, all via the typed wrappers (W-02)")
 }
 
 func TestNewMkdirAllStep_apply_skips_chown_when_uid_negative(t *testing.T) {
@@ -609,7 +609,7 @@ func TestNewMkdirAllStep_apply_skips_chown_when_uid_negative(t *testing.T) {
 
 	for _, c := range f.Calls {
 		require.NotEqual(t, "Chown", c.Method,
-			"uid=-1 / gid=-1 means 'skip chown' — no Chown call should be recorded")
+			"uid=-1 / gid=-1 means 'skip chown' - no Chown call should be recorded")
 	}
 }
 
@@ -651,7 +651,7 @@ func TestNewMkdirAllStep_compensate_noop_when_dir_existed_before(t *testing.T) {
 
 	for _, c := range f.Calls {
 		require.False(t, c.Method == "RemoveAll" && len(c.Args) > 0 && c.Args[0] == dir,
-			"Compensate must NOT remove a dir that existed before Apply — we don't claim ownership of it")
+			"Compensate must NOT remove a dir that existed before Apply - we don't claim ownership of it")
 	}
 }
 
@@ -659,7 +659,7 @@ func TestNewMkdirAllStep_uses_typed_sysops_wrappers_not_raw_os(t *testing.T) {
 	t.Parallel()
 
 	// W-02 contract: Apply must invoke ops.MkdirAll AND ops.RemoveAll
-	// through the typed sysops seam — no direct os.MkdirAll / os.RemoveAll.
+	// through the typed sysops seam - no direct os.MkdirAll / os.RemoveAll.
 	// The Fake records every typed-wrapper call; if Apply / Compensate ever
 	// regress to raw os calls, the Fake will not see them and this test
 	// would fail by missing the expected call records.
@@ -782,7 +782,7 @@ func TestAllConstructors_return_non_nil_steps(t *testing.T) {
 }
 
 // ============================================================================
-// Phase 4 Plan 02 — 9 new Step constructors (FW + SAFE-04 wrapper pair)
+// Phase 4 Plan 02 - 9 new Step constructors (FW + SAFE-04 wrapper pair)
 // ============================================================================
 
 // containsCall reports whether f.Calls contains an entry with the given
@@ -907,7 +907,7 @@ func TestNewUfwDeleteStep_apply_calls_UfwDelete_compensate_is_noop(t *testing.T)
 
 	callsBefore := len(f.Calls)
 	require.NoError(t, step.Compensate(ctx, f))
-	// Intentional no-op per D-S04-05 / D-FW-07 — once a rule is deleted at the
+	// Intentional no-op per D-S04-05 / D-FW-07 - once a rule is deleted at the
 	// tool layer the SAFE-04 revert window is the only recovery path.
 	require.Equal(t, callsBefore, len(f.Calls), "Compensate must be a no-op")
 }
@@ -920,7 +920,7 @@ func TestNewUfwReloadStep_apply_and_compensate_both_call_UfwReload(t *testing.T)
 	require.NoError(t, step.Apply(ctx, f))
 	require.NoError(t, step.Compensate(ctx, f))
 
-	// Both Apply and Compensate re-issue UfwReload — same op as compensator.
+	// Both Apply and Compensate re-issue UfwReload - same op as compensator.
 	var reloads int
 	for _, c := range f.Calls {
 		if c.Method == "UfwReload" {
@@ -968,7 +968,7 @@ func TestNewWriteUfwIPV6Step_apply_with_no_prior_compensate_removes(t *testing.T
 	ctx := context.Background()
 	require.NoError(t, step.Apply(ctx, f))
 
-	// RewriteUfwIPV6 was still called — the "prior" capture is best-effort.
+	// RewriteUfwIPV6 was still called - the "prior" capture is best-effort.
 	require.True(t, containsCall(f.Calls, "RewriteUfwIPV6", "value=yes"))
 
 	require.NoError(t, step.Compensate(ctx, f))
@@ -1015,7 +1015,7 @@ func TestNewSystemctlRestartUfwStep_apply_and_compensate_call_systemctl_restart_
 	require.Equal(t, 2, execs, "Apply + Compensate must each issue `systemctl restart ufw` once")
 }
 
-// ---- SAFE-04 wrapper pair tests (Task 2 — written together with Task 1
+// ---- SAFE-04 wrapper pair tests (Task 2 - written together with Task 1
 // to keep the file's test-block contiguous; the SAFE-04 helpers + impls
 // land in Task 2's commit).
 // ----------------------------------------------------------------------
@@ -1138,7 +1138,7 @@ func TestNewScheduleRevertStep_compensate_before_apply_is_noop(t *testing.T) {
 		time.Now().Add(3*time.Minute),
 		w, nil,
 	)
-	// Apply NEVER ran — Compensate must be a no-op (no unit assigned).
+	// Apply NEVER ran - Compensate must be a no-op (no unit assigned).
 	require.NoError(t, step.Compensate(context.Background(), f))
 	require.False(t, w.clearCalled,
 		"Compensate before Apply must not touch the watcher")
@@ -1195,7 +1195,7 @@ func TestNewCancelRevertStep_apply_stops_timer_BEFORE_service(t *testing.T) {
 	require.NotEqual(t, -1, timerIdx, "BUG-04-D: .timer stop call missing from f.Calls")
 	require.NotEqual(t, -1, serviceIdx, ".service stop call missing from f.Calls")
 	require.Less(t, timerIdx, serviceIdx,
-		"BUG-04-D: .timer stop must come BEFORE .service stop (systemd convention — "+
+		"BUG-04-D: .timer stop must come BEFORE .service stop (systemd convention - "+
 			"stopping .timer first prevents the timer re-arming the service between stops)")
 }
 
@@ -1213,7 +1213,7 @@ func TestNewCancelRevertStep_compensate_is_intentional_noop(t *testing.T) {
 		"Compensate must not touch sysops at all (D-S04-05 irreversible by design)")
 }
 
-// TestNewCancelRevertStep_unit_not_loaded_is_idempotent — also covers the
+// TestNewCancelRevertStep_unit_not_loaded_is_idempotent - also covers the
 // BUG-04-D-fixed two-stop path: the shared f.SystemctlStopError returns
 // "not loaded" for BOTH the .timer and .service stops, and Apply must
 // still return nil (the not-loaded mapping covers both calls) and call
@@ -1256,7 +1256,7 @@ func TestRevertWatcher_interface_satisfied_by_fakeRevertWatcher(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // ufwStatusFixtureDualFamily returns a "ufw status numbered" stdout
-// modeling a default Ubuntu 24.04 box with IPV6=yes — a v4 catch-all
+// modeling a default Ubuntu 24.04 box with IPV6=yes - a v4 catch-all
 // (id=1), a v6 catch-all (id=2), and a sftpj rule (id=3). Format mirrors
 // internal/firewall/testdata/ufw-status-numbered-mixed.txt verbatim.
 func ufwStatusFixtureDualFamily() []byte {
@@ -1325,7 +1325,7 @@ func TestUfwDeleteCatchAllByEnumerate_dual_family_deletes_BOTH_v4_and_v6(t *test
 	step := NewUfwDeleteCatchAllByEnumerateStep("22")
 	require.NoError(t, step.Apply(context.Background(), f))
 
-	// Count UfwDelete calls — must be EXACTLY 2 (v4 + v6 catch-alls).
+	// Count UfwDelete calls - must be EXACTLY 2 (v4 + v6 catch-alls).
 	deleteCount := 0
 	for _, c := range f.Calls {
 		if c.Method == "UfwDelete" {
@@ -1343,7 +1343,7 @@ func TestUfwDeleteCatchAllByEnumerate_dual_family_deletes_BOTH_v4_and_v6(t *test
 // which shifted the catch-all from id=1 to id=2; the subsequent
 // UfwDeleteStep using the captured id=1 then deleted the freshly-inserted
 // sftpj rule instead of the catch-all. Empirically caught by Plan 04-10
-// UAT (commit 5f92a62 phase 3 phase-3 setup uses signature-match — the
+// UAT (commit 5f92a62 phase 3 phase-3 setup uses signature-match - the
 // helper-side workaround for this bug).
 //
 // The new step re-Enumerates at Apply time, so the id is always FRESH.
@@ -1390,7 +1390,7 @@ func TestUfwDeleteCatchAllByEnumerate_no_catchalls_is_noop(t *testing.T) {
 }
 
 // TestUfwDeleteCatchAllByEnumerate_compensate_is_intentional_noop
-// mirrors the irreversibility-by-design pattern of NewUfwDeleteStep — the
+// mirrors the irreversibility-by-design pattern of NewUfwDeleteStep - the
 // step is irreversible by design (D-FW-07 / D-S04-05); recovery rides the
 // SAFE-04 transient unit's reverse-cmd, NOT this step's Compensate.
 func TestUfwDeleteCatchAllByEnumerate_compensate_is_intentional_noop(t *testing.T) {
@@ -1407,7 +1407,7 @@ func TestUfwDeleteCatchAllByEnumerate_compensate_is_intentional_noop(t *testing.
 
 	require.NoError(t, step.Compensate(context.Background(), f))
 	require.Equal(t, callsBefore, len(f.Calls),
-		"Compensate must not touch sysops at all (D-FW-07 irreversible by design — "+
+		"Compensate must not touch sysops at all (D-FW-07 irreversible by design - "+
 			"recovery rides the SAFE-04 transient unit's reverse-cmd)")
 }
 
@@ -1452,7 +1452,7 @@ func TestRemoveSshdDropIn_Apply_AlreadyAbsent(t *testing.T) {
 	// Compensate must be a no-op (no AtomicWriteFile calls).
 	callsBefore := len(f.Calls)
 	require.NoError(t, step.Compensate(context.Background(), f), "Compensate when prior absent must return nil")
-	// Compensate with no prior must not write anything — only the RemoveAll from Apply should appear.
+	// Compensate with no prior must not write anything - only the RemoveAll from Apply should appear.
 	for _, c := range f.Calls[callsBefore:] {
 		require.NotEqual(t, "AtomicWriteFile", c.Method, "Compensate must not call AtomicWriteFile when no prior existed")
 	}
@@ -1488,7 +1488,7 @@ func TestRemoveSshdDropIn_Apply_ReadErrorOtherThanNotExist(t *testing.T) {
 	const dropInPath = "/etc/ssh/sshd_config.d/50-sftp-jailer.conf"
 	nowFn := func() time.Time { return time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC) }
 	// Use a custom Fake whose ReadFile always returns a non-ErrNotExist error for the drop-in.
-	// We achieve this by using a wrapping sysops.Fake subtype — but the Fake itself only supports
+	// We achieve this by using a wrapping sysops.Fake subtype - but the Fake itself only supports
 	// ErrNotExist (absent key) vs. success (present key). So we use a minimal inline fake by
 	// seeding the file and using a wrapper. Instead, we test the invariant by using a real
 	// Fake with a staged error via the ExecError field workaround: since Fake.ReadFile only
@@ -1534,7 +1534,7 @@ func TestRemoveSshdDropIn_Apply_BackupWriteFailure(t *testing.T) {
 	f := sysops.NewFake()
 	f.Files[dropInPath] = []byte("CONTENT")
 	// Make AtomicWriteFile fail (affects all paths, but the first AtomicWriteFile
-	// call in Apply is the backup write — that's what we test here).
+	// call in Apply is the backup write - that's what we test here).
 	f.AtomicWriteError = errors.New("disk full")
 
 	step := NewRemoveSshdDropInStep(dropInPath, backupDir, 0o644, nowFn)

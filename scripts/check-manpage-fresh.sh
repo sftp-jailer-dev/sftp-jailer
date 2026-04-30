@@ -26,4 +26,4 @@ if ! diff -ru docs/man/ "$tmpdir/" >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "OK: docs/man/ matches cmd/gen-manpage output (4 .1 pages — root + version + doctor + observe-run)"
+echo "OK: docs/man/ matches cmd/gen-manpage output (4 .1 pages - root + version + doctor + observe-run)"

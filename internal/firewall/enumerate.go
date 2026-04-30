@@ -3,19 +3,19 @@
 // Phase 2 surface: Enumerate parses ufw output into []Rule for the S-FIREWALL
 // screen (FW-01/FW-04) and for the per-user IP-allowlist count column on
 // S-USERS. The sftp-jailer ufw rule comment grammar is owned end-to-end by
-// internal/ufwcomment — this package never re-implements that parser; it
+// internal/ufwcomment - this package never re-implements that parser; it
 // forwards the raw comment to ufwcomment.Decode and surfaces the returned
 // sentinels (ErrNotOurs / ErrBadVersion) so the UI can render `?` for
 // forward-compat or foreign rules per UI-SPEC line 419.
 //
-// Phase 4 will add the writer (FW-02/FW-08) under the same package — the
+// Phase 4 will add the writer (FW-02/FW-08) under the same package - the
 // reader stays untouched.
 //
 // Architectural invariants:
 //   - All ufw subprocess execution goes through sysops.Exec (the binary is
 //     allowlisted in sysops.Real by plan 02-02; this package never imports
 //     os/exec).
-//   - The sftp-jailer comment grammar literal must NOT appear in this file —
+//   - The sftp-jailer comment grammar literal must NOT appear in this file -
 //     only internal/ufwcomment owns the grammar string constants. This
 //     package decodes via ufwcomment.Decode and re-exports nothing.
 package firewall
@@ -34,7 +34,7 @@ import (
 
 // ErrUFWInactive is returned when `ufw status numbered` reports the firewall
 // is disabled. The S-FIREWALL screen translates this into the actionable
-// empty state ("ufw is inactive — run `ufw enable` to start filtering").
+// empty state ("ufw is inactive - run `ufw enable` to start filtering").
 var ErrUFWInactive = errors.New("firewall: ufw status reports inactive")
 
 // Rule is the typed shape of a single numbered ufw allow/deny rule.
@@ -43,11 +43,11 @@ var ErrUFWInactive = errors.New("firewall: ufw status reports inactive")
 //   - ID: the numbered rule ID, parsed from the leading "[N]" token.
 //   - Proto: "v4" or "v6"; detected by the literal "(v6)" substring in
 //     either the To or From field. UFW emits IPv4 and IPv6 as separate
-//     numbered rules — we do not coalesce them.
+//     numbered rules - we do not coalesce them.
 //   - Port: the To column (port spec like "22", "22/tcp", "22 (v6)" with
 //     the (v6) suffix stripped).
 //   - Source: the From column (IP / CIDR / "Anywhere", with the (v6)
-//     suffix stripped — protocol is carried separately in Proto).
+//     suffix stripped - protocol is carried separately in Proto).
 //   - Action: the Action column ("ALLOW IN", "DENY IN", "LIMIT IN", etc.).
 //   - RawComment: the comment text after `#`, trimmed of surrounding space.
 //     Empty if the rule has no comment.
@@ -55,7 +55,7 @@ var ErrUFWInactive = errors.New("firewall: ufw status reports inactive")
 //     comment is foreign (ErrNotOurs), forward-compat (ErrBadVersion), or
 //     missing.
 //   - ParseErr: the error returned by ufwcomment.Decode (or nil for a
-//     successful v=1 decode). Consumers test with errors.Is — see
+//     successful v=1 decode). Consumers test with errors.Is - see
 //     UI-SPEC line 419 for the `?` rendering rule on ErrBadVersion.
 type Rule struct {
 	ID         int
@@ -74,9 +74,9 @@ type Rule struct {
 var ruleLineRE = regexp.MustCompile(`^\[\s*(\d+)\]\s+(.*)$`)
 
 // multiSpaceRE splits a rule body into columns by 2-or-more whitespace runs.
-// We use this AFTER stripping the trailing "# <comment>" — see the
+// We use this AFTER stripping the trailing "# <comment>" - see the
 // commentary in splitComment for why we cannot rely on column widths
-// directly (RESEARCH Pitfall 5 — long comments break fixed-width columns).
+// directly (RESEARCH Pitfall 5 - long comments break fixed-width columns).
 var multiSpaceRE = regexp.MustCompile(`\s{2,}`)
 
 // Enumerate runs `ufw status numbered` via sysops.Exec, parses the output
@@ -87,7 +87,7 @@ var multiSpaceRE = regexp.MustCompile(`\s{2,}`)
 //   - Otherwise the parsed slice (possibly empty if the firewall has no rules)
 //     and a nil error.
 //
-// The function is read-only — it never invokes mutation flags like
+// The function is read-only - it never invokes mutation flags like
 // `ufw allow` / `ufw delete`.
 func Enumerate(ctx context.Context, ops sysops.SystemOps) ([]Rule, error) {
 	res, err := ops.Exec(ctx, "ufw", "status", "numbered")
@@ -103,7 +103,7 @@ func Enumerate(ctx context.Context, ops sysops.SystemOps) ([]Rule, error) {
 	}
 
 	text := string(res.Stdout)
-	// Status: inactive is detected before line scan — short-circuit so the
+	// Status: inactive is detected before line scan - short-circuit so the
 	// caller renders the actionable empty state instead of an empty slice
 	// (which would imply "active firewall, no rules").
 	if strings.Contains(text, "Status: inactive") {
@@ -149,7 +149,7 @@ func Enumerate(ctx context.Context, ops sysops.SystemOps) ([]Rule, error) {
 		}
 		if len(fields) >= 3 {
 			// Action is the middle slot. The action column itself contains
-			// a single 2+-space-separated token like "ALLOW IN" — but
+			// a single 2+-space-separated token like "ALLOW IN" - but
 			// 2+-space splitting collapses it to one field, so we emit it
 			// verbatim.
 			r.Action = fields[1]

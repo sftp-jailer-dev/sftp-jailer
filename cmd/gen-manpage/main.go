@@ -38,10 +38,10 @@ func main() {
 	}
 
 	// Build the cobra tree with the SAME subcommand list as the production
-	// binary. Hidden subcommands (added by 05-03) are included here too —
+	// binary. Hidden subcommands (added by 05-03) are included here too -
 	// GenManTree filters them out by inspecting the Hidden field.
 	root := rootcmd.Build(rootcmd.Opts{
-		// No RunTUI / PersistentPreRunE — generator is declarative-only.
+		// No RunTUI / PersistentPreRunE - generator is declarative-only.
 		Subcommands: gatherSubcommands(),
 	})
 
@@ -69,7 +69,7 @@ func main() {
 // versionString returns the project version. We do NOT depend on
 // internal/version (which is ldflag-injected at production build time and
 // would carry a "dev" string in this generator's process). For man-page
-// purposes the static "1" is sufficient — DIST-03's lintian gate doesn't
+// purposes the static "1" is sufficient - DIST-03's lintian gate doesn't
 // check the version string in the .TH header. If a future maintainer wants
 // the man page to carry a version string from git describe, factor that
 // here.
@@ -85,7 +85,7 @@ func versionString() string {
 // rootCmd(). The CI guard scripts/check-manpage-fresh.sh fails on drift,
 // surfacing any divergence at PR time.
 //
-// The factories here re-construct minimal cobra.Command shapes — they need
+// The factories here re-construct minimal cobra.Command shapes - they need
 // not contain the production RunE bodies (man-page generation only reads
 // Use/Short/Long/Flags). Stub bodies are simpler than re-importing the
 // production factories' types.
@@ -94,14 +94,14 @@ func gatherSubcommands() []*cobra.Command {
 		stubCmd("version", "Print version and exit"),
 		stubDoctorCmd(),
 		stubObserveRunCmd(),
-		// 05-03 appends: stubPurgeSshdCleanupCmd() — but that command will
+		// 05-03 appends: stubPurgeSshdCleanupCmd() - but that command will
 		// have Hidden:true so GenManTree skips it. (We add it here anyway
 		// so the rootcmd.Build subcommand list matches production exactly,
 		// and the Hidden filter does its job.)
 	}
 }
 
-// stubCmd is the minimal shape — Use + Short + a no-op RunE.
+// stubCmd is the minimal shape - Use + Short + a no-op RunE.
 func stubCmd(use, short string) *cobra.Command {
 	return &cobra.Command{
 		Use:   use,
@@ -111,7 +111,7 @@ func stubCmd(use, short string) *cobra.Command {
 }
 
 // stubDoctorCmd mirrors cmd/sftp-jailer/main.go::doctorCmd() Use/Short/flags.
-// Body is a stub — only the man-page-relevant metadata matters.
+// Body is a stub - only the man-page-relevant metadata matters.
 func stubDoctorCmd() *cobra.Command {
 	c := stubCmd("doctor", "Read-only diagnostic of the box's SFTP posture")
 	c.Flags().Bool("json", false, "emit JSON instead of the text report")

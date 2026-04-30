@@ -1,6 +1,6 @@
 // Package chrootcheck_test exercises the D-10 path-walk validator that
 // promotes Phase 1's internal/service/doctor.detectChrootChain pattern into
-// a dedicated package. WalkRoot is read-only by contract — the
+// a dedicated package. WalkRoot is read-only by contract - the
 // read_only_invariant test asserts the validator never calls any mutating
 // sysops method (no Chmod, no Chown, no AtomicWriteFile, etc.).
 package chrootcheck_test
@@ -202,7 +202,7 @@ func TestWalkRoot_read_only_invariant(t *testing.T) {
 
 	require.NotEmpty(t, f.Calls, "WalkRoot should have called Lstat at least once")
 	for _, c := range f.Calls {
-		require.Equal(t, "Lstat", c.Method, "WalkRoot must only call Lstat — found %s call: %+v", c.Method, c.Args)
+		require.Equal(t, "Lstat", c.Method, "WalkRoot must only call Lstat - found %s call: %+v", c.Method, c.Args)
 	}
 }
 
@@ -214,5 +214,5 @@ func TestWalkRoot_ErrTargetNotAbsolute_isErrSentinel(t *testing.T) {
 
 	_, err := chrootcheck.WalkRoot(ctx, f, "not-absolute")
 	require.Error(t, err)
-	require.True(t, errors.Is(err, chrootcheck.ErrTargetNotAbsolute), "expected errors.Is(err, ErrTargetNotAbsolute) — got: %v", err)
+	require.True(t, errors.Is(err, chrootcheck.ErrTargetNotAbsolute), "expected errors.Is(err, ErrTargetNotAbsolute) - got: %v", err)
 }

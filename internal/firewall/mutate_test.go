@@ -1,6 +1,6 @@
-// Package firewall — Phase 4 plan 04-03 Task 2 RED gate.
+// Package firewall - Phase 4 plan 04-03 Task 2 RED gate.
 //
-// Tests pin AddRule / DeleteRule / ResolveRuleIDByCommentSource — the single
+// Tests pin AddRule / DeleteRule / ResolveRuleIDByCommentSource - the single
 // firewall WRITER per D-FW-01. Tests live in `package firewall` (internal)
 // to mirror enumerate_test.go's positioning.
 package firewall

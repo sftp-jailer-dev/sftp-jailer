@@ -54,7 +54,7 @@ compact_after_days: 14
 }
 
 // TestLoad_invalid_yaml_returns_error: malformed YAML must wrap a parse error.
-// Validation does NOT run on Load — that's a Save concern; bad bytes on disk
+// Validation does NOT run on Load - that's a Save concern; bad bytes on disk
 // must surface as an explicit error so the screen can complain.
 func TestLoad_invalid_yaml_returns_error(t *testing.T) {
 	f := sysops.NewFake()
@@ -183,8 +183,8 @@ func TestValidate_compact_after_days_le_detail(t *testing.T) {
 //
 //	0 < PasswordAgingDays < PasswordStaleDays
 //
-// The fields are NOT exposed in S-SETTINGS UI in this plan — config-file
-// only — so the test exercises the data-layer contract directly.
+// The fields are NOT exposed in S-SETTINGS UI in this plan - config-file
+// only - so the test exercises the data-layer contract directly.
 func TestConfig_PasswordAging_defaults_and_validate(t *testing.T) {
 	t.Run("defaults_populated", func(t *testing.T) {
 		d := config.Defaults()
@@ -216,11 +216,11 @@ func TestConfig_PasswordAging_defaults_and_validate(t *testing.T) {
 	t.Run("validate_rejects_stale_le_aging", func(t *testing.T) {
 		s := config.Defaults()
 		s.PasswordAgingDays = 200
-		s.PasswordStaleDays = 200 // equal — must fail (strict >)
+		s.PasswordStaleDays = 200 // equal - must fail (strict >)
 		require.NotEmpty(t, config.Validate(s),
 			"PasswordStaleDays must be strictly > PasswordAgingDays")
 
-		s.PasswordStaleDays = 100 // below aging — must fail
+		s.PasswordStaleDays = 100 // below aging - must fail
 		require.NotEmpty(t, config.Validate(s),
 			"PasswordStaleDays<PasswordAgingDays must fail")
 	})
@@ -309,7 +309,7 @@ func TestConfig_LockdownProposalWindowDays_load_explicit_value(t *testing.T) {
 // contributes its own error so the TUI can render them as a list.
 //
 // Note on input shape: DetailRetentionDays is set to a VALID value (30) so
-// the "compact ≤ detail" comparison is meaningful — Validate intentionally
+// the "compact ≤ detail" comparison is meaningful - Validate intentionally
 // suppresses that comparison when detail is itself invalid (line 130: the
 // `else if s.DetailRetentionDays >= 1 && …` guard). The test exercises the
 // "all rules fail simultaneously" path via independently-failing values.

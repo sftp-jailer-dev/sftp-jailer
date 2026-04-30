@@ -1,5 +1,5 @@
 #!/bin/sh
-# prerm — sftp-jailer .deb maintainer script (Phase 5 plan 05-04).
+# prerm - sftp-jailer .deb maintainer script (Phase 5 plan 05-04).
 #
 # Implements DIST-05 (the SAFE-06 sshd reload half) and the timer-shutdown
 # part of the install/purge round-trip.
@@ -12,7 +12,7 @@
 # The subcommand is idempotent (exits 0 if drop-in already absent) and
 # rolls back via internal/txn compensators on sshd -t failure (drop-in
 # restored from /var/backups/sftp-jailer/). The `|| true` wrapper means a
-# half-broken box still progresses through `apt purge` — a stuck prerm
+# half-broken box still progresses through `apt purge` - a stuck prerm
 # would be worse than a logged warning.
 #
 # Per Debian Policy §10, prerm is invoked as one of:
@@ -22,7 +22,7 @@
 #   prerm deconfigure in-favour <new-package> <version> [removing ...]
 #
 # We dispatch sshd cleanup on `remove` and `deconfigure` only. On
-# `upgrade`/`failed-upgrade` the same package is being reinstalled — the
+# `upgrade`/`failed-upgrade` the same package is being reinstalled - the
 # drop-in must stay because the new postinst will (re)write it via the
 # runtime canonical writer; tearing it down + reloading sshd would be
 # strictly worse than leaving it.
@@ -66,7 +66,7 @@ case "$1" in
     ;;
     upgrade|failed-upgrade)
         # Same package is being reinstalled. Leave the drop-in + the
-        # timer in place — postinst will reconfigure on the new version.
+        # timer in place - postinst will reconfigure on the new version.
         :
     ;;
     *)

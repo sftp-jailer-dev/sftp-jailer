@@ -13,14 +13,14 @@ import (
 
 // ModeBar is the always-visible top-of-app strip (D-L0809-03 + D-S04-03).
 // Renders MODE: OPEN/STAGING/LOCKED/UNKNOWN normally; switches to
-// "⏱ REVERTING IN M:SS — [C]onfirm [V]iew countdown" (Critical-red) when a
-// SAFE-04 revert is armed. The REVERTING render OVERRIDES the MODE words —
+// "⏱ REVERTING IN M:SS - [C]onfirm [V]iew countdown" (Critical-red) when a
+// SAFE-04 revert is armed. The REVERTING render OVERRIDES the MODE words -
 // admins always see the countdown when the timer is live, regardless of
 // which screen they navigate to.
 //
 // Value-receiver discipline: the App holds this by value. Mutations return
 // new values via SetMode / Update. Mirror toast.go's value-receiver pattern
-// (the C6 fix from Phase 1 plan 01-02 — Bubble Tea passes values by copy
+// (the C6 fix from Phase 1 plan 01-02 - Bubble Tea passes values by copy
 // through tea.Cmd closures, so pointer-receiver mutations would be silently
 // dropped).
 type ModeBar struct {
@@ -48,7 +48,7 @@ type ModeBarTickMsg struct{}
 
 // NewModeBar constructs a ModeBar bound to the given watcher reference.
 // Pass nil if no watcher is available (e.g. tests that don't exercise the
-// REVERTING branch). The default mode is ModeUnknown — callers must call
+// REVERTING branch). The default mode is ModeUnknown - callers must call
 // SetMode after Enumerate to populate the real classification.
 func NewModeBar(watcher *revert.Watcher) ModeBar {
 	return ModeBar{watcherRef: watcher, mode: firewall.ModeUnknown}
@@ -69,7 +69,7 @@ func (b ModeBar) SetMode(mode firewall.Mode, ruleCount, userCount int) ModeBar {
 // SetForceArmedForTest overrides watcherRef-based armed detection. Returns
 // a new ModeBar value. Pass nil to unset.
 //
-// TEST-ONLY. Production code must not call this — the watcherRef bound at
+// TEST-ONLY. Production code must not call this - the watcherRef bound at
 // construction time is the SAFE-04 source of truth.
 func (b ModeBar) SetForceArmedForTest(s *revert.State) ModeBar {
 	b.forceArmed = s
@@ -88,7 +88,7 @@ func (b ModeBar) armedState() *revert.State {
 	return b.watcherRef.Get()
 }
 
-// View renders the banner. Always returns a non-empty string — app.View
+// View renders the banner. Always returns a non-empty string - app.View
 // pre-pends it above the active screen body so every screen carries the
 // MODE / REVERTING context (D-L0809-03 + D-S04-03).
 //
@@ -100,21 +100,21 @@ func (b ModeBar) View() string {
 	if armed := b.armedState(); armed != nil {
 		remaining := time.Until(time.Unix(0, armed.DeadlineUnixNs))
 		return styles.Critical.Render(fmt.Sprintf(
-			"⏱ REVERTING IN %s — [C]onfirm [V]iew countdown",
+			"⏱ REVERTING IN %s - [C]onfirm [V]iew countdown",
 			formatDuration(remaining)))
 	}
 	switch b.mode {
 	case firewall.ModeOpen:
-		return styles.Warn.Render("MODE: OPEN — observing")
+		return styles.Warn.Render("MODE: OPEN - observing")
 	case firewall.ModeStaging:
 		return styles.Info.Render(fmt.Sprintf(
-			"MODE: STAGING — %d rules staged", b.ruleCount))
+			"MODE: STAGING - %d rules staged", b.ruleCount))
 	case firewall.ModeLocked:
 		return styles.Success.Render(fmt.Sprintf(
-			"MODE: LOCKED — %d allow rules, %d users",
+			"MODE: LOCKED - %d allow rules, %d users",
 			b.ruleCount, b.userCount))
 	default:
-		return styles.Dim.Render("MODE: UNKNOWN — no SFTP-port rules")
+		return styles.Dim.Render("MODE: UNKNOWN - no SFTP-port rules")
 	}
 }
 
@@ -147,7 +147,7 @@ func TickCmd() tea.Cmd {
 // formatDuration produces "M:SS" for non-negative durations and "0:00"
 // for negative/zero. d.Round(time.Second) makes the floor deterministic
 // across renders (without rounding, "5m07.4s" and "5m07.6s" both truncate
-// to "5:07" via int(d.Seconds()), which is fine — but the round form
+// to "5:07" via int(d.Seconds()), which is fine - but the round form
 // expresses the contract explicitly).
 func formatDuration(d time.Duration) string {
 	if d < 0 {

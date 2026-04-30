@@ -16,7 +16,7 @@ import (
 
 // readGolden loads a fixture from internal/sshdcfg/testdata/.
 //
-// gosec G304: name is a fixture filename hardcoded by the calling test —
+// gosec G304: name is a fixture filename hardcoded by the calling test -
 // not an attacker-controlled path. Same precedent as
 // internal/users/enumerate_test.go's loadFixture helper.
 func readGolden(t *testing.T, name string) []byte {
@@ -73,7 +73,7 @@ func TestCanonicalDropIn_uses_literal_path_not_percent_h(t *testing.T) {
 // produces byte-equal output to the .golden fixture.
 //
 // The fixture deliberately omits comments and blank lines because the Phase 1
-// parser discards both — they never reach Render. This is documented in the
+// parser discards both - they never reach Render. This is documented in the
 // SUMMARY as a known property of the round-trip contract (Render is the
 // inverse of Parse for non-comment, non-blank content only).
 func TestRender_byte_identity_for_unmodified_RawLines(t *testing.T) {
@@ -160,7 +160,7 @@ func TestRender_new_top_level_directive_has_no_indent(t *testing.T) {
 }
 
 // TestParseRender_round_trip_property asserts Parse(Render(Parse(b))) ≡
-// Parse(b) — the parser is the inverse of the writer for byte-clean inputs.
+// Parse(b) - the parser is the inverse of the writer for byte-clean inputs.
 // Equivalence is by reflect.DeepEqual on the DropIn struct (Directives slice,
 // Matches slice, Size).
 func TestParseRender_round_trip_property(t *testing.T) {
@@ -202,7 +202,7 @@ func TestParseRender_round_trip_property(t *testing.T) {
 //
 // Existing drop-ins authored with multiple-space Match separators will see a
 // one-character cosmetic diff on first apply via M-APPLY-SETUP. The SUMMARY
-// documents this as an acceptable trade — adding a RawHeader field to
+// documents this as an acceptable trade - adding a RawHeader field to
 // MatchBlock for byte-identity preservation is deferred as future polish
 // (low value vs cost; admins rarely use multi-space).
 func TestRender_match_header_canonicalizes_multiple_spaces_to_single_space(t *testing.T) {

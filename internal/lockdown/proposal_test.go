@@ -53,7 +53,7 @@ func insertRun(t *testing.T, w *sql.DB, finishedAtNs int64) int64 {
 	return id
 }
 
-// insertObs is a thin wrapper around the observations INSERT — every
+// insertObs is a thin wrapper around the observations INSERT - every
 // test seeds via this helper for consistency.
 func insertObs(t *testing.T, w *sql.DB, runID int64, ts int64, tier, user, ip string) {
 	t.Helper()
@@ -68,7 +68,7 @@ func insertObs(t *testing.T, w *sql.DB, runID int64, ts int64, tier, user, ip st
 // Generator's nowFn defaults to time.Now; tests inject this via
 // SetNowFnForTest so cutoff arithmetic is reproducible.
 func frozenNow() time.Time {
-	// 2026-04-27T12:00:00Z — well after every seeded ts in tests.
+	// 2026-04-27T12:00:00Z - well after every seeded ts in tests.
 	return time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
 }
 
@@ -105,7 +105,7 @@ func TestGenerate_groups_observations_by_user_and_source(t *testing.T) {
 	require.Len(t, props[0].IPs, 2, "alice has two distinct source IPs")
 	require.False(t, props[0].ZeroConn, "alice has observed connections")
 
-	// alice's IPs should be ordered by ConnCount DESC — 3 then 1.
+	// alice's IPs should be ordered by ConnCount DESC - 3 then 1.
 	require.Equal(t, "1.1.1.1", props[0].IPs[0].Source)
 	require.Equal(t, 3, props[0].IPs[0].ConnCount)
 	require.Equal(t, "2.2.2.2", props[0].IPs[1].Source)
@@ -118,7 +118,7 @@ func TestGenerate_groups_observations_by_user_and_source(t *testing.T) {
 	require.Equal(t, "success", props[1].IPs[0].Tier)
 }
 
-// TestGenerate_default_excludes_targeted_tier — D-L0204-02: tier=success
+// TestGenerate_default_excludes_targeted_tier - D-L0204-02: tier=success
 // only by default. Setting includeTargeted=true broadens to tier=targeted.
 func TestGenerate_default_excludes_targeted_tier(t *testing.T) {
 	s, q := newSeededDB(t)
@@ -149,12 +149,12 @@ func TestGenerate_default_excludes_targeted_tier(t *testing.T) {
 	require.Equal(t, "targeted", tiers["2.2.2.2"])
 }
 
-// TestGenerate_skips_observations_outside_window — window cutoff is
+// TestGenerate_skips_observations_outside_window - window cutoff is
 // strict: rows older than (now - windowDays * 24h) are excluded.
 func TestGenerate_skips_observations_outside_window(t *testing.T) {
 	s, q := newSeededDB(t)
 	runID := insertRun(t, s.W, daysAgo(0))
-	// 100 days ago — outside a 90-day window.
+	// 100 days ago - outside a 90-day window.
 	insertObs(t, s.W, runID, daysAgo(100), "success", "alice", "1.1.1.1")
 
 	g := lockdown.NewGenerator(q)
@@ -165,7 +165,7 @@ func TestGenerate_skips_observations_outside_window(t *testing.T) {
 	require.Empty(t, props, "alice's observation is outside the 90-day window → no proposal")
 }
 
-// TestGenerate_skips_null_user_observations — the Phase 2 schema stores
+// TestGenerate_skips_null_user_observations - the Phase 2 schema stores
 // `user TEXT NOT NULL DEFAULT ''`, so "no user" is empty-string, not
 // NULL. The query must filter user != '' (and tolerate NULL defensively).
 func TestGenerate_skips_null_user_observations(t *testing.T) {
@@ -181,7 +181,7 @@ func TestGenerate_skips_null_user_observations(t *testing.T) {
 	require.Empty(t, props, "empty-user observations are excluded")
 }
 
-// TestGenerate_window_days_validation — windowDays must be positive.
+// TestGenerate_window_days_validation - windowDays must be positive.
 func TestGenerate_window_days_validation(t *testing.T) {
 	_, q := newSeededDB(t)
 	g := lockdown.NewGenerator(q)
@@ -194,7 +194,7 @@ func TestGenerate_window_days_validation(t *testing.T) {
 	}
 }
 
-// TestGenerate_sorts_by_user_ascending — proposal output is sorted by
+// TestGenerate_sorts_by_user_ascending - proposal output is sorted by
 // User ASC for deterministic UI rendering. Insert order is irrelevant.
 func TestGenerate_sorts_by_user_ascending(t *testing.T) {
 	s, q := newSeededDB(t)
@@ -215,11 +215,11 @@ func TestGenerate_sorts_by_user_ascending(t *testing.T) {
 	require.Equal(t, "charlie", props[2].User)
 }
 
-// TestGenerate_uses_parameterized_SQL_no_injection — preserves the
+// TestGenerate_uses_parameterized_SQL_no_injection - preserves the
 // T-OBS-01 mitigation pattern from FilterEvents. Even if a username
 // were a SQL-injection payload, the parameterized binding would treat
 // it as an opaque value. We can't directly attack the Generate API
-// (windowDays is int, includeTargeted is bool — neither flows as a
+// (windowDays is int, includeTargeted is bool - neither flows as a
 // string), but we can pin that observation rows containing nasty
 // usernames are returned verbatim (i.e. no row was injected and no
 // table was dropped).
@@ -228,7 +228,7 @@ func TestGenerate_uses_parameterized_SQL_no_injection(t *testing.T) {
 	runID := insertRun(t, s.W, daysAgo(0))
 	// A username that, if naively concatenated into SQL, would close
 	// the WHERE clause and DROP the table. We seed it via a `?`
-	// placeholder, so the row is stored verbatim — and the Generator's
+	// placeholder, so the row is stored verbatim - and the Generator's
 	// own SQL must not turn it back into executable text.
 	const nasty = "alice'; DROP TABLE observations; --"
 	insertObs(t, s.W, runID, daysAgo(1), "success", nasty, "1.1.1.1")

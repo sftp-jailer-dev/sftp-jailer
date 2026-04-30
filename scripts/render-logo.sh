@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pre-renders sftp-jailer-logo.png into four ANSI variants for go:embed.
-# HARD REQUIREMENT: chafa must be on PATH. No fallback — if chafa is missing
+# HARD REQUIREMENT: chafa must be on PATH. No fallback - if chafa is missing
 # we refuse to produce bogus placeholder artifacts.
 set -euo pipefail
 
@@ -23,16 +23,16 @@ fi
 # which is needed to render the wordmark legibly. block+border + --fg-only
 # collapsed each cell to one color and produced an unreadable blur.
 
-# Truecolor (24-bit) — modern terminals
+# Truecolor (24-bit) - modern terminals
 chafa --colors full --size "$SIZE" --format symbols --symbols vhalf+space "$SRC" > "$OUT/logo-truecolor.ans"
 
-# 256-color (240 in chafa terminology — lower 16 are unreliable)
+# 256-color (240 in chafa terminology - lower 16 are unreliable)
 chafa --colors 240  --size "$SIZE" --format symbols --symbols vhalf+space "$SRC" > "$OUT/logo-256.ans"
 
 # 16-color (safe floor for TERM=linux, old xterm)
 chafa --colors 16   --size "$SIZE" --format symbols --symbols vhalf+space "$SRC" > "$OUT/logo-16.ans"
 
-# Plain ASCII — no escape sequences at all
+# Plain ASCII - no escape sequences at all
 chafa --colors none --size "$SIZE" --format symbols --symbols ascii        "$SRC" > "$OUT/logo-ascii.txt"
 
 for f in logo-truecolor.ans logo-256.ans logo-16.ans logo-ascii.txt; do

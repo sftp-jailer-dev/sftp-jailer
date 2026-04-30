@@ -20,10 +20,10 @@
 //     "sort: <axis> <↓|↑>".
 //   - `c` copies the selected row as TSV via OSC 52 (tea.SetClipboard);
 //     toast flashes "copied user row via OSC 52".
-//   - `Enter` is reserved for the user-detail modal (deferred — Phase 2 ships
+//   - `Enter` is reserved for the user-detail modal (deferred - Phase 2 ships
 //     list-only per UI-SPEC line 162); `Enter` is currently a no-op.
 //
-// This package never imports os/exec or os directly — every system read flows
+// This package never imports os/exec or os directly - every system read flows
 // through users.Enumerator (which itself uses sysops). The package is a
 // presentation layer wrapped around the data layer shipped in 02-03.
 package usersscreen
@@ -55,7 +55,7 @@ import (
 // deleteUserFwRulesFactory is the package-level seam for Plan 04-06 to
 // inject the M-DELETE-RULE-by-user constructor. Mirrors the
 // home.SetXFactory pattern from 02-04 and the firewallrule plan-04-05
-// seam — pressing 'D' (uppercase, W1 keybind deviation) on a selected
+// seam - pressing 'D' (uppercase, W1 keybind deviation) on a selected
 // real row invokes the factory with the username.
 //
 // W1 deviation: lowercase 'd' is reserved for Phase 3 03-08a's
@@ -96,7 +96,7 @@ const (
 	// SortByAllowlistCount sorts by IPAllowlistCount (numeric).
 	SortByAllowlistCount
 
-	// SortAxisCount is the number of distinct sort axes — used for the `s`
+	// SortAxisCount is the number of distinct sort axes - used for the `s`
 	// cycle modulus. Place new axes BEFORE this sentinel.
 	SortAxisCount
 )
@@ -130,7 +130,7 @@ type Model struct {
 	enum *users.Enumerator
 
 	// cfg drives the password-age column legend + per-row formatting.
-	// Never nil after construction — New / NewWithConfig fall back to
+	// Never nil after construction - New / NewWithConfig fall back to
 	// config.Defaults() when called with a nil pointer.
 	cfg *config.Settings
 
@@ -141,7 +141,7 @@ type Model struct {
 	ops        sysops.SystemOps
 	chrootRoot string
 
-	// Loaded data — populated either from rowsLoadedMsg or LoadRowsForTest.
+	// Loaded data - populated either from rowsLoadedMsg or LoadRowsForTest.
 	rows    []users.Row
 	infos   []users.InfoRow
 	loading bool
@@ -163,13 +163,13 @@ type Model struct {
 	// Phase 3 plan 03-07: infoCursor extends the cursor across the INFO
 	// pseudo-rows. -1 = cursor is on a real row (m.cursor); >= 0 = cursor
 	// is on infos[infoCursor] (Enter routes to the kind-specific handler).
-	// j/k navigation cycles infos → filtered → infos (wrap) — see
+	// j/k navigation cycles infos → filtered → infos (wrap) - see
 	// handleNavKey for the math.
 	infoCursor int
 
 	// Phase 4 plan 04-08: currentMode drives the per-user IP-allowlist
 	// column rendering. STAGING mode (catch-all + sftpj rules coexist)
-	// triggers the "(open) ⚠" annotation per D-FW-08 — honest about
+	// triggers the "(open) ⚠" annotation per D-FW-08 - honest about
 	// the firewall-only enforcement reality. LOCKED mode renders the
 	// bare count (rules are enforcement-effective). OPEN/UNKNOWN modes
 	// render the bare count too. Production wiring sets this from
@@ -181,7 +181,7 @@ type Model struct {
 // New constructs the screen wired to enum (the data-layer composer shipped
 // in 02-03). enum may be nil in unit tests that drive the screen via
 // LoadRowsForTest. The password-age thresholds default to
-// config.Defaults() — callers that have a loaded config.Settings should
+// config.Defaults() - callers that have a loaded config.Settings should
 // use [NewWithConfig] instead.
 //
 // Phase 3 plan 03-07: this legacy constructor leaves ops + chrootRoot at
@@ -192,7 +192,7 @@ func New(enum *users.Enumerator) *Model {
 	return NewWithConfig(enum, nil, nil, "")
 }
 
-// NewWithConfig is the canonical constructor — accepts the enumerator,
+// NewWithConfig is the canonical constructor - accepts the enumerator,
 // the loaded *config.Settings (drives the password-age column formatting
 // + legend), the SystemOps handle (for the M-NEW-USER + M-PASSWORD
 // modal pushes), and the resolved chroot root path. ops + chrootRoot may
@@ -216,7 +216,7 @@ func NewWithConfig(enum *users.Enumerator, cfg *config.Settings, ops sysops.Syst
 }
 
 // Init kicks off the async enumerate. If enum is nil (test path), Init
-// returns nil — the test is expected to call LoadRowsForTest before any
+// returns nil - the test is expected to call LoadRowsForTest before any
 // View().
 func (m *Model) Init() tea.Cmd {
 	enum := m.enum
@@ -226,7 +226,7 @@ func (m *Model) Init() tea.Cmd {
 	return func() tea.Msg {
 		// Use a background context with a generous timeout. Enumerate
 		// reads /etc/group + /etc/passwd + sshd_config drop-ins +
-		// /var/lib/sftp-jailer/observations.db + ufw status — wall time
+		// /var/lib/sftp-jailer/observations.db + ufw status - wall time
 		// should be well under 1s on any realistic box, but we cap at 30s
 		// to mirror the doctor screen's defensive bound.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -286,7 +286,7 @@ func (m *Model) Title() string { return "users" }
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — true while the search textinput is
+// WantsRawKeys implements nav.Screen - true while the search textinput is
 // focused so the root App forwards letters into the input rather than
 // quitting on `q`.
 func (m *Model) WantsRawKeys() bool { return m.search.Active }
@@ -310,7 +310,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
-		// Search is greedy when active — every key (except esc) types into
+		// Search is greedy when active - every key (except esc) types into
 		// the textinput; esc deactivates and clears.
 		if m.search.Active {
 			var cmd tea.Cmd
@@ -370,7 +370,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		// selected user (the detail screen carries the keys table +
 		// single-key delete UX). No-op when no row is selected or ops is
 		// nil. Shadows the existing 'k' as cursor-up only when the
-		// cursor is on a real row — j/k navigation is preserved by
+		// cursor is on a real row - j/k navigation is preserved by
 		// falling through to the down-case below when there is no
 		// row to "open".
 		if m.ops != nil {
@@ -420,7 +420,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		// non-real-row cursor can still vi-navigate up with 'k'.
 		m.moveCursorUp()
 	case "g":
-		// Top — go to first INFO row if any, else first real row.
+		// Top - go to first INFO row if any, else first real row.
 		if len(m.infos) > 0 {
 			m.infoCursor = 0
 			m.cursor = 0
@@ -429,7 +429,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 			m.cursor = 0
 		}
 	case "G":
-		// Bottom — go to last real row if any, else last INFO row.
+		// Bottom - go to last real row if any, else last INFO row.
 		if n := len(m.filtered); n > 0 {
 			m.cursor = n - 1
 			m.infoCursor = -1
@@ -451,7 +451,7 @@ func (m *Model) moveCursorDown() {
 			m.infoCursor++
 			return
 		}
-		// Last INFO row — fall through to first real row (if any).
+		// Last INFO row - fall through to first real row (if any).
 		if len(m.filtered) > 0 {
 			m.infoCursor = -1
 			m.cursor = 0
@@ -477,7 +477,7 @@ func (m *Model) moveCursorUp() {
 		m.cursor--
 		return
 	}
-	// At the top of the real rows — fall through to the last INFO row.
+	// At the top of the real rows - fall through to the last INFO row.
 	if len(m.infos) > 0 {
 		m.infoCursor = len(m.infos) - 1
 	}
@@ -508,7 +508,7 @@ func (m *Model) handleEnter() (nav.Screen, tea.Cmd) {
 			return m, flashCmd
 		}
 	}
-	// Real-row Enter: Phase 3 plan 03-08a — push S-USER-DETAIL.
+	// Real-row Enter: Phase 3 plan 03-08a - push S-USER-DETAIL.
 	if m.ops != nil {
 		if r := m.selectedRow(); r != nil {
 			return m, nav.PushCmd(userdetail.New(m.ops, m.chrootRoot, r.Username))
@@ -535,7 +535,7 @@ func (m *Model) selectedRow() *users.Row {
 func (m *Model) SetInfoCursorForTest(idx int) {
 	m.infoCursor = idx
 	if idx >= 0 {
-		m.cursor = 0 // sentinel — handleEnter only consults infoCursor
+		m.cursor = 0 // sentinel - handleEnter only consults infoCursor
 	}
 }
 
@@ -551,14 +551,14 @@ func (m *Model) handleCopy() (nav.Screen, tea.Cmd) {
 	return m, tea.Batch(tea.SetClipboard(text), flashCmd)
 }
 
-// rowAsTSV serialises a Row in the column order rendered by the table —
+// rowAsTSV serialises a Row in the column order rendered by the table -
 // tab-separated for paste-friendliness in Excel / Numbers / Sheets.
 //
 // Last-login ns timestamp 0 is rendered as "never" rather than the unix
-// epoch — surfaced in the UI the same way (UI-SPEC line 380). The
+// epoch - surfaced in the UI the same way (UI-SPEC line 380). The
 // password-age column flows through users.FormatPasswordAge so the TSV
 // path matches the live render verbatim (single source of truth for the
-// "Nd (fresh|aging|stale)" / ∞ / — vocabulary).
+// "Nd (fresh|aging|stale)" / ∞ / - vocabulary).
 func rowAsTSV(r users.Row, cfg *config.Settings) string {
 	pwdAge := users.FormatPasswordAge(r.PasswordAgeDays, r.PasswordMaxDays, cfg.PasswordAgingDays, cfg.PasswordStaleDays)
 	lastLogin := "never"
@@ -567,7 +567,7 @@ func rowAsTSV(r users.Row, cfg *config.Settings) string {
 	}
 	firstSeen := r.FirstSeenIP
 	if firstSeen == "" {
-		firstSeen = "—"
+		firstSeen = "-"
 	}
 	return fmt.Sprintf("%s\t%d\t%s\t%s\t%d\t%s\t%s\t%d",
 		r.Username, r.UID, r.ChrootPath, pwdAge, r.KeysCount, lastLogin, firstSeen, r.IPAllowlistCount,
@@ -649,19 +649,19 @@ func (m *Model) View() string {
 	if len(m.rows) == 0 && len(m.infos) == 0 {
 		// Empty-state copy per UI-SPEC line 354-355.
 		return "No SFTP users found.\n\n" + styles.Dim.Render(
-			"(no group matching sftp* and no ChrootDirectory configured —\n"+
+			"(no group matching sftp* and no ChrootDirectory configured -\n"+
 				"see diagnostic screen for details, or apply canonical config in Phase 3.)")
 	}
 
 	var b strings.Builder
 
-	// Header line — title with row count (excluding INFO pseudo-rows per
+	// Header line - title with row count (excluding INFO pseudo-rows per
 	// UI-SPEC line 370).
 	b.WriteString(styles.Primary.Render(
-		fmt.Sprintf("users — %d rows", len(m.filtered))))
+		fmt.Sprintf("users - %d rows", len(m.filtered))))
 	b.WriteString("\n\n")
 
-	// Search prompt — shown above table when active.
+	// Search prompt - shown above table when active.
 	if m.search.Active {
 		b.WriteString(m.search.View())
 		b.WriteString("\n\n")
@@ -688,15 +688,15 @@ func (m *Model) View() string {
 		b.WriteString("\n")
 	}
 
-	// Column header — Primary accent per UI-SPEC line 75. The pwd-age
+	// Column header - Primary accent per UI-SPEC line 75. The pwd-age
 	// column is 14 chars wide to fit the longest formatted value
-	// ("Nd (aging)" / "Nd (stale)" / "Nd (fresh)" / "∞" / "—").
+	// ("Nd (aging)" / "Nd (stale)" / "Nd (fresh)" / "∞" / "-").
 	b.WriteString(styles.Primary.Render(fmt.Sprintf(
 		"  %-12s %6s  %-30s %-14s %4s  %-12s %-16s %-12s",
 		"user", "uid", "chroot", "pwd age", "keys", "last login", "first seen", "IPs")))
 	b.WriteString("\n")
 
-	// Real rows — selected row prefixed with `▌` (cursor marker); others
+	// Real rows - selected row prefixed with `▌` (cursor marker); others
 	// with two spaces. Avoids reverse-video so substring assertions in
 	// tests remain stable across terminal profiles.
 	//
@@ -716,7 +716,7 @@ func (m *Model) View() string {
 		}
 		firstSeen := r.FirstSeenIP
 		if firstSeen == "" {
-			firstSeen = "—"
+			firstSeen = "-"
 		}
 		ipCell := renderAllowlistCell(r.IPAllowlistCount, m.currentMode)
 		row := fmt.Sprintf(
@@ -738,7 +738,7 @@ func (m *Model) View() string {
 		b.WriteString("\n")
 	}
 
-	// Password-age legend (02-11 / SC #3 A+) — substituted with live
+	// Password-age legend (02-11 / SC #3 A+) - substituted with live
 	// thresholds so admins see the actual buckets the cfg drives. The
 	// muted style places it beneath the table without competing with
 	// the data rows for attention.
@@ -747,7 +747,7 @@ func (m *Model) View() string {
 		m.cfg.PasswordAgingDays, m.cfg.PasswordStaleDays, m.cfg.PasswordStaleDays)))
 	b.WriteString("\n")
 
-	// Footer — sort indicator on its own line, then short help.
+	// Footer - sort indicator on its own line, then short help.
 	arrow := "↓"
 	if m.sortDescending {
 		arrow = "↑"
@@ -767,7 +767,7 @@ func (m *Model) View() string {
 }
 
 // truncate clips s to width with a trailing "…" marker. Pure-display
-// helper — never called on data destined for the clipboard.
+// helper - never called on data destined for the clipboard.
 func truncate(s string, width int) string {
 	if len(s) <= width {
 		return s
@@ -778,7 +778,7 @@ func truncate(s string, width int) string {
 	return s[:width-1] + "…"
 }
 
-// KeyMap is the S-USERS key bindings — implements nav.KeyMap.
+// KeyMap is the S-USERS key bindings - implements nav.KeyMap.
 type KeyMap struct {
 	Back        nav.KeyBinding
 	Search      nav.KeyBinding

@@ -13,7 +13,7 @@
 // by construction, so the comment can be passed unquoted to `ufw ...
 // comment "<c>"` without injection risk (T-05-01). The smoke test
 // scripts/smoke-ufw.sh verifies `ufw reload` preserves the comment
-// byte-for-byte on Ubuntu 24.04's ufw 0.36.2 — that preservation is
+// byte-for-byte on Ubuntu 24.04's ufw 0.36.2 - that preservation is
 // architecturally load-bearing for Phase 4's FW-08.
 package ufwcomment
 
@@ -48,7 +48,7 @@ var (
 // Encode formats a user into a versioned sftp-jailer ufw comment.
 // Returns ErrInvalidUser for any username that doesn't match
 // ^[a-z_][a-z0-9_-]{0,31}$; returns ErrTooLong if the rendered comment
-// exceeds MaxComment bytes (defensive — with a 32-byte username the
+// exceeds MaxComment bytes (defensive - with a 32-byte username the
 // rendered comment is 20 bytes, so this is unreachable in practice and
 // only fires if grammar constants are changed).
 func Encode(user string) (string, error) {

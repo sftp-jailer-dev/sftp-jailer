@@ -3,7 +3,7 @@ Description=Weekly trigger for the sftp-jailer observer
 Documentation=man:sftp-jailer(8)
 
 [Timer]
-# Weekly at midnight Sunday — the first day of the ISO week.
+# Weekly at midnight Sunday - the first day of the ISO week.
 OnCalendar=weekly
 # Catch up if the box was off when the timer would have fired.
 Persistent=true

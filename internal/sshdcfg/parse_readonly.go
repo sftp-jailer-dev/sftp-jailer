@@ -49,7 +49,7 @@ type MatchBlock struct {
 
 // ParseDropIn parses a single drop-in file. The current implementation never
 // returns a non-nil error (the input is already in memory), but the signature
-// reserves error for future extensions — e.g. a strict mode that rejects
+// reserves error for future extensions - e.g. a strict mode that rejects
 // unknown directives.
 func ParseDropIn(b []byte) (DropIn, error) {
 	d := DropIn{Size: len(b)}
@@ -76,7 +76,7 @@ func ParseDropIn(b []byte) (DropIn, error) {
 		keyword := strings.ToLower(fields[0])
 
 		// Value is the trimmed remainder of the line after the first
-		// whitespace-delimited field — we take it from the trimmed line so
+		// whitespace-delimited field - we take it from the trimmed line so
 		// indentation is not preserved in Value (RawLine still carries it).
 		value := ""
 		if idx := indexFirstSpace(trimmed); idx > 0 && idx < len(trimmed) {
@@ -130,7 +130,7 @@ func (d DropIn) HasMatchGroup(name string) bool {
 
 // GetDirective returns the first top-level occurrence of keyword
 // (case-insensitive) and true; or a zero Directive and false if not present.
-// Directives inside a Match block are NOT searched — iterate MatchBlock.Body
+// Directives inside a Match block are NOT searched - iterate MatchBlock.Body
 // for that.
 func (d DropIn) GetDirective(keyword string) (Directive, bool) {
 	lc := strings.ToLower(keyword)

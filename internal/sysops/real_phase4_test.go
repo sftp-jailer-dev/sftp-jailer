@@ -65,10 +65,10 @@ func TestReal_UfwDelete_returns_error_when_binary_missing(t *testing.T) {
 }
 
 // TestReal_UfwDelete_uses_force_flag_in_argv pins the requirement that
-// `ufw --force delete N` is the argv shape — without --force the
+// `ufw --force delete N` is the argv shape - without --force the
 // subprocess hangs on TTY-less stdin until ctx timeout (T-04-01-03).
 //
-// We assert the argv shape by inspecting the source — same pattern other
+// We assert the argv shape by inspecting the source - same pattern other
 // argv-shape tests in this codebase use to prove wiring without needing a
 // live subprocess.
 func TestReal_UfwDelete_uses_force_flag_in_argv(t *testing.T) {
@@ -189,7 +189,7 @@ func TestReal_SystemdRunOnActive_returns_error_when_binary_missing(t *testing.T)
 }
 
 // TestReal_SystemdRunOnActive_argv_uses_bin_sh_dash_c pins the
-// /bin/sh -c '<cmd>' shape — D-S04-08 documents this as the systemd-run
+// /bin/sh -c '<cmd>' shape - D-S04-08 documents this as the systemd-run
 // ExecStart contract.
 func TestReal_SystemdRunOnActive_argv_uses_bin_sh_dash_c(t *testing.T) {
 	src, err := os.ReadFile("real.go")
@@ -228,7 +228,7 @@ func TestReal_SystemctlIsActive_returns_error_when_binary_missing(t *testing.T) 
 
 // TestReal_SystemctlIsActive_non_zero_exit_yields_false_nil pins the
 // non-zero-as-inactive contract (D-S04-06): exit 3 (inactive), 4 (not
-// loaded) and any other non-zero must NOT surface as Go errors — only
+// loaded) and any other non-zero must NOT surface as Go errors - only
 // ctx errors / exec failures do. We assert this by reading the source and
 // pinning the early-return shape.
 func TestReal_SystemctlIsActive_non_zero_exit_yields_false_nil(t *testing.T) {
@@ -245,7 +245,7 @@ func TestAtomicWriteFile_allowlist_rejects_arbitrary_paths(t *testing.T) {
 	r, ok := NewReal().(*Real)
 	require.True(t, ok)
 
-	// Default production allowlist is in effect — /tmp/foo is NOT covered.
+	// Default production allowlist is in effect - /tmp/foo is NOT covered.
 	err := r.AtomicWriteFile(context.Background(), "/tmp/sftpj-not-allowlisted.txt", []byte("x"), 0o600)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "sysops.AtomicWriteFile")

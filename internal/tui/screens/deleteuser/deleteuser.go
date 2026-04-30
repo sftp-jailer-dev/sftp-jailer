@@ -1,15 +1,15 @@
-// Package deleteuser renders M-DELETE-USER — the D-15 destructive
+// Package deleteuser renders M-DELETE-USER - the D-15 destructive
 // modal pushed from S-USERS via 'd' (plan 03-08a).
 //
 // Two paths, both running as a single internal/txn batch:
 //
-//   - PERMANENT (default focus per D-15 — admin types the username
+//   - PERMANENT (default focus per D-15 - admin types the username
 //     verbatim into the confirm field as the irreversibility gate, then
 //     submits a 1-step txn: [Userdel(removeHome=true)]). The
 //     type-username gate is the deliberate friction; once the username
 //     matches, Enter activates the [Permanent] button.
 //
-//   - ARCHIVE (admin tabs to it; Enter starts immediately — no
+//   - ARCHIVE (admin tabs to it; Enter starts immediately - no
 //     type-username gate). Runs a 3-step txn:
 //     [MkdirAll(/var/lib/sftp-jailer/archive 0700),
 //      Tar(<archive>/<user>-<ISO>.tar.gz, source=<home>),
@@ -19,7 +19,7 @@
 //     iff it didn't exist before the batch (W-02).
 //
 // Async metadata load: on Init, the modal walks the user's home dir
-// (via ops.ReadDir + ops.Lstat — strictly through the sysops seam, no
+// (via ops.ReadDir + ops.Lstat - strictly through the sysops seam, no
 // raw os.Walk per the architectural invariant) to compute total bytes
 // and a count of authorized_keys. The result drives the review-phase
 // View ("3.4 MiB · 2 keys") so admins know what they're about to
@@ -64,7 +64,7 @@ const AutoPopDelay = 500 * time.Millisecond
 type Mode int
 
 const (
-	// ModePermanent runs userdel -r (irreversible — deletes the home
+	// ModePermanent runs userdel -r (irreversible - deletes the home
 	// dir). Default focus per D-15. Requires typing the username verbatim
 	// into the confirm field before [Permanent] activates.
 	ModePermanent Mode = iota
@@ -78,21 +78,21 @@ const (
 type phase int
 
 const (
-	// phaseLoading — async meta-load (size + key count) in flight.
+	// phaseLoading - async meta-load (size + key count) in flight.
 	phaseLoading phase = iota
-	// phaseReview — admin reviews size + keys count, picks Permanent or
+	// phaseReview - admin reviews size + keys count, picks Permanent or
 	// Archive, then either presses Enter to submit (Archive) OR enters
 	// the type-username confirm (Permanent).
 	phaseReview
-	// phaseConfirmingPermanent — admin is typing the username verbatim
+	// phaseConfirmingPermanent - admin is typing the username verbatim
 	// into the confirm textinput. Submit gated on
 	// strings.TrimSpace(confirmTI.Value()) == username.
 	phaseConfirmingPermanent
-	// phaseSubmitting — txn batch in flight.
+	// phaseSubmitting - txn batch in flight.
 	phaseSubmitting
-	// phaseDone — txn succeeded; auto-pop after AutoPopDelay.
+	// phaseDone - txn succeeded; auto-pop after AutoPopDelay.
 	phaseDone
-	// phaseError — txn rolled back; errInline carries the error.
+	// phaseError - txn rolled back; errInline carries the error.
 	phaseError
 )
 
@@ -201,12 +201,12 @@ const (
 )
 
 // Title implements nav.Screen.
-func (m *Model) Title() string { return "delete user — " + m.username }
+func (m *Model) Title() string { return "delete user - " + m.username }
 
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keyMap }
 
-// WantsRawKeys implements nav.Screen — true while in the
+// WantsRawKeys implements nav.Screen - true while in the
 // type-username-to-confirm phase so the root App forwards every
 // keystroke (including 'q', 's') into the textinput.
 func (m *Model) WantsRawKeys() bool { return m.phase == phaseConfirmingPermanent }
@@ -233,7 +233,7 @@ func (m *Model) startMetaLoad() tea.Cmd {
 			return metaLoadedMsg{err: err}
 		}
 		// Count keys in <chrootRoot>/<user>/.ssh/authorized_keys (D-17
-		// canonical path). 0 if file missing or unparseable — the keys
+		// canonical path). 0 if file missing or unparseable - the keys
 		// count is informational, not gating.
 		keysCount := countAuthorizedKeys(ctx, ops, root, user)
 		return metaLoadedMsg{size: size, keysCount: keysCount}
@@ -243,7 +243,7 @@ func (m *Model) startMetaLoad() tea.Cmd {
 // walkSize sums Lstat sizes of every regular file rooted at dir,
 // purely through the sysops seam (ops.ReadDir + ops.Lstat). Symlinks
 // are NOT followed (Lstat-not-Stat semantics). Returns 0 + nil if dir
-// is missing — empty-home users are valid (no UX block).
+// is missing - empty-home users are valid (no UX block).
 func walkSize(ctx context.Context, ops sysops.SystemOps, dir string) (int64, error) {
 	if dir == "" {
 		return 0, nil
@@ -255,7 +255,7 @@ func walkSize(ctx context.Context, ops sysops.SystemOps, dir string) (int64, err
 		return 0, nil
 	}
 	if !fi.IsDir {
-		// Not a directory — degenerate case, return 0.
+		// Not a directory - degenerate case, return 0.
 		return 0, nil
 	}
 	var total int64
@@ -263,7 +263,7 @@ func walkSize(ctx context.Context, ops sysops.SystemOps, dir string) (int64, err
 	walk = func(path string) error {
 		entries, err := ops.ReadDir(ctx, path)
 		if err != nil {
-			// Skip unreadable subdirs without aborting the whole walk —
+			// Skip unreadable subdirs without aborting the whole walk -
 			// we surface a best-effort size, not an exact one.
 			return nil
 		}
@@ -280,7 +280,7 @@ func walkSize(ctx context.Context, ops sysops.SystemOps, dir string) (int64, err
 			if cfi.IsLink {
 				continue // don't follow symlinks; their target is owned by another tree
 			}
-			// FileInfo has no size field — approximate by reading the
+			// FileInfo has no size field - approximate by reading the
 			// file. For sftp home dirs (typically a handful of small
 			// files at most) this is acceptable. Future plan can add
 			// FileInfo.Size if a sftp home ever grows large enough to
@@ -299,7 +299,7 @@ func walkSize(ctx context.Context, ops sysops.SystemOps, dir string) (int64, err
 
 // countAuthorizedKeys reads the user's authorized_keys file and counts
 // non-blank, non-comment lines. 0 on any error (file missing,
-// unreadable). Result is informational — never gates the delete.
+// unreadable). Result is informational - never gates the delete.
 func countAuthorizedKeys(ctx context.Context, ops sysops.SystemOps, chrootRoot, username string) int {
 	authPath := filepath.Join(chrootRoot, username, ".ssh", "authorized_keys")
 	content, err := ops.ReadFile(ctx, authPath)
@@ -431,7 +431,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 	case "enter":
 		typed := strings.TrimSpace(m.confirmTI.Value())
 		if typed != m.username {
-			m.errInline = "type the username verbatim to confirm — irreversible"
+			m.errInline = "type the username verbatim to confirm - irreversible"
 			return m, nil
 		}
 		return m, m.startSubmit()
@@ -453,7 +453,7 @@ func (m *Model) handleErrorKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 func (m *Model) startSubmit() tea.Cmd {
 	m.phase = phaseSubmitting
 	if m.ops == nil {
-		// Test path — caller drives FeedSubmitDoneForTest manually.
+		// Test path - caller drives FeedSubmitDoneForTest manually.
 		return func() tea.Msg { return m.spinner.Tick() }
 	}
 	steps := m.composeSteps()
@@ -545,7 +545,7 @@ func (m *Model) submittingLabel() string {
 }
 
 func (m *Model) renderReview(b *strings.Builder) {
-	b.WriteString(styles.Primary.Render("M-DELETE-USER — " + m.username))
+	b.WriteString(styles.Primary.Render("M-DELETE-USER - " + m.username))
 	b.WriteString("\n\n")
 	b.WriteString("chroot path:  " + m.home)
 	b.WriteString("\n")
@@ -584,7 +584,7 @@ func (m *Model) modeButtonsRow() string {
 }
 
 func (m *Model) renderConfirm(b *strings.Builder) {
-	b.WriteString(styles.Primary.Render("M-DELETE-USER — " + m.username))
+	b.WriteString(styles.Primary.Render("M-DELETE-USER - " + m.username))
 	b.WriteString("\n\n")
 	b.WriteString(styles.Critical.Render("⚠ Permanent deletion is IRREVERSIBLE."))
 	b.WriteString("\n\n")
@@ -605,7 +605,7 @@ func wrapModal(content string) string {
 		Render(content)
 }
 
-// KeyMap describes the modal's bindings — implements nav.KeyMap.
+// KeyMap describes the modal's bindings - implements nav.KeyMap.
 type KeyMap struct {
 	Cancel  nav.KeyBinding
 	Toggle  nav.KeyBinding

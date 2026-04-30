@@ -96,7 +96,7 @@ func TestUpdate_esc_pops(t *testing.T) {
 // escKeyPressMsg is a tiny stand-in for tea.KeyPressMsg("esc") so the
 // test doesn't need to import the bubbletea package just for the
 // Update-handles-esc smoke test. The DryRunModel.Update only inspects
-// the result of String() — any tea.Msg whose String() returns "esc"
+// the result of String() - any tea.Msg whose String() returns "esc"
 // would do, but we'd need to mock the type. The cleanest path is to
 // keep this test as a no-panic smoke check.
 type escKeyPressMsg struct{}
@@ -119,5 +119,5 @@ func TestRenderPlanText_for_OSC52_copy_is_plain_text_with_no_ANSI(t *testing.T) 
 	text := m.RenderPlanText()
 	// Sanity: no ANSI escape sequences (OSC 52 ships plain text only).
 	require.False(t, strings.Contains(text, "\x1b["),
-		"RenderPlanText must be plain text — no ANSI escapes (OSC 52 contract)")
+		"RenderPlanText must be plain text - no ANSI escapes (OSC 52 contract)")
 }

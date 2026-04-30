@@ -6,7 +6,7 @@
 // as noise, while "Failed password for alice" (valid system user) must
 // classify as targeted. The difference is one word in the sshd log line.
 // Phase 2's observer pipeline and Phase 4's LOCK-* features hang on this
-// distinction — get it wrong and legitimate users look like attack noise
+// distinction - get it wrong and legitimate users look like attack noise
 // or attackers look like legitimate users.
 package observe_test
 
@@ -150,7 +150,7 @@ func TestClassify_event_types_for_existing_fixtures(t *testing.T) {
 	}
 }
 
-// Parser tests — pure json.Unmarshal + string→int coercion, no exec.
+// Parser tests - pure json.Unmarshal + string→int coercion, no exec.
 
 func TestParse_journalctl_line(t *testing.T) {
 	b, err := os.ReadFile("testdata/journalctl/success.json")

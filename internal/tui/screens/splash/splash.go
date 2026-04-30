@@ -1,12 +1,12 @@
 // Package splash implements TUI-08: the launch splash screen that shows the
 // ANSI-rendered sftp-jailer logo, version, and project URL for ~1 second,
 // then transitions to the home screen. The same Model is re-used (via
-// NewModal) as the About overlay reached from the help menu — the modal
+// NewModal) as the About overlay reached from the help menu - the modal
 // variant does NOT auto-dismiss on the 1s tick.
 //
 // The logo is a compile-time artifact produced by scripts/render-logo.sh
 // (chafa). Four variants are embedded; pickVariant selects one at runtime
-// based on the terminal's detected color profile (H1 fix — uses the
+// based on the terminal's detected color profile (H1 fix - uses the
 // canonical github.com/charmbracelet/colorprofile package; Lip Gloss v2
 // does NOT expose a DetectColorProfile function at v2.0.3).
 package splash
@@ -45,7 +45,7 @@ type Model struct {
 	// the screen instead of replacing it with home.
 	modal bool
 	// width/height track the last known terminal dimensions for centering
-	// (Phase 1 doesn't center — placeholder for Phase 2 polish).
+	// (Phase 1 doesn't center - placeholder for Phase 2 polish).
 	width  int
 	height int
 }
@@ -56,7 +56,7 @@ type tickMsg struct{}
 // the splash wants to transition to home. The App layer's placeholder
 // resolver (registered at startup) recognizes this type and constructs the
 // real home.Model. This is the concrete DI seam (C4 fix) that keeps splash
-// and home decoupled — splash does not import home, home does not import
+// and home decoupled - splash does not import home, home does not import
 // splash, and the App is the one place that imports both.
 type HomePlaceholder struct {
 	Version    string
@@ -67,13 +67,13 @@ type HomePlaceholder struct {
 // never actually rendered because the placeholder resolver swaps it out
 // before the next View() is called.
 
-// Init returns nil — the placeholder is never the live top-of-stack.
+// Init returns nil - the placeholder is never the live top-of-stack.
 func (*HomePlaceholder) Init() tea.Cmd { return nil }
 
-// Update returns the placeholder unchanged — never reached in practice.
+// Update returns the placeholder unchanged - never reached in practice.
 func (p *HomePlaceholder) Update(tea.Msg) (nav.Screen, tea.Cmd) { return p, nil }
 
-// View returns an empty string — never reached in practice.
+// View returns an empty string - never reached in practice.
 func (*HomePlaceholder) View() string { return "" }
 
 // Title returns "home" for debugging / test purposes.
@@ -104,7 +104,7 @@ func NewModal(version, projectURL string) *Model {
 
 // pickVariant selects the best-fitting pre-rendered logo variant for the
 // terminal's detected color profile. H1 fix: uses the canonical
-// colorprofile.Detect API verified during planning — NOT
+// colorprofile.Detect API verified during planning - NOT
 // lipgloss.DetectColorProfile() or lipgloss.DefaultRenderer().ColorProfile(),
 // neither of which exists in Lip Gloss v2.0.3.
 func pickVariant() string {
@@ -169,11 +169,11 @@ func (m *Model) View() string {
 // Title returns the title used in the help overlay header.
 func (m *Model) Title() string { return "sftp-jailer" }
 
-// KeyMap returns an empty KeyMap — the splash doesn't bind any keys itself
+// KeyMap returns an empty KeyMap - the splash doesn't bind any keys itself
 // beyond "any key dismisses". The help overlay is a no-op here.
 func (m *Model) KeyMap() nav.KeyMap { return emptyKeyMap{} }
 
-// WantsRawKeys is false — no textinput on the splash.
+// WantsRawKeys is false - no textinput on the splash.
 func (m *Model) WantsRawKeys() bool { return false }
 
 type emptyKeyMap struct{}

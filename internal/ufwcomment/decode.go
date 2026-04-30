@@ -33,7 +33,7 @@ func Decode(c string) (Parsed, error) {
 
 	// Legacy shape: sftpj:user=<name> (implicit v=0). Must be checked BEFORE
 	// the v=N shape because "user=" starting immediately after "sftpj:" is
-	// unambiguous — the current grammar requires "v=" next.
+	// unambiguous - the current grammar requires "v=" next.
 	if strings.HasPrefix(rest, "user=") {
 		u := strings.TrimPrefix(rest, "user=")
 		if !userRE.MatchString(u) {

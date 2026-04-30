@@ -30,16 +30,16 @@ var errEmptyLastChange = errors.New("ReadShadow: empty last-change field")
 // Exported so tests in the same package (and plan-02/04 tests) can construct
 // and inspect it, e.g. r, ok := sysops.NewReal().(*sysops.Real).
 type Real struct {
-	// Absolute paths resolved once at startup — defeats $PATH injection by a
+	// Absolute paths resolved once at startup - defeats $PATH injection by a
 	// compromised environment, and makes audit logging unambiguous.
 	binSshd       string
 	binAAStatus   string
 	binNft        string
 	binSystemctl  string
-	binJournalctl string // Phase 2 — observe-run + S-LOGS live-tail
-	binUfw        string // Phase 2 — internal/firewall reader (consumed by 02-03)
+	binJournalctl string // Phase 2 - observe-run + S-LOGS live-tail
+	binUfw        string // Phase 2 - internal/firewall reader (consumed by 02-03)
 
-	// Phase 3 — user/group + password + aging + reload + archive binaries.
+	// Phase 3 - user/group + password + aging + reload + archive binaries.
 	binUseradd  string
 	binUserdel  string
 	binGpasswd  string
@@ -47,10 +47,10 @@ type Real struct {
 	binChage    string
 	binTar      string
 
-	// Phase 4 — FW-06 IPv6 detection + SAFE-04 transient-unit revert.
+	// Phase 4 - FW-06 IPv6 detection + SAFE-04 transient-unit revert.
 	binIp         string // `ip -6 addr show scope global` (HasPublicIPv6)
 	binSystemdRun string // `systemd-run --on-active=<dur> --unit=<n> /bin/sh -c '<cmd>'`
-	binWho        string // `who am i` — LOCK-03 admin-IP detection fallback (D-L0204-05)
+	binWho        string // `who am i` - LOCK-03 admin-IP detection fallback (D-L0204-05)
 
 	// defaultTimeout applies to Exec() calls whose context has no deadline.
 	// Bounds T-01-07 (unbounded subprocess hang).
@@ -58,7 +58,7 @@ type Real struct {
 }
 
 // NewReal resolves binary paths and returns the production implementation.
-// Missing binaries are non-fatal for Phase 1 — the doctor detector surfaces
+// Missing binaries are non-fatal for Phase 1 - the doctor detector surfaces
 // "not installed" as diagnostic state. The per-method "binary not installed"
 // check returns the typed error at call time.
 func NewReal() SystemOps {
@@ -93,7 +93,7 @@ func (r *Real) Geteuid() int { return os.Geteuid() }
 // only this package may shell out or touch /etc, so path validation is the
 // caller's responsibility.
 func (r *Real) ReadFile(_ context.Context, path string) ([]byte, error) {
-	return os.ReadFile(path) //nolint:gosec // G304: deliberate — sysops contract
+	return os.ReadFile(path) //nolint:gosec // G304: deliberate - sysops contract
 }
 
 // ReadDir implements [SystemOps.ReadDir].
@@ -142,10 +142,10 @@ func (r *Real) Glob(_ context.Context, pattern string) ([]string, error) {
 
 // Exec enforces: allowlist, absolute path, context timeout, no sh -c,
 // no inherited stdin. Non-zero exit codes are reported via ExecResult.ExitCode
-// rather than error — the caller interprets.
+// rather than error - the caller interprets.
 //
 // Absolute-path names (starting with /) bypass the allowlist. This is used by
-// tests (e.g. /bin/sleep) and must NEVER be used from production code paths —
+// tests (e.g. /bin/sleep) and must NEVER be used from production code paths -
 // the CI grep guard (scripts/check-no-exec-outside-sysops.sh) plus code review
 // keep this honest.
 func (r *Real) Exec(ctx context.Context, name string, args ...string) (ExecResult, error) {
@@ -159,18 +159,18 @@ func (r *Real) Exec(ctx context.Context, name string, args ...string) (ExecResul
 			"aa-status":  r.binAAStatus,
 			"nft":        r.binNft,
 			"systemctl":  r.binSystemctl,
-			"journalctl": r.binJournalctl, // Phase 2 — observe-run + live-tail
-			"ufw":        r.binUfw,        // Phase 2 — firewall reader (02-03)
-			// Phase 3 — user/group/aging/archive mutations.
+			"journalctl": r.binJournalctl, // Phase 2 - observe-run + live-tail
+			"ufw":        r.binUfw,        // Phase 2 - firewall reader (02-03)
+			// Phase 3 - user/group/aging/archive mutations.
 			"useradd": r.binUseradd,
 			"userdel": r.binUserdel,
 			"gpasswd": r.binGpasswd,
 			"chage":   r.binChage,
 			"tar":     r.binTar,
-			// Phase 4 — FW-06 detection + SAFE-04 transient unit.
-			"ip":          r.binIp,         // Phase 4 — HasPublicIPv6
-			"systemd-run": r.binSystemdRun, // Phase 4 — SAFE-04 transient unit
-			"who":         r.binWho,        // Phase 4 — LOCK-03 admin-IP fallback (D-L0204-05)
+			// Phase 4 - FW-06 detection + SAFE-04 transient unit.
+			"ip":          r.binIp,         // Phase 4 - HasPublicIPv6
+			"systemd-run": r.binSystemdRun, // Phase 4 - SAFE-04 transient unit
+			"who":         r.binWho,        // Phase 4 - LOCK-03 admin-IP fallback (D-L0204-05)
 			// chpasswd is INTENTIONALLY excluded from this allow map: it
 			// has its own non-Exec wrapper (chpasswd.go) for the stdin
 			// pipe per pitfall E3 (password never on argv).
@@ -200,7 +200,7 @@ func (r *Real) Exec(ctx context.Context, name string, args ...string) (ExecResul
 		Duration: time.Since(start),
 	}
 
-	// Context errors take precedence — surface them so callers can retry or abort.
+	// Context errors take precedence - surface them so callers can retry or abort.
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return res, ctxErr
 	}
@@ -227,13 +227,13 @@ func (r *Real) Exec(ctx context.Context, name string, args ...string) (ExecResul
 // Returns fs.ErrNotExist if the user is not present in the file.
 // Returns the underlying ReadFile error for permission/missing-file paths.
 // An empty lstchg field (force-change-on-next-login) is reported as
-// (0, 0, errEmptyLastChange) — callers SHOULD treat this as "unknown" and
+// (0, 0, errEmptyLastChange) - callers SHOULD treat this as "unknown" and
 // leave PasswordAgeDays / PasswordMaxDays at -1 (graceful degradation).
 //
-// gosec G304: deliberate — sysops contract; root-only access controlled
+// gosec G304: deliberate - sysops contract; root-only access controlled
 // by ownership/mode (0640 root:shadow on Ubuntu 24.04).
 func (r *Real) ReadShadow(_ context.Context, username string) (int, int, error) {
-	raw, err := os.ReadFile("/etc/shadow") //nolint:gosec // G304: deliberate — sysops contract
+	raw, err := os.ReadFile("/etc/shadow") //nolint:gosec // G304: deliberate - sysops contract
 	if err != nil {
 		return 0, 0, fmt.Errorf("ReadShadow read /etc/shadow: %w", err)
 	}
@@ -244,7 +244,7 @@ func (r *Real) ReadShadow(_ context.Context, username string) (int, int, error) 
 		}
 		fields := strings.SplitN(line, ":", 9)
 		if len(fields) < 5 {
-			// Malformed shadow line — skip rather than crash.
+			// Malformed shadow line - skip rather than crash.
 			continue
 		}
 		if fields[0] != username {
@@ -283,7 +283,7 @@ func (r *Real) ReadShadow(_ context.Context, username string) (int, int, error) 
 // (not r.Exec) because they need stderr split from stdout.
 // ----------------------------------------------------------------------------
 
-// Useradd implements [SystemOps.Useradd] — `useradd` typed wrapper. See man8/useradd.
+// Useradd implements [SystemOps.Useradd] - `useradd` typed wrapper. See man8/useradd.
 func (r *Real) Useradd(ctx context.Context, opts UseraddOpts) error {
 	if r.binUseradd == "" {
 		return fmt.Errorf("sysops: useradd not installed")
@@ -319,7 +319,7 @@ func (r *Real) Useradd(ctx context.Context, opts UseraddOpts) error {
 	return nil
 }
 
-// Userdel implements [SystemOps.Userdel] — `userdel [-r] <user>`.
+// Userdel implements [SystemOps.Userdel] - `userdel [-r] <user>`.
 func (r *Real) Userdel(ctx context.Context, username string, removeHome bool) error {
 	if r.binUserdel == "" {
 		return fmt.Errorf("sysops: userdel not installed")
@@ -340,7 +340,7 @@ func (r *Real) Userdel(ctx context.Context, username string, removeHome bool) er
 	return nil
 }
 
-// Gpasswd implements [SystemOps.Gpasswd] — `gpasswd -a|-d <user> <group>`.
+// Gpasswd implements [SystemOps.Gpasswd] - `gpasswd -a|-d <user> <group>`.
 func (r *Real) Gpasswd(ctx context.Context, op GpasswdOp, username, group string) error {
 	if r.binGpasswd == "" {
 		return fmt.Errorf("sysops: gpasswd not installed")
@@ -365,7 +365,7 @@ func (r *Real) Gpasswd(ctx context.Context, op GpasswdOp, username, group string
 	return nil
 }
 
-// Chage implements [SystemOps.Chage] — `chage -d <days> <user>`.
+// Chage implements [SystemOps.Chage] - `chage -d <days> <user>`.
 func (r *Real) Chage(ctx context.Context, username string, opts ChageOpts) error {
 	if r.binChage == "" {
 		return fmt.Errorf("sysops: chage not installed")
@@ -399,7 +399,7 @@ func (r *Real) Chown(_ context.Context, path string, uid, gid int) error {
 }
 
 // MkdirAll implements [SystemOps.MkdirAll]. Wraps os.MkdirAll. ctx accepted
-// for interface symmetry but unused — synchronous syscall, no cancellation
+// for interface symmetry but unused - synchronous syscall, no cancellation
 // leverage.
 func (r *Real) MkdirAll(_ context.Context, path string, mode fs.FileMode) error {
 	if err := os.MkdirAll(path, mode); err != nil { //nolint:gosec // G301: mode from caller per sysops contract
@@ -464,7 +464,7 @@ func (r *Real) WriteAuthorizedKeys(ctx context.Context, username, chrootRoot str
 	return nil
 }
 
-// SshdT implements [SystemOps.SshdT] — `sshd -t` (config validator) WITHOUT
+// SshdT implements [SystemOps.SshdT] - `sshd -t` (config validator) WITHOUT
 // -C user-context. Returns stderr verbatim and a non-nil error on non-zero
 // exit. exec.CombinedOutput is wrong here: we need stderr split from stdout
 // because sshd -t writes diagnostics ONLY to stderr.
@@ -489,7 +489,7 @@ func (r *Real) SshdT(ctx context.Context) ([]byte, error) {
 // the M-ADD-KEY verifier needs `-C user=<u>,host=<h>,addr=<a>` so the
 // validator evaluates Match-block-scoped directives for THIS user.
 //
-// T-03-01-09: the fmt.Sprintf builds `user=%s,host=%s,addr=%s` — caller
+// T-03-01-09: the fmt.Sprintf builds `user=%s,host=%s,addr=%s` - caller
 // MUST pre-validate opts.User (no commas / `=` characters); host/addr are
 // tool-set literals.
 func (r *Real) SshdTWithContext(ctx context.Context, opts SshdTContextOpts) ([]byte, error) {
@@ -580,7 +580,7 @@ func (r *Real) Tar(ctx context.Context, opts TarOpts) error {
 }
 
 // ----------------------------------------------------------------------------
-// Phase 4 mutation methods — see internal/sysops/sysops.go for the
+// Phase 4 mutation methods - see internal/sysops/sysops.go for the
 // interface contract. These follow the Phase 3 Useradd / SshdT /
 // SshdDumpConfig wrapper shape: binary-missing fast-fail, build args,
 // exec via r.Exec (allowlist + timeout), interpret ExitCode → typed
@@ -613,7 +613,7 @@ func (r *Real) UfwAllow(ctx context.Context, opts UfwAllowOpts) error {
 	return nil
 }
 
-// UfwInsert implements [SystemOps.UfwInsert] — `ufw insert <position> allow …`
+// UfwInsert implements [SystemOps.UfwInsert] - `ufw insert <position> allow …`
 // (D-FW-02 always position 1 in production).
 func (r *Real) UfwInsert(ctx context.Context, position int, opts UfwAllowOpts) error {
 	if r.binUfw == "" {
@@ -638,7 +638,7 @@ func (r *Real) UfwInsert(ctx context.Context, position int, opts UfwAllowOpts) e
 	return nil
 }
 
-// UfwDelete implements [SystemOps.UfwDelete] — `ufw --force delete <ruleID>`
+// UfwDelete implements [SystemOps.UfwDelete] - `ufw --force delete <ruleID>`
 // (D-FW-07). The --force flag is mandatory: `ufw delete N` prompts y/N
 // when stdin is not a TTY (which it never is in a sysops invocation), so
 // without --force the subprocess would block until ctx timeout.
@@ -674,7 +674,7 @@ func (r *Real) UfwReload(ctx context.Context) error {
 	return nil
 }
 
-// HasPublicIPv6 implements [SystemOps.HasPublicIPv6] — parses
+// HasPublicIPv6 implements [SystemOps.HasPublicIPv6] - parses
 // `ip -6 addr show scope global` and returns true when at least one
 // non-link-local non-loopback IPv6 address is bound (D-FW-03 step 2).
 // Empty output = no public v6 = (false, nil).
@@ -693,7 +693,7 @@ func (r *Real) HasPublicIPv6(ctx context.Context) (bool, error) {
 	sc := bufio.NewScanner(bytes.NewReader(res.Stdout))
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		// `inet6 2001:db8::1/64 scope global …` — match scope global lines.
+		// `inet6 2001:db8::1/64 scope global …` - match scope global lines.
 		if strings.HasPrefix(line, "inet6 ") && strings.Contains(line, "scope global") {
 			return true, nil
 		}
@@ -716,7 +716,7 @@ func (r *Real) RewriteUfwIPV6(ctx context.Context, value string) error {
 		return fmt.Errorf("sysops.RewriteUfwIPV6 read %s: %w", path, err)
 	}
 	// Replace the first IPV6= line in place (any leading whitespace
-	// preserved is fine — we match the line key only). If the line is
+	// preserved is fine - we match the line key only). If the line is
 	// missing, append it. Comments (#) and blank lines pass through
 	// verbatim.
 	lines := strings.Split(string(prior), "\n")
@@ -743,7 +743,7 @@ func (r *Real) RewriteUfwIPV6(ctx context.Context, value string) error {
 //
 //	systemd-run --on-active=<N>sec --unit=<UnitName> /bin/sh -c <Command>
 //
-// The verbatim `<Command>` string is NOT shell-escaped here — callers MUST
+// The verbatim `<Command>` string is NOT shell-escaped here - callers MUST
 // pre-validate every embedded value (ufwcomment.Encode regex + net.ParseCIDR).
 func (r *Real) SystemdRunOnActive(ctx context.Context, opts SystemdRunOpts) error {
 	if r.binSystemdRun == "" {
@@ -785,7 +785,7 @@ func (r *Real) SystemctlStop(ctx context.Context, unitName string) error {
 
 // SystemctlIsActive implements [SystemOps.SystemctlIsActive]. systemctl
 // is-active exits 0 for active, 3 for inactive, 4 for not-loaded. The
-// non-zero exits are normal "not active" states — map to (false, nil).
+// non-zero exits are normal "not active" states - map to (false, nil).
 // Only ctx errors / exec failures surface as Go errors.
 func (r *Real) SystemctlIsActive(ctx context.Context, unitName string) (bool, error) {
 	res, err := r.Exec(ctx, "systemctl", "is-active", unitName)

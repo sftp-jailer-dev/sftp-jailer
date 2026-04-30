@@ -4,7 +4,7 @@
 // and must NOT be a symlink (sshd refuses symlinked chroot components per
 // RESEARCH pitfall 6 / pitfall A6).
 //
-// The package is read-only by contract (D-10) — it never modifies file
+// The package is read-only by contract (D-10) - it never modifies file
 // system state, only inspects. Callers translate Violations into UX
 // (modal blocking, doctor warnings) and may invoke separate sysops
 // mutations to remediate.
@@ -13,12 +13,12 @@
 //   - WalkRoot: D-10 path-walk validator from / to <chrootRoot>. Used by
 //     M-APPLY-SETUP pre-flight (plan 03-06), M-NEW-USER pre-flight
 //     (plan 03-07 via internal/txn), and CheckAuthKeysFile below.
-//   - CheckAuthKeysFile (in strictmodes.go): D-21 steps 1+2 — file/dir
+//   - CheckAuthKeysFile (in strictmodes.go): D-21 steps 1+2 - file/dir
 //     mode+owner verification PLUS path-walk down to authorized_keys.
 //     Used by M-ADD-KEY post-write verifier (plan 03-08 via internal/txn).
 //
 // Steps 3 (re-parse the file) and 4 (sshd -T -C user=...) of D-21 are NOT
-// in this package — they belong in the M-ADD-KEY caller because they
+// in this package - they belong in the M-ADD-KEY caller because they
 // involve reading file content / invoking sshd directly.
 package chrootcheck
 
@@ -50,7 +50,7 @@ var ErrTargetNotAbsolute = errors.New("chrootcheck: target must be absolute path
 // write OR is a symlink. Empty slice = chain is clean.
 //
 // Uses Lstat (not Stat) so symlinks at any level are flagged rather than
-// silently followed — matches sshd's chroot-component check semantics
+// silently followed - matches sshd's chroot-component check semantics
 // (pitfall 6).
 //
 // The walk is purely diagnostic: this function NEVER calls Chmod, Chown,
@@ -87,9 +87,9 @@ func WalkRoot(ctx context.Context, ops sysops.SystemOps, target string) ([]Viola
 		if fi.IsLink {
 			violations = append(violations, Violation{
 				Path:   p,
-				Reason: fmt.Sprintf("%s is a symlink — sshd's chroot requires real directories at every component", p),
+				Reason: fmt.Sprintf("%s is a symlink - sshd's chroot requires real directories at every component", p),
 			})
-			// Don't pile on more diagnostics for a symlink — the symlink
+			// Don't pile on more diagnostics for a symlink - the symlink
 			// itself is the blocker; the admin will resolve it before the
 			// other checks become meaningful.
 			continue

@@ -1,6 +1,6 @@
 // Package firewallrule renders M-ADD-RULE (Plan 04-05) and M-FW-IPV6-FIX
 // (the FW-06 leak remediation modal). Both modals push onto the nav.Stack
-// from S-FIREWALL ('a') and S-USER-DETAIL ('r' — keybind deviation
+// from S-FIREWALL ('a') and S-USER-DETAIL ('r' - keybind deviation
 // W1, see 04-05-PLAN.md context_compliance + 04-CONTEXT.md Integration
 // Points: 'a' on S-USER-DETAIL is reserved for M-ADD-KEY since Phase 3).
 //
@@ -15,7 +15,7 @@
 //	phaseDone       → success; tea.Tick(500ms) → nav.PopCmd
 //	phaseError      → surface error; esc to pop
 //
-// Commit batch ordering (D-S04-09 step 3 — checker B1+B5 fix):
+// Commit batch ordering (D-S04-09 step 3 - checker B1+B5 fix):
 //
 //	[NewScheduleRevertStep, NewUfwInsertStep]
 //
@@ -30,15 +30,15 @@
 //   - `comment` is the output of ufwcomment.Encode whose regex strips to
 //     [a-z0-9:=_-]+ (no quotes/semicolons/backticks/whitespace possible).
 //   - The single-quote literal wrapping the comment inside `grep -F` is
-//     therefore safe — no quote-balancing risk.
+//     therefore safe - no quote-balancing risk.
 //
 // Threat model (mirror 04-05-PLAN <threat_model>):
 //   - T-04-05-01 (tampering, source field): mitigate via net.ParseCIDR
-//     strict — reject any non-CIDR string. The output of
+//     strict - reject any non-CIDR string. The output of
 //     ipnet.String() is the canonical CIDR form, never an attacker-
 //     controlled raw string.
 //   - T-04-05-02 (tampering, userField): mitigate via ufwcomment.Encode
-//     regex — Encode returns ErrInvalidUser on any malformed value.
+//     regex - Encode returns ErrInvalidUser on any malformed value.
 //   - T-04-05-03 (self-lockout): SAFE-04 wrapper arms the 3-min timer
 //     BEFORE returning success.
 //   - T-04-05-04 (DoS, preflight): each call bounded by 5s context
@@ -47,7 +47,7 @@
 // FW-08 mirror rebuild (W2 fix): after a successful tx.Apply, the modal
 // best-effort calls store.RebuildUserIPs to re-derive the SQLite cache
 // from the post-mutation `ufw status numbered`. Failure surfaces in
-// logs but does NOT roll back the firewall change — the rule is
+// logs but does NOT roll back the firewall change - the rule is
 // correctly armed under the SAFE-04 timer regardless of cache state.
 package firewallrule
 
@@ -84,7 +84,7 @@ const preflightTimeout = 5 * time.Second
 // + post-Apply Enumerate + best-effort RebuildUserIPs).
 const commitTimeout = 60 * time.Second
 
-// revertWindow is the SAFE-04 deadline (D-S04-04) — 3 min from arm time.
+// revertWindow is the SAFE-04 deadline (D-S04-04) - 3 min from arm time.
 const revertWindow = 3 * time.Minute
 
 // phase tracks the modal's state-machine position.
@@ -104,7 +104,7 @@ type Model struct {
 	ops      sysops.SystemOps
 	watcher  *revert.Watcher
 	sftpPort string
-	store    *store.Queries // optional — tests pass nil; production wires the real handle
+	store    *store.Queries // optional - tests pass nil; production wires the real handle
 
 	// Per-modal config.
 	userLocked bool   // true when caller pre-filled user (S-USER-DETAIL)
@@ -151,7 +151,7 @@ type committedMsg struct {
 type autoPopMsg struct{}
 
 // New constructs an M-ADD-RULE modal. lockedUser is "" for the
-// S-FIREWALL `a` path (admin picks user later — currently the user
+// S-FIREWALL `a` path (admin picks user later - currently the user
 // field is admin-typed via the user textinput; for v1 we only support
 // the S-USER-DETAIL pre-fill path); set to a username for the
 // S-USER-DETAIL `r` path (user is read-only).
@@ -192,7 +192,7 @@ func (m *Model) SetStore(q *store.Queries) { m.store = q }
 // Title implements nav.Screen.
 func (m *Model) Title() string {
 	if m.userLocked && m.userField != "" {
-		return "add firewall rule — " + m.userField
+		return "add firewall rule - " + m.userField
 	}
 	return "add firewall rule"
 }
@@ -200,7 +200,7 @@ func (m *Model) Title() string {
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — true while the textinput is the
+// WantsRawKeys implements nav.Screen - true while the textinput is the
 // admin's primary input surface (phaseInput) OR during phaseError where
 // any key returns to the input. False during preflight / review /
 // committing / done so the screen's single-key shortcuts (c / esc)
@@ -209,7 +209,7 @@ func (m *Model) WantsRawKeys() bool {
 	return m.phase == phaseInput || m.phase == phaseError
 }
 
-// Init implements nav.Screen — no async load on push (admin types first).
+// Init implements nav.Screen - no async load on push (admin types first).
 func (m *Model) Init() tea.Cmd { return nil }
 
 // Update implements nav.Screen.
@@ -245,7 +245,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 			m.warnInline = ""
 			return m, nil
 		case phasePreflight, phaseCommitting:
-			// Swallow — async work will complete and return us to a stable phase.
+			// Swallow - async work will complete and return us to a stable phase.
 			return m, nil
 		}
 	}
@@ -286,7 +286,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 // ---- attemptParse: textinput → CIDR validation ---------------------------
 
 // attemptParse is the synchronous CIDR validation per D-FW-CIDR. Runs
-// inside Update — no goroutine, no I/O. On success populates
+// inside Update - no goroutine, no I/O. On success populates
 // m.normalizedSource and clears errInline; on failure populates errInline.
 //
 // Validation rules (mirror 04-CONTEXT.md "M-ADD-RULE input validation rules"):
@@ -296,7 +296,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 //     not internet-routable; T-04-05-01 mitigation).
 //   - Bare IP → promote to /32 (v4) or /128 (v6) BEFORE the strict CIDR
 //     parser sees it.
-//   - net.ParseCIDR strict — rejects 300.0.0.1/24, leading-zero octets,
+//   - net.ParseCIDR strict - rejects 300.0.0.1/24, leading-zero octets,
 //     malformed strings.
 //   - Loopback / link-local → accept, populate warnInline (non-blocking).
 func (m *Model) attemptParse() {
@@ -306,7 +306,7 @@ func (m *Model) attemptParse() {
 		m.warnInline = ""
 		return
 	}
-	// Reject IPv6 zone-id BEFORE bare-IP promotion — the % suffix would
+	// Reject IPv6 zone-id BEFORE bare-IP promotion - the % suffix would
 	// otherwise sneak through the bare-IP path's net.ParseIP, which
 	// accepts zoned link-local addresses.
 	if strings.Contains(raw, "%") {
@@ -335,14 +335,14 @@ func (m *Model) attemptParse() {
 		m.warnInline = ""
 		return
 	}
-	// Loopback / link-local — accept but warn (non-blocking).
+	// Loopback / link-local - accept but warn (non-blocking).
 	m.warnInline = ""
 	if ip.IsLoopback() {
 		m.warnInline = fmt.Sprintf(
-			"source %s is loopback — only local processes will match", ip)
+			"source %s is loopback - only local processes will match", ip)
 	} else if ip.IsLinkLocalUnicast() {
 		m.warnInline = fmt.Sprintf(
-			"source %s is link-local — limited reachability", ip)
+			"source %s is link-local - limited reachability", ip)
 	}
 	m.normalizedSource = ipnet.String()
 	m.errInline = ""
@@ -352,17 +352,17 @@ func (m *Model) attemptParse() {
 
 // preflightCmd runs the FW-06 check (D-FW-03):
 //
-//  1. ops.HasPublicIPv6(ctx) — true if `ip -6 addr show scope global`
+//  1. ops.HasPublicIPv6(ctx) - true if `ip -6 addr show scope global`
 //     returns at least one inet6 line.
-//  2. ReadFile /etc/default/ufw — extract the `IPV6=` line.
+//  2. ReadFile /etc/default/ufw - extract the `IPV6=` line.
 //  3. If IPV6=no AND HasPublicIPv6==true → leak detected; the caller
 //     pushes M-FW-IPV6-FIX and bails.
 //
-// Bounded by preflightTimeout (5s — sub-second on a healthy box).
+// Bounded by preflightTimeout (5s - sub-second on a healthy box).
 func (m *Model) preflightCmd() tea.Cmd {
 	ops := m.ops
 	if ops == nil {
-		// Test path — no async work; treat as no-leak.
+		// Test path - no async work; treat as no-leak.
 		return func() tea.Msg { return preflightDoneMsg{} }
 	}
 	return func() tea.Msg {
@@ -390,7 +390,7 @@ func (m *Model) preflightCmd() tea.Cmd {
 		leak := (ufwIPV6 == "no") && hasIPv6
 		var detail string
 		if leak {
-			detail = "FW-06: ufw IPV6=no but this box has at least one public IPv6 — " +
+			detail = "FW-06: ufw IPV6=no but this box has at least one public IPv6 - " +
 				"any per-user lockdown rule below would silently leak v6 access."
 		}
 		return preflightDoneMsg{ipv6Leak: leak, leakDetail: detail}
@@ -401,7 +401,7 @@ func (m *Model) preflightCmd() tea.Cmd {
 //
 // Leak detected → push M-FW-IPV6-FIX (Task 2). On its pop, the admin
 // can re-invoke M-ADD-RULE. (Re-running preflight on the SAME modal
-// instance is deferred — typically the admin pops both modals and
+// instance is deferred - typically the admin pops both modals and
 // starts fresh; this keeps the state-machine simple.)
 func (m *Model) handlePreflightDone(msg preflightDoneMsg) (nav.Screen, tea.Cmd) {
 	if msg.err != nil {
@@ -415,10 +415,10 @@ func (m *Model) handlePreflightDone(msg preflightDoneMsg) (nav.Screen, tea.Cmd) 
 		// Pop M-ADD-RULE first so admin lands back at the caller (S-FIREWALL
 		// or S-USER-DETAIL) after the fix; THEN push the fix modal so it's
 		// the top-of-stack. The simpler approach for v1: push the fix and
-		// leave M-ADD-RULE underneath — admin pops both back to the caller.
+		// leave M-ADD-RULE underneath - admin pops both back to the caller.
 		return m, nav.PushCmd(fix)
 	}
-	// No leak — proceed to review.
+	// No leak - proceed to review.
 	m.phase = phaseReview
 	return m, nil
 }
@@ -438,7 +438,7 @@ func (m *Model) handlePreflightDone(msg preflightDoneMsg) (nav.Screen, tea.Cmd) 
 // followed by `ufw reload`.
 //
 // Shell-quoting safety: `comment` is the output of ufwcomment.Encode
-// whose regex is `^[a-z][a-z0-9:=_-]+$` — no quotes/semicolons/
+// whose regex is `^[a-z][a-z0-9:=_-]+$` - no quotes/semicolons/
 // backticks/whitespace possible. Single-quote literal wrapping is safe.
 //
 // W2 fix: post-Apply we best-effort rebuild the FW-08 mirror so the
@@ -447,7 +447,7 @@ func (m *Model) handlePreflightDone(msg preflightDoneMsg) (nav.Screen, tea.Cmd) 
 // under the SAFE-04 timer regardless of cache state.
 func (m *Model) commitCmd() tea.Cmd {
 	if m.ops == nil {
-		// Test path — no async work; surface a benign error so the
+		// Test path - no async work; surface a benign error so the
 		// state machine transitions visibly.
 		return func() tea.Msg {
 			return committedMsg{err: fmt.Errorf("internal: ops is nil (test path mis-wired)")}
@@ -477,7 +477,7 @@ func (m *Model) commitCmd() tea.Cmd {
 		}
 
 		// === D-S04-09 step 3 ordering (B1+B5 fix) ===
-		// Comment-grep placeholder reverse-cmd — see commitCmd doc.
+		// Comment-grep placeholder reverse-cmd - see commitCmd doc.
 		reverseCmd := fmt.Sprintf(
 			"ID=$(ufw status numbered | grep -F '%s' | head -1 | "+
 				"sed -E 's/^\\[ +([0-9]+)\\].*/\\1/'); "+
@@ -505,7 +505,7 @@ func (m *Model) commitCmd() tea.Cmd {
 		}
 
 		// Step 3 (post-Apply): resolve the assigned ID for the caller's
-		// bookkeeping. Not load-bearing — the reverse-cmd no longer
+		// bookkeeping. Not load-bearing - the reverse-cmd no longer
 		// needs it because of the comment-grep placeholder.
 		assignedID, _ := firewall.ResolveRuleIDByCommentSource(ctx, ops, user, source)
 
@@ -531,7 +531,7 @@ func (m *Model) handleCommitted(msg committedMsg) (nav.Screen, tea.Cmd) {
 	m.phase = phaseDone
 	var flashCmd tea.Cmd
 	flashText := fmt.Sprintf(
-		"added rule for %s from %s (id=%d) — 3-min revert armed",
+		"added rule for %s from %s (id=%d) - 3-min revert armed",
 		m.userField, m.normalizedSource, m.assignedID)
 	m.toast, flashCmd = m.toast.Flash(flashText)
 	return m, tea.Batch(
@@ -598,7 +598,7 @@ func (m *Model) View() string {
 			"applying ufw insert + arming 3-min revert…"))
 	case phaseDone:
 		b.WriteString(styles.Success.Render(fmt.Sprintf(
-			"✓ rule added for %s from %s (id=%d) — 3-min revert armed",
+			"✓ rule added for %s from %s (id=%d) - 3-min revert armed",
 			m.userField, m.normalizedSource, m.assignedID)))
 	case phaseError:
 		b.WriteString(styles.Critical.Render(m.errInline))
@@ -623,11 +623,11 @@ func wrapModal(content string) string {
 
 // ---- KeyMap ----------------------------------------------------------------
 
-// KeyMap describes the modal's bindings — implements nav.KeyMap.
+// KeyMap describes the modal's bindings - implements nav.KeyMap.
 type KeyMap struct {
 	Submit  nav.KeyBinding // enter (in phaseInput)
 	Confirm nav.KeyBinding // c (in phaseReview)
-	Cancel  nav.KeyBinding // esc — back / pop
+	Cancel  nav.KeyBinding // esc - back / pop
 }
 
 // DefaultKeyMap returns the canonical M-ADD-RULE bindings.

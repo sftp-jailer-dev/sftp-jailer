@@ -139,7 +139,7 @@ func TestDoctorScreen_a_action_pushes_applysetup_when_NeedsCanonicalApply(t *tes
 }
 
 // Phase 3 plan 03-06: pressing 'a' when the report is fully clean (no gap)
-// is a no-op — no modal is pushed.
+// is a no-op - no modal is pushed.
 func TestDoctorScreen_a_action_noop_when_canonical_already_applied(t *testing.T) {
 	svc := doctor.New(sysops.NewFake())
 	s := doctorscreen.New(svc)

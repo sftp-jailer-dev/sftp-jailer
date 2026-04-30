@@ -9,7 +9,7 @@ import (
 )
 
 // JournalctlFollowCmd returns an unstarted *exec.Cmd suitable for hand-off
-// to tea.ExecProcess. Bubble Tea owns Start/Wait — the caller must NOT call
+// to tea.ExecProcess. Bubble Tea owns Start/Wait - the caller must NOT call
 // Start, Run, or Output on the returned command.
 //
 // Args mirror the production journalctl invocation pattern:
@@ -37,7 +37,7 @@ func (r *Real) JournalctlFollowCmd(unit string) *exec.Cmd {
 //
 // Caveat (RESEARCH §"--all flag and the >4096-byte-field gotcha"): journalctl's
 // JSON encoder emits null for fields larger than 4096 bytes unless `--all` is
-// passed. sshd MESSAGE fields are short (~80–200 bytes typical) so we do NOT
+// passed. sshd MESSAGE fields are short (~80-200 bytes typical) so we do NOT
 // pass --all; an oversized field surfaces as a parse error and is classified
 // as `unmatched`, which is acceptable for v1.
 func (r *Real) JournalctlStream(ctx context.Context, opts JournalctlStreamOpts) (*os.Process, io.ReadCloser, error) {

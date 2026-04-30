@@ -1,4 +1,4 @@
-// Package lockdown is the S-LOCKDOWN screen — the progressive-lockdown
+// Package lockdown is the S-LOCKDOWN screen - the progressive-lockdown
 // flow's flagship surface. Two-pane editor: managed users on the left
 // (cursor source); IPs of the selected user on the right.
 //
@@ -12,7 +12,7 @@
 //     load (Init → goroutine → proposalsLoadedMsg), admin-IP guard
 //     (DetectAdminIP + adminIPCovered), augmentWithZeroConnUsers, View()
 //     rendering, and the keybind dispatch table.
-//   - Task 1b: commit + rollback paths — composeCommitReverseCmds,
+//   - Task 1b: commit + rollback paths - composeCommitReverseCmds,
 //     detectAddrFamily, RebuildUserIPs wiring + tests.
 //
 // Test seams (LoadProposalsForTest, SetAdminIPForTest, etc.) bypass
@@ -52,7 +52,7 @@ const commitTimeout = 120 * time.Second
 // Reload + post-Apply Enumerate + RebuildUserIPs).
 const rollbackTimeout = 60 * time.Second
 
-// revertWindow is the SAFE-04 deadline (D-S04-04) — 3 min from arm time.
+// revertWindow is the SAFE-04 deadline (D-S04-04) - 3 min from arm time.
 const revertWindow = 3 * time.Minute
 
 // loadTimeout bounds the async generator + enumerator + admin-IP detect
@@ -66,8 +66,8 @@ const (
 	screenLoading    screenPhase = iota // async load in flight
 	screenEditing                       // editor active; admin can navigate / mutate proposals
 	screenCommitting                    // commit txn batch running
-	screenDone                          // commit/rollback success — auto-pop after delay
-	screenError                         // commit/rollback / load failure — esc to pop
+	screenDone                          // commit/rollback success - auto-pop after delay
+	screenError                         // commit/rollback / load failure - esc to pop
 )
 
 // proposalsLoadedMsg carries the load goroutine's result back to Update.
@@ -112,7 +112,7 @@ type Model struct {
 
 	phase screenPhase
 
-	// Loaded by Init — populated by proposalsLoadedMsg handler.
+	// Loaded by Init - populated by proposalsLoadedMsg handler.
 	proposals    []lockdown.Proposal
 	currentRules []firewall.Rule
 	currentMode  firewall.Mode
@@ -122,7 +122,7 @@ type Model struct {
 	cursor             int                              // selected user (left pane)
 	windowDays         int                              // editable; default from config
 	includeTargetedFor map[string]bool                  // per-user include-targeted toggle
-	manualAdds         map[string][]lockdown.ProposedIP // per-user — admin-typed IPs (Task 1b textinput sub-modal)
+	manualAdds         map[string][]lockdown.ProposedIP // per-user - admin-typed IPs (Task 1b textinput sub-modal)
 
 	// Per-screen ephemerals.
 	toast     widgets.Toast
@@ -131,14 +131,14 @@ type Model struct {
 	nowFn     func() time.Time
 	width     int
 
-	// FW-08 mirror handle (Task 1b — rebuilt post-mutation success).
+	// FW-08 mirror handle (Task 1b - rebuilt post-mutation success).
 	// Set via SetStoreForTest / SetStore from bootstrap. nil-safe at
 	// all callsites.
 	store storeQ
 }
 
 // storeQ is the narrow interface the screen consumes from
-// *store.Queries — only RebuildUserIPs is needed (FW-08 mirror).
+// *store.Queries - only RebuildUserIPs is needed (FW-08 mirror).
 // Defined as an interface so tests can inject a fake without importing
 // the full store package + tmp-DB seeding shape.
 type storeQ interface {
@@ -173,11 +173,11 @@ func New(
 // Title implements nav.Screen.
 func (m *Model) Title() string { return "Progressive lockdown" }
 
-// KeyMap implements nav.Screen — minimal for v1 (the help overlay reads
+// KeyMap implements nav.Screen - minimal for v1 (the help overlay reads
 // this; the screen's own key dispatch lives in handleKey).
 func (m *Model) KeyMap() nav.KeyMap { return emptyKeyMap{} }
 
-// WantsRawKeys implements nav.Screen — false (no textinput at the top
+// WantsRawKeys implements nav.Screen - false (no textinput at the top
 // level; per-IP add textinput is a sub-modal in Task 1b).
 func (m *Model) WantsRawKeys() bool { return false }
 
@@ -307,15 +307,15 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		return m, nil
 	case "a":
 		// Task 1b: push a small textinput sub-modal that on submit
-		// appends to manualAdds[user]. Skipped for Task 1a — flash an
+		// appends to manualAdds[user]. Skipped for Task 1a - flash an
 		// info toast so the keybind isn't mysteriously dead.
 		var flashCmd tea.Cmd
-		m.toast, flashCmd = m.toast.Flash("manual-add IP — Task 1b sub-modal")
+		m.toast, flashCmd = m.toast.Flash("manual-add IP - Task 1b sub-modal")
 		return m, flashCmd
 	case "d":
 		// Task 1b: remove selected IP from current user's manual adds.
 		var flashCmd tea.Cmd
-		m.toast, flashCmd = m.toast.Flash("remove IP — Task 1b sub-modal")
+		m.toast, flashCmd = m.toast.Flash("remove IP - Task 1b sub-modal")
 		return m, flashCmd
 	case "c":
 		return m.handleCopyURL()
@@ -330,20 +330,20 @@ func (m *Model) handleKey(k tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 	case "w":
 		// Task 1b sub-modal: prompt for window-days override.
 		var flashCmd tea.Cmd
-		m.toast, flashCmd = m.toast.Flash("window override — Task 1b sub-modal")
+		m.toast, flashCmd = m.toast.Flash("window override - Task 1b sub-modal")
 		return m, flashCmd
 	case "D":
 		// Push M-DRY-RUN modal (Task 2).
 		return m, nav.PushCmd(NewDryRunModal(m.ops, m.buildPendingMutations(), m.currentRules))
 	case "C":
-		// Commit — admin-IP guard gate.
+		// Commit - admin-IP guard gate.
 		if !m.adminIPCovered() && m.adminIP != "" {
-			return m, m.flashErr("admin IP not in any user's allowlist — commit refused")
+			return m, m.flashErr("admin IP not in any user's allowlist - commit refused")
 		}
 		m.phase = screenCommitting
 		return m, m.commitCmd()
 	case "R":
-		// Rollback to OPEN — only valid in LOCKED / STAGING modes.
+		// Rollback to OPEN - only valid in LOCKED / STAGING modes.
 		if m.currentMode == firewall.ModeLocked || m.currentMode == firewall.ModeStaging {
 			m.phase = screenCommitting
 			return m, m.rollbackCmd()
@@ -366,11 +366,11 @@ func (m *Model) selectedUser() (string, bool) {
 
 // adminIPCovered returns true when the admin's source IP is contained
 // by at least one proposed CIDR (or manual-added CIDR) across all users.
-// Console session (adminIP == "") returns true unconditionally — the
+// Console session (adminIP == "") returns true unconditionally - the
 // LOCK-03 guard is intentionally fail-open in that case (D-L0204-05).
 func (m *Model) adminIPCovered() bool {
 	if m.adminIP == "" {
-		return true // console session — guard inactive
+		return true // console session - guard inactive
 	}
 	for _, p := range m.proposals {
 		for _, ip := range p.IPs {
@@ -394,7 +394,7 @@ func (m *Model) adminIPCovered() bool {
 // cidrStr lacks a `/` (treats it as /32 or /128).
 //
 // Both IPv4 and IPv6 are supported. Returns false on any parse failure
-// (defensive — never panics, never throws).
+// (defensive - never panics, never throws).
 func ipMatchesCIDR(ipStr, cidrStr string) bool {
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
@@ -465,7 +465,7 @@ func (m *Model) flashErr(text string) tea.Cmd {
 //
 // The catch-all removal during OPEN→LOCKED / STAGING→LOCKED commits is
 // handled by commitCmd appending txn.NewUfwDeleteCatchAllByEnumerateStep
-// (Plan 04-12) — a position-independent dual-family-aware step that
+// (Plan 04-12) - a position-independent dual-family-aware step that
 // re-Enumerates at Apply time. The previous shape, where this function
 // emitted an OpDelete with a stale catch-all id, suffered BUG-04-A
 // (stale id after position-shift) + BUG-04-C (only one of v4/v6 catch-
@@ -524,7 +524,7 @@ func portMatchesSFTP(rulePort, sftpPort string) bool {
 // commitCmd composes the SAFE-04-wrapped txn batch for the LOCK-06
 // commit and runs it under tx.Apply. Ordering follows D-S04-09 step 3:
 // Schedule first (arms the 3-min revert), then N mutations, then a
-// trailing UfwReload finalizer. Cancel is NOT in the batch — it runs
+// trailing UfwReload finalizer. Cancel is NOT in the batch - it runs
 // only on explicit admin Confirm in the countdown UI (D-S04-09 step 5).
 //
 // Reverse-cmd composition (composeCommitReverseCmds):
@@ -537,7 +537,7 @@ func portMatchesSFTP(rulePort, sftpPort string) bool {
 //
 // Post-Apply: best-effort RebuildUserIPs from the post-mutation
 // firewall.Enumerate output (FW-08 mirror, W2). Failure logs but does
-// NOT roll back the commit — the rules are armed under the SAFE-04
+// NOT roll back the commit - the rules are armed under the SAFE-04
 // timer regardless of cache state.
 func (m *Model) commitCmd() tea.Cmd {
 	if m.ops == nil {
@@ -567,7 +567,7 @@ func (m *Model) commitCmd() tea.Cmd {
 		defer cancel()
 
 		if len(muts) == 0 {
-			return committedMsg{err: fmt.Errorf("commit batch is empty — nothing to apply")}
+			return committedMsg{err: fmt.Errorf("commit batch is empty - nothing to apply")}
 		}
 
 		restoreCatchAll := mode == firewall.ModeOpen || mode == firewall.ModeStaging
@@ -632,14 +632,14 @@ func (m *Model) commitCmd() tea.Cmd {
 
 // rollbackCmd re-adds the catch-all `allow port <p> from any` under a
 // SAFE-04 revert window (D-L0809-04). Per-user sftpj rules stay in
-// place — they're operationally redundant once the catch-all overrides
+// place - they're operationally redundant once the catch-all overrides
 // them, but visible as STAGING-mode rules for re-promotion later. The
 // new MODE auto-derives to STAGING (or OPEN if there are no per-user
 // rules) on the next Enumerate.
 //
 // Reverse-cmd shape (B3): the rollback's reverse re-deletes the
 // catch-all by signature (`allow <port>/tcp.*Anywhere`) AND comment
-// absence (`grep -v sftpj`) — there can be only one such rule at any
+// absence (`grep -v sftpj`) - there can be only one such rule at any
 // given time. The pattern is documented inline so future readers
 // understand why we don't use RenderReverseCommands here (the catch-
 // all has no fixed ID pre-Apply; signature-grep is the deterministic
@@ -651,7 +651,7 @@ func (m *Model) rollbackCmd() tea.Cmd {
 		}
 	}
 	ops := m.ops
-	// Avoid the typed-nil-pointer-as-non-nil-interface gotcha — see
+	// Avoid the typed-nil-pointer-as-non-nil-interface gotcha - see
 	// commitCmd's nil-check comment above for the rationale.
 	var watcher txn.RevertWatcher
 	if m.watcher != nil {
@@ -711,7 +711,7 @@ func (m *Model) rollbackCmd() tea.Cmd {
 // each OpDelete contributes a canonical `ufw insert <originalID> ...`
 // reverse via lockdown.RenderReverseCommands (which knows the pre-
 // delete state byte-for-byte). The output is a flat []string suitable
-// for handing to NewScheduleRevertStep — `strings.Join(out, "; ")` is
+// for handing to NewScheduleRevertStep - `strings.Join(out, "; ")` is
 // the systemd-run ExecStart shell body.
 //
 // The trailing `ufw reload` finalizer is appended exactly ONCE
@@ -721,7 +721,7 @@ func (m *Model) rollbackCmd() tea.Cmd {
 //
 // restoreCatchAll (Plan 04-13, BUG-04-A + BUG-04-C consumer wiring):
 // when true, prepends a catch-all re-add command
-// (`ufw allow proto tcp from any to any port <port>`) — the inverse of
+// (`ufw allow proto tcp from any to any port <port>`) - the inverse of
 // commitCmd's appended NewUfwDeleteCatchAllByEnumerateStep. Without
 // this, a SAFE-04 timer-fire after a successful OPEN→LOCKED commit
 // would leave the box in LOCKED mode (the timer's reverseCmds remove
@@ -729,7 +729,7 @@ func (m *Model) rollbackCmd() tea.Cmd {
 // deduplicates `from any` rules content-wise; running this twice is
 // idempotent at the ufw level.
 //
-// Returns nil for an empty input — no spurious reload line.
+// Returns nil for an empty input - no spurious reload line.
 //
 // Threat-model commitments (T-04-08-04 / T-04-08-05): the OpAdd
 // placeholder's `[ -n "$ID" ]` guard prevents `ufw delete <empty>`
@@ -748,7 +748,7 @@ func composeCommitReverseCmds(muts []lockdown.PendingMutation, port string, rest
 	if restoreCatchAll {
 		// SAFE-04 reverse: re-add the catch-all that the wrapping commit's
 		// NewUfwDeleteCatchAllByEnumerateStep removed. Mirrors rollbackCmd's
-		// catch-all-re-add command shape (B3 — the inverse direction).
+		// catch-all-re-add command shape (B3 - the inverse direction).
 		// ufw deduplicates `from any` rules content-wise; running this
 		// command twice (e.g. timer fires after admin already re-added the
 		// catch-all manually) is idempotent at the ufw level.
@@ -767,7 +767,7 @@ func composeCommitReverseCmds(muts []lockdown.PendingMutation, port string, rest
 			// `grep -F ''` matches nothing → harmless no-op.
 			comment, err := ufwcomment.Encode(mut.Rule.User)
 			if err != nil {
-				comment = "" // benign — grep -F '' matches everything but `[ -n "$ID" ]` guards
+				comment = "" // benign - grep -F '' matches everything but `[ -n "$ID" ]` guards
 			}
 			out = append(out, fmt.Sprintf(
 				"ID=$(ufw status numbered | grep -F '%s' | head -1 | "+
@@ -801,7 +801,7 @@ func composeCommitReverseCmds(muts []lockdown.PendingMutation, port string, rest
 }
 
 // detectAddrFamily returns "v4" or "v6" for a CIDR or bare IP. Falls
-// back to "v4" on any parse failure (defensive — never panics, never
+// back to "v4" on any parse failure (defensive - never panics, never
 // throws). The Rule.Proto field carries this value and is the address
 // family marker used by RebuildUserIPs to populate the user_ips mirror.
 func detectAddrFamily(cidr string) string {
@@ -851,7 +851,7 @@ func augmentWithZeroConnUsers(proposals []lockdown.Proposal, allUsers []users.Ro
 
 // LoadProposalsForTest seeds the editor without running Init's async
 // load. Mirrors users.LoadRowsForTest. currentMode defaults to
-// firewall.ModeOpen if zero — pass an explicit value when testing
+// firewall.ModeOpen if zero - pass an explicit value when testing
 // rollback paths in MODE: LOCKED.
 func (m *Model) LoadProposalsForTest(props []lockdown.Proposal, currentMode firewall.Mode) {
 	m.proposals = props
@@ -911,14 +911,14 @@ func (m *Model) View() string {
 		return styles.Critical.Render("error: "+errText) +
 			"\n\n" + styles.Dim.Render("(esc to return)")
 	case screenDone:
-		return styles.Success.Render("✓ committed — popping…")
+		return styles.Success.Render("✓ committed - popping…")
 	}
 
 	var b strings.Builder
 	b.WriteString(styles.Primary.Render("Progressive lockdown"))
 	b.WriteString("\n\n")
 
-	// Top banner — readiness signal + admin-IP guard banner.
+	// Top banner - readiness signal + admin-IP guard banner.
 	b.WriteString(m.renderReadinessBanner())
 	b.WriteString("\n")
 	b.WriteString(m.renderAdminIPBanner())
@@ -955,16 +955,16 @@ func (m *Model) renderReadinessBanner() string {
 	}
 	if zeroConnCount == 0 && totalUsers > 0 {
 		return styles.Success.Render(
-			fmt.Sprintf("✓ Ready for lockdown — all %d managed users have observed source IPs", totalUsers))
+			fmt.Sprintf("✓ Ready for lockdown - all %d managed users have observed source IPs", totalUsers))
 	}
 	return styles.Warn.Render(
-		fmt.Sprintf("⚠ %d of %d managed users have no observed connections — they will be locked out unless you add IPs manually",
+		fmt.Sprintf("⚠ %d of %d managed users have no observed connections - they will be locked out unless you add IPs manually",
 			zeroConnCount, totalUsers))
 }
 
 func (m *Model) renderAdminIPBanner() string {
 	if m.adminIP == "" {
-		return styles.Dim.Render("Console session — self-lockout guard inactive")
+		return styles.Dim.Render("Console session - self-lockout guard inactive")
 	}
 	if m.adminIPCovered() {
 		// Find which user covers it (first match wins for the banner).
@@ -990,7 +990,7 @@ func (m *Model) renderAdminIPBanner() string {
 			fmt.Sprintf("✓ Your IP %s is covered by %s's allowlist", m.adminIP, coveringUser))
 	}
 	return styles.Critical.Render(
-		fmt.Sprintf("⚠ Your IP %s isn't in any user's allowlist — add it before commit (commit will be refused)", m.adminIP))
+		fmt.Sprintf("⚠ Your IP %s isn't in any user's allowlist - add it before commit (commit will be refused)", m.adminIP))
 }
 
 func (m *Model) renderTwoPane() string {
@@ -998,7 +998,7 @@ func (m *Model) renderTwoPane() string {
 		return styles.Dim.Render("(no managed users)")
 	}
 
-	// Left pane — users list with cursor marker.
+	// Left pane - users list with cursor marker.
 	var left strings.Builder
 	left.WriteString(styles.Primary.Render("users"))
 	left.WriteString("\n")
@@ -1021,7 +1021,7 @@ func (m *Model) renderTwoPane() string {
 		left.WriteString("\n")
 	}
 
-	// Right pane — IPs of selected user.
+	// Right pane - IPs of selected user.
 	var right strings.Builder
 	right.WriteString(styles.Primary.Render("IPs (selected user)"))
 	right.WriteString("\n")
@@ -1036,18 +1036,18 @@ func (m *Model) renderTwoPane() string {
 		}
 		if sel == nil || (len(sel.IPs) == 0 && len(m.manualAdds[u]) == 0) {
 			right.WriteString(styles.Warn.Render(
-				fmt.Sprintf("⚠ %s — no observations in last %dd", u, m.windowDays)))
+				fmt.Sprintf("⚠ %s - no observations in last %dd", u, m.windowDays)))
 			right.WriteString("\n")
 			right.WriteString(styles.Dim.Render(
 				"add at least one IP via [a], or " + u + " will be locked out after commit"))
 			right.WriteString("\n\n")
 			right.WriteString(styles.Dim.Render(
-				"hint: tell your customer to visit https://ifconfig.me — copy the IP shown there"))
+				"hint: tell your customer to visit https://ifconfig.me - copy the IP shown there"))
 		} else {
 			right.WriteString(fmt.Sprintf("  %-22s %5s  %-7s  %s\n",
 				"source", "conns", "tier", "last-seen"))
 			for _, ip := range sel.IPs {
-				lastSeen := "—"
+				lastSeen := "-"
 				if ip.LastSeenNs > 0 {
 					lastSeen = time.Unix(0, ip.LastSeenNs).Format("2006-01-02")
 				}
@@ -1056,7 +1056,7 @@ func (m *Model) renderTwoPane() string {
 			}
 			for _, ip := range m.manualAdds[u] {
 				right.WriteString(fmt.Sprintf("  %-22s %5s  %-7s  %s\n",
-					truncate(ip.Source, 22), "—", "manual", "—"))
+					truncate(ip.Source, 22), "-", "manual", "-"))
 			}
 		}
 	}
@@ -1078,7 +1078,7 @@ func truncate(s string, width int) string {
 	return s[:width-1] + "…"
 }
 
-// emptyKeyMap implements nav.KeyMap with no bindings — the screen's own
+// emptyKeyMap implements nav.KeyMap with no bindings - the screen's own
 // help text is rendered inline in View().
 type emptyKeyMap struct{}
 

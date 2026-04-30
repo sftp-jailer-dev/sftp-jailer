@@ -1,24 +1,24 @@
-// Package store — queries.go is the typed read layer over the reader pool
+// Package store - queries.go is the typed read layer over the reader pool
 // (Store.R). Every method takes a context and returns typed structs (no
-// *sql.Rows leakage). All SQL uses parameterized placeholders — never
+// *sql.Rows leakage). All SQL uses parameterized placeholders - never
 // string-formatting of user input.
 //
 // Phase 2 read shape:
-//   - StatusRow            — D-08 status row (S-LOGS header).
-//   - FilterEvents         — LOG-01 filtered + paginated event list.
-//   - PerUserBreakdown     — LOG-06 per-user tier counts + last login.
-//   - LastLoginPerUser     — USER-01 last-login column for the user list.
+//   - StatusRow            - D-08 status row (S-LOGS header).
+//   - FilterEvents         - LOG-01 filtered + paginated event list.
+//   - PerUserBreakdown     - LOG-06 per-user tier counts + last login.
+//   - LastLoginPerUser     - USER-01 last-login column for the user list.
 //
 // Phase 4 plan 04-03 adds the FW-08 derived-cache writer surface:
-//   - RebuildUserIPs       — TRUNCATE + bulk INSERT per Enumerate output.
-//   - UserIPs              — read-back per username for S-USERS allowlist.
+//   - RebuildUserIPs       - TRUNCATE + bulk INSERT per Enumerate output.
+//   - UserIPs              - read-back per username for S-USERS allowlist.
 //
 // Threat model (PLAN.md §threat_model T-OBS-01 + T-04-03-04):
 //
 //	All filter-string fields flow through `?` placeholders. The
 //	queries_test.go injection test asserts that a payload of
 //	"'; DROP TABLE observations; --" matches zero rows and leaves the
-//	table intact. New query methods MUST follow the same discipline —
+//	table intact. New query methods MUST follow the same discipline -
 //	any `fmt.Sprintf` of user input into a SQL string is a security bug.
 package store
 
@@ -38,7 +38,7 @@ import (
 // is reused.
 //
 // The writer field (w) is unexported and only used by RebuildUserIPs
-// (the FW-08 derived-cache writer) — every other method routes
+// (the FW-08 derived-cache writer) - every other method routes
 // reads through r per the reader-pool/single-writer split documented
 // in store.go.
 type Queries struct {
@@ -89,7 +89,7 @@ func (q *Queries) StatusRow(ctx context.Context) (StatusRow, error) {
 	return s, nil
 }
 
-// Event is one row from the observations table — the typed shape that
+// Event is one row from the observations table - the typed shape that
 // LOG-01 (filtered list) renders into the S-LOGS table viewport.
 type Event struct {
 	ID         int64
@@ -106,7 +106,7 @@ type Event struct {
 // filter (interpreted as "match all"); zero ts disables that bound.
 //
 // Discipline: every field maps to a `?` placeholder in filterEventsSQL.
-// New filters MUST follow the same shape — never format directly into
+// New filters MUST follow the same shape - never format directly into
 // the SQL string.
 type FilterOpts struct {
 	User      string
@@ -122,7 +122,7 @@ type FilterOpts struct {
 // filterEventsSQL uses the "placeholder-equals-empty OR col-equals-placeholder"
 // idiom so the same prepared statement covers every combination of filters
 // (an empty-string filter disables itself). Each placeholder appears
-// twice — once for the empty-string check (disables the filter) and once
+// twice - once for the empty-string check (disables the filter) and once
 // for the equality check. SQLite's query planner handles this idiomatic
 // shape efficiently when the matching index exists (002_add_indexes.sql).
 const filterEventsSQL = `
@@ -143,7 +143,7 @@ LIMIT ? OFFSET ?;
 //
 // Default Limit is 500 (matches RESEARCH.md §Open-Questions #3 v1 cap).
 // V1.1 will switch to cursor-based paging; the current Offset-based shape
-// is fine up to ~10k rows then degrades — documented as T-OBS-03 (accept).
+// is fine up to ~10k rows then degrades - documented as T-OBS-03 (accept).
 func (q *Queries) FilterEvents(ctx context.Context, opts FilterOpts) ([]Event, error) {
 	if opts.Limit == 0 {
 		opts.Limit = 500
@@ -208,7 +208,7 @@ const (
 // PerUserBreakdown returns the LOG-06 aggregation for a single user.
 //
 // FirstSeenIP and LastSuccessNs scans tolerate sql.ErrNoRows (the user
-// may have zero rows, or zero successful logins) — they leave the field
+// may have zero rows, or zero successful logins) - they leave the field
 // at its zero value and return no error. Only the tier-count query
 // surfaces errors, since an empty result there is a valid outcome.
 func (q *Queries) PerUserBreakdown(ctx context.Context, user string) (UserBreakdown, error) {
@@ -289,7 +289,7 @@ func (q *Queries) LastLoginPerUser(ctx context.Context) ([]UserLastLogin, error)
 }
 
 // ----------------------------------------------------------------------------
-// Phase 4 plan 04-03 — FW-08 derived-cache mirror (D-FW-04).
+// Phase 4 plan 04-03 - FW-08 derived-cache mirror (D-FW-04).
 //
 // The user_ips table is a DERIVED CACHE rebuilt from `ufw status numbered`
 // Enumerate output. The firewall comments (sftpj:v=1:user=<name>) are the
@@ -310,7 +310,7 @@ type UserIP struct {
 
 // rebuildUserIPsInsertSQL is the insert statement template for RebuildUserIPs.
 // The ON CONFLICT clause covers the case where the caller's input contains
-// duplicate (user, source, proto, port) tuples in a single rebuild — later
+// duplicate (user, source, proto, port) tuples in a single rebuild - later
 // rows update the timestamp rather than crashing the transaction. This
 // preserves the "single rebuild = idempotent" contract.
 const rebuildUserIPsInsertSQL = `
@@ -321,7 +321,7 @@ DO UPDATE SET last_seen_unix_ns = excluded.last_seen_unix_ns
 `
 
 // RebuildUserIPs replaces the user_ips table with one row per
-// sftpj-decoded rule. Per D-FW-04 the table is a derived cache —
+// sftpj-decoded rule. Per D-FW-04 the table is a derived cache -
 // never authority. Single transaction (DELETE + bulk INSERT) so a
 // mid-rebuild crash leaves the prior contents intact; SQLite's
 // implicit rollback on tx.Rollback() handles partial failures.
@@ -337,7 +337,7 @@ DO UPDATE SET last_seen_unix_ns = excluded.last_seen_unix_ns
 //     clock through; tests inject a frozen clock for determinism).
 //
 // Performance: BeginTx pre-paid pragmas (WAL/synchronous=NORMAL).
-// PROJECT.md targets 20-100 users — even 1000 rows fits in a single
+// PROJECT.md targets 20-100 users - even 1000 rows fits in a single
 // tx in <100ms on dev hardware. T-04-03-03 (DoS at 10k rows) accepted.
 //
 // Threat model (T-04-03-04): every value is parameterized via `?`
@@ -353,7 +353,7 @@ func (q *Queries) RebuildUserIPs(ctx context.Context, rules []firewall.Rule, now
 		return fmt.Errorf("queries.RebuildUserIPs BeginTx: %w", err)
 	}
 	defer func() {
-		// If Commit succeeded, Rollback returns sql.ErrTxDone — ignored.
+		// If Commit succeeded, Rollback returns sql.ErrTxDone - ignored.
 		_ = tx.Rollback()
 	}()
 
@@ -385,8 +385,8 @@ ORDER BY source ASC
 `
 
 // UserIPs returns all rows in the user_ips mirror for a given username.
-// Returns an empty slice (NOT nil) on no match — callers can range
-// over the result without nil-checking. Read-only — uses the pooled
+// Returns an empty slice (NOT nil) on no match - callers can range
+// over the result without nil-checking. Read-only - uses the pooled
 // reader.
 //
 // Threat model (T-04-03-04): username flows through a `?` placeholder.
@@ -413,7 +413,7 @@ func (q *Queries) UserIPs(ctx context.Context, username string) ([]UserIP, error
 }
 
 // ----------------------------------------------------------------------------
-// Phase 4 plan 04-07 — LOCK-02 proposal generator read surface.
+// Phase 4 plan 04-07 - LOCK-02 proposal generator read surface.
 //
 // LockdownObservation is one (user, source_ip, tier) bucket within the
 // proposal-window cutoff, with the per-bucket observation count and
@@ -425,7 +425,7 @@ func (q *Queries) UserIPs(ctx context.Context, username string) ([]UserIP, error
 // ----------------------------------------------------------------------------
 
 // LockdownObservation is the typed result of one row from the
-// LockdownObservations query — a (user, source_ip, tier) aggregate within
+// LockdownObservations query - a (user, source_ip, tier) aggregate within
 // the proposal window.
 type LockdownObservation struct {
 	User       string
@@ -442,14 +442,14 @@ type LockdownObservation struct {
 //
 // NULL-vs-empty: the Phase 2 schema declares `user TEXT NOT NULL DEFAULT ''`
 // so user is never NULL in production. We still guard against IS NOT NULL
-// defensively in case a future migration relaxes the constraint — costs
+// defensively in case a future migration relaxes the constraint - costs
 // nothing on a NOT NULL column. The user != '' filter is the load-bearing
 // guard; LOCK-02 doesn't propose IPs for "the empty user" (unmatched events).
 //
 // ORDER BY user ASC, conn_count DESC: stable ordering for deterministic
 // pivot output downstream (Generator does an in-memory sort by user ASC
 // after the pivot, so this ORDER BY is mainly for the per-user IP
-// ordering — most-active IP first).
+// ordering - most-active IP first).
 const lockdownObservationsSQL = `
 SELECT user, source_ip, COUNT(*) AS conn_count, MAX(ts_unix_ns) AS last_seen, tier
 FROM observations
@@ -466,7 +466,7 @@ ORDER BY user ASC, conn_count DESC
 // only tier='success' rows are returned (D-L0204-02).
 //
 // Used by internal/lockdown.Generator to build per-user IP-allowlist
-// proposals (LOCK-02). Read-only — uses the pooled reader.
+// proposals (LOCK-02). Read-only - uses the pooled reader.
 func (q *Queries) LockdownObservations(ctx context.Context, cutoffUnixNs int64, includeTargeted bool) ([]LockdownObservation, error) {
 	includeFlag := 0
 	if includeTargeted {

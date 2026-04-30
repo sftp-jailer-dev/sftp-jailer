@@ -1,6 +1,6 @@
 // Package store_test exercises the typed read query layer (queries.go)
 // against a freshly-migrated tmp DB. Tests insert seed rows directly via
-// the writer handle (s.W) — bypassing any future "Inserter" abstraction —
+// the writer handle (s.W) - bypassing any future "Inserter" abstraction -
 // so this file's failures unambiguously point at the read path.
 package store_test
 
@@ -261,7 +261,7 @@ func TestQueries_FilterEvents_parameterized_no_injection(t *testing.T) {
 	s, q := newSeededDB(t)
 	seedTwoUsers(t, s)
 
-	// Classic injection payload — should be matched literally as a username
+	// Classic injection payload - should be matched literally as a username
 	// (zero rows) and MUST NOT drop the table.
 	payload := `'; DROP TABLE observations; --`
 	got, err := q.FilterEvents(context.Background(), store.FilterOpts{User: payload, Limit: 100})
@@ -297,9 +297,9 @@ func TestRebuildUserIPs_replaces_table_in_single_tx(t *testing.T) {
 		{ID: 1, User: "alice", Source: "203.0.113.7/32", Proto: "v4", Port: "22"},
 		{ID: 2, User: "alice", Source: "203.0.113.8/32", Proto: "v4", Port: "22"},
 		{ID: 3, User: "bob", Source: "203.0.113.9/32", Proto: "v4", Port: "22"},
-		// Foreign rule — ParseErr != nil → MUST be skipped.
+		// Foreign rule - ParseErr != nil → MUST be skipped.
 		{ID: 4, RawComment: "foreign", ParseErr: ufwcomment.ErrNotOurs},
-		// v=2 forward-compat rule — ParseErr=ErrBadVersion + User=="" → skipped.
+		// v=2 forward-compat rule - ParseErr=ErrBadVersion + User=="" → skipped.
 		{ID: 5, RawComment: "sftpj:v=2:user=carol", ParseErr: ufwcomment.ErrBadVersion},
 	}
 	frozen := time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC)
@@ -315,7 +315,7 @@ func TestRebuildUserIPs_replaces_table_in_single_tx(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, bobIPs, 1)
 
-	// Carol is the v=2 forward-compat rule's user — it MUST NOT have leaked
+	// Carol is the v=2 forward-compat rule's user - it MUST NOT have leaked
 	// into the mirror because ParseErr was ErrBadVersion (and User was "").
 	carolIPs, err := q.UserIPs(context.Background(), "carol")
 	require.NoError(t, err)
@@ -348,7 +348,7 @@ func TestRebuildUserIPs_skips_rules_with_empty_user(t *testing.T) {
 }
 
 // TestRebuildUserIPs_default_now_when_nil pins that nowFn=nil falls back
-// to time.Now() — production callers don't have to thread a clock through.
+// to time.Now() - production callers don't have to thread a clock through.
 func TestRebuildUserIPs_default_now_when_nil(t *testing.T) {
 	t.Parallel()
 	s, q := newSeededDB(t)

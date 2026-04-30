@@ -79,7 +79,7 @@ PermitRootLogin no
 }
 
 // TestParseDropIn_unknown_directive: unknown directives are preserved as
-// pass-through directives, not errored — the read-side parser is lenient.
+// pass-through directives, not errored - the read-side parser is lenient.
 func TestParseDropIn_unknown_directive(t *testing.T) {
 	input := []byte("FooBar baz quux\n")
 	d, err := sshdcfg.ParseDropIn(input)
@@ -100,7 +100,7 @@ func TestHasMatchGroup_keyword_case_insensitive(t *testing.T) {
 	require.True(t, d.HasMatchGroup("sftp-jailer"),
 		"Match/Group keyword case-folding should not prevent group detection")
 	require.False(t, d.HasMatchGroup("Sftp-Jailer"),
-		"group name comparison is case-sensitive — unix groups are case-sensitive")
+		"group name comparison is case-sensitive - unix groups are case-sensitive")
 }
 
 // TestHasMatchGroup_no_match: a Match block on a different condition (User)

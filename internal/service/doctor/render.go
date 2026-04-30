@@ -8,16 +8,16 @@ import (
 )
 
 // RenderText returns the human-readable doctor report as a six-row text
-// report with [OK] / [WARN] / [FAIL] / [INFO] tags. No ANSI escapes — safe
+// report with [OK] / [WARN] / [FAIL] / [INFO] tags. No ANSI escapes - safe
 // for pipes, logs, clipboard. The TUI doctor screen layers Lip Gloss colors
 // on top per prefix (see internal/tui/screens/doctor/doctor.go).
 //
 // Row tags:
 //
-//	[OK]   — detector ran successfully and the state is acceptable
-//	[WARN] — detector ran but flags a pitfall (A5/C4/C5 etc.)
-//	[FAIL] — actively broken state (e.g. sftp subsystem points outside chroot)
-//	[INFO] — detector could not run (binary not installed); not a failure
+//	[OK]   - detector ran successfully and the state is acceptable
+//	[WARN] - detector ran but flags a pitfall (A5/C4/C5 etc.)
+//	[FAIL] - actively broken state (e.g. sftp subsystem points outside chroot)
+//	[INFO] - detector could not run (binary not installed); not a failure
 func RenderText(rep model.DoctorReport) string {
 	var sb strings.Builder
 	sb.WriteString("sftp-jailer doctor\n\n")
@@ -35,7 +35,7 @@ func RenderText(rep model.DoctorReport) string {
 	// the CLI text rendering shows the prompt for parity (a future `doctor
 	// --apply` flag could consume this signal directly).
 	if NeedsCanonicalApply(rep) {
-		sb.WriteString("\n[A] Apply canonical config — addresses missing drop-in, broken chain, or external sftp-server\n")
+		sb.WriteString("\n[A] Apply canonical config - addresses missing drop-in, broken chain, or external sftp-server\n")
 	}
 
 	return sb.String()
@@ -92,7 +92,7 @@ func renderUfwIPv6(r model.UfwIPv6Report) string {
 	case r.Missing:
 		return "[INFO] ufw IPV6: /etc/default/ufw not found (ufw may not be installed)\n"
 	case r.Warning:
-		return fmt.Sprintf("[WARN] ufw IPV6=%s (Launchpad #251355 — rules will leak v6)\n", r.Value)
+		return fmt.Sprintf("[WARN] ufw IPV6=%s (Launchpad #251355 - rules will leak v6)\n", r.Value)
 	default:
 		return fmt.Sprintf("[OK]   ufw IPV6=%s\n", r.Value)
 	}
@@ -105,7 +105,7 @@ func renderAppArmor(r model.AppArmorReport) string {
 	case !r.SshdLoaded:
 		return "[OK]   AppArmor: sshd profile not loaded\n"
 	case r.Warning:
-		return fmt.Sprintf("[WARN] AppArmor: sshd in %s mode (may silently deny chroot — pitfall A5)\n", r.SshdMode)
+		return fmt.Sprintf("[WARN] AppArmor: sshd in %s mode (may silently deny chroot - pitfall A5)\n", r.SshdMode)
 	default:
 		return fmt.Sprintf("[OK]   AppArmor: sshd in %s mode\n", r.SshdMode)
 	}
@@ -135,7 +135,7 @@ func renderSubsystem(r model.SubsystemReport) string {
 	case r.Missing:
 		return "[WARN] subsystem sftp: not set in sshd effective config\n"
 	case r.Warning:
-		return fmt.Sprintf("[FAIL] subsystem sftp: %s — external binary won't exist inside chroot (pitfall A2)\n", r.Target)
+		return fmt.Sprintf("[FAIL] subsystem sftp: %s - external binary won't exist inside chroot (pitfall A2)\n", r.Target)
 	default:
 		return fmt.Sprintf("[OK]   subsystem sftp: %s\n", r.Target)
 	}

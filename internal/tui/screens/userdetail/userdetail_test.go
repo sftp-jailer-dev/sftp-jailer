@@ -1,4 +1,4 @@
-// Package userdetail tests for S-USER-DETAIL — keys table render +
+// Package userdetail tests for S-USER-DETAIL - keys table render +
 // a/d/p/c keybindings + D-22 single-key delete via txn batch.
 package userdetail_test
 
@@ -64,20 +64,20 @@ func keyPress(s string) tea.KeyPressMsg {
 	return tea.KeyPressMsg(tea.Key{Code: r, Text: s})
 }
 
-// TestUserDetail_implements_nav_Screen — compile-time check that Model
+// TestUserDetail_implements_nav_Screen - compile-time check that Model
 // satisfies nav.Screen plus runtime checks on Title / KeyMap.
 func TestUserDetail_implements_nav_Screen(t *testing.T) {
 	t.Parallel()
 	var s nav.Screen = userdetail.New(nil, testChrootRoot, testUsername)
-	require.Equal(t, "user detail — alice", s.Title())
-	require.False(t, s.WantsRawKeys(), "WantsRawKeys is false by default — no textinput on this screen")
+	require.Equal(t, "user detail - alice", s.Title())
+	require.False(t, s.WantsRawKeys(), "WantsRawKeys is false by default - no textinput on this screen")
 	km := s.KeyMap()
 	require.NotNil(t, km)
 	require.NotEmpty(t, km.ShortHelp())
 	require.NotEmpty(t, km.FullHelp())
 }
 
-// TestUserDetail_initial_loading_then_keysLoadedMsg_populates_table —
+// TestUserDetail_initial_loading_then_keysLoadedMsg_populates_table -
 // LoadKeysForTest with 2 keys + a known mtime; assert View renders
 // algorithm + fingerprint + a humanized "ago" timestamp (B-06 plumbing).
 func TestUserDetail_initial_loading_then_keysLoadedMsg_populates_table(t *testing.T) {
@@ -99,7 +99,7 @@ func TestUserDetail_initial_loading_then_keysLoadedMsg_populates_table(t *testin
 		"FileInfo.ModTime (B-06) → humanize-rendered 'X days ago' must appear in the 'added' column; got View=%s", v)
 }
 
-// TestUserDetail_no_authorized_keys_file_renders_empty_state —
+// TestUserDetail_no_authorized_keys_file_renders_empty_state -
 // keysLoadedMsg{exists: false} → View shows "no authorized_keys file
 // yet" + the [a] add-key shortcut. Plan 03-08b dropped the "(note:
 // M-ADD-KEY ships in plan 03-08b)" qualifier when the surface landed.
@@ -118,7 +118,7 @@ func TestUserDetail_no_authorized_keys_file_renders_empty_state(t *testing.T) {
 		"the 'ships in plan' qualifier must be removed once M-ADD-KEY is wired")
 }
 
-// TestUserDetail_a_pushes_addkey_modal — pressing 'a' pushes
+// TestUserDetail_a_pushes_addkey_modal - pressing 'a' pushes
 // *addkey.Model with this user's username and chrootRoot. Mirrors
 // TestUserDetail_p_pushes_password_modal (same shape, different
 // destination package). Replaces the prior placeholder-pending test
@@ -137,11 +137,11 @@ func TestUserDetail_a_pushes_addkey_modal(t *testing.T) {
 	require.Equal(t, nav.Push, nm.Intent)
 	am, isAddKeyModel := nm.Screen.(*addkey.Model)
 	require.True(t, isAddKeyModel, "pushed screen must be *addkey.Model, got %T", nm.Screen)
-	require.Equal(t, "add ssh key — "+testUsername, am.Title(),
+	require.Equal(t, "add ssh key - "+testUsername, am.Title(),
 		"M-ADD-KEY must carry this screen's username")
 }
 
-// TestUserDetail_a_keybinding_no_longer_emits_placeholder_string —
+// TestUserDetail_a_keybinding_no_longer_emits_placeholder_string -
 // regression guard against accidental revert of the 03-08b wiring. The
 // 'a' keypress's resulting message must NOT be a tea.PrintMsg and must
 // NOT contain the prior placeholder strings ("03-08b" / "pending" /
@@ -175,14 +175,14 @@ func TestUserDetail_a_keybinding_no_longer_emits_placeholder_string(t *testing.T
 				"placeholder string 'M-ADD-KEY pending' must not survive any sub-msg, got %q", s)
 		}
 	} else {
-		// Single nav.Msg path — fine; just sanity-check intent.
+		// Single nav.Msg path - fine; just sanity-check intent.
 		nm, ok := msg.(nav.Msg)
 		require.True(t, ok, "expected nav.Msg, got %T", msg)
 		require.Equal(t, nav.Push, nm.Intent)
 	}
 }
 
-// TestUserDetail_p_pushes_password_modal — pressing 'p' pushes
+// TestUserDetail_p_pushes_password_modal - pressing 'p' pushes
 // *password.Model with this user's username.
 func TestUserDetail_p_pushes_password_modal(t *testing.T) {
 	t.Parallel()
@@ -202,7 +202,7 @@ func TestUserDetail_p_pushes_password_modal(t *testing.T) {
 		"M-PASSWORD must carry this screen's username")
 }
 
-// TestUserDetail_c_copies_selected_fingerprint_via_osc52 — load 2 keys;
+// TestUserDetail_c_copies_selected_fingerprint_via_osc52 - load 2 keys;
 // cursor on row 1; press 'c'; assert tea.SetClipboard + toast.
 func TestUserDetail_c_copies_selected_fingerprint_via_osc52(t *testing.T) {
 	t.Parallel()
@@ -234,12 +234,12 @@ func TestUserDetail_c_copies_selected_fingerprint_via_osc52(t *testing.T) {
 
 	// Note: we don't assert on m.View() containing the toast text here
 	// because invoking the batched cmd above also runs the embedded
-	// tea.Tick(2s) for the toast TTL — by the time View() runs, the
+	// tea.Tick(2s) for the toast TTL - by the time View() runs, the
 	// toast has already expired. The OSC 52 cmd in the batch is the
 	// load-bearing assertion.
 }
 
-// TestUserDetail_c_no_selection_is_noop — pressing 'c' on an empty key
+// TestUserDetail_c_no_selection_is_noop - pressing 'c' on an empty key
 // list returns no cmd (no fingerprint to copy).
 func TestUserDetail_c_no_selection_is_noop(t *testing.T) {
 	t.Parallel()
@@ -249,7 +249,7 @@ func TestUserDetail_c_no_selection_is_noop(t *testing.T) {
 	require.Nil(t, cmd, "pressing 'c' with no keys must be a no-op")
 }
 
-// TestUserDetail_d_runs_single_key_delete_txn — load 2 keys A+B;
+// TestUserDetail_d_runs_single_key_delete_txn - load 2 keys A+B;
 // cursor on A; press 'd'; assert f.Calls includes WriteAuthorizedKeys
 // with the reduced content (only B's line) AND the verifier was invoked.
 func TestUserDetail_d_runs_single_key_delete_txn(t *testing.T) {
@@ -264,7 +264,7 @@ func TestUserDetail_d_runs_single_key_delete_txn(t *testing.T) {
 	f.Files[authPath] = []byte(original)
 
 	// Pre-seed Lstat for the authorized_keys file so the post-write
-	// reload doesn't trip — and seed a frozen mtime so the rendered
+	// reload doesn't trip - and seed a frozen mtime so the rendered
 	// "added" column is deterministic.
 	f.FileStats[authPath] = sysops.FileInfo{
 		Path:    authPath,
@@ -315,7 +315,7 @@ func TestUserDetail_d_runs_single_key_delete_txn(t *testing.T) {
 		"surviving key B's line must remain in authorized_keys")
 }
 
-// TestUserDetail_d_failure_to_verify_rolls_back — script the verifier
+// TestUserDetail_d_failure_to_verify_rolls_back - script the verifier
 // to return a violation; assert there are TWO WriteAuthorizedKeys calls
 // in f.Calls (initial write, then compensator restore).
 func TestUserDetail_d_failure_to_verify_rolls_back(t *testing.T) {
@@ -334,7 +334,7 @@ func TestUserDetail_d_failure_to_verify_rolls_back(t *testing.T) {
 	m.LoadKeysForTest([]keys.ParsedKey{kA, kB}, f.FileStats[authPath].ModTime)
 	m.SetCursorForTest(0)
 
-	// Stub verifier that ALWAYS returns a violation — forces txn rollback.
+	// Stub verifier that ALWAYS returns a violation - forces txn rollback.
 	m.SetVerifierForTest(func(_ context.Context, _ sysops.SystemOps, _, _ string) ([]txn.VerifyViolation, error) {
 		return []txn.VerifyViolation{{Path: "/x", Reason: "stubbed bad mode for test"}}, nil
 	})
@@ -344,7 +344,7 @@ func TestUserDetail_d_failure_to_verify_rolls_back(t *testing.T) {
 	msg := cmd()
 	_, _ = m.Update(msg)
 
-	// Count WriteAuthorizedKeys calls — Apply (delete write) + Compensate
+	// Count WriteAuthorizedKeys calls - Apply (delete write) + Compensate
 	// (restore prior content) should be TWO calls.
 	var writeCalls int
 	for _, c := range f.Calls {
@@ -360,10 +360,10 @@ func TestUserDetail_d_failure_to_verify_rolls_back(t *testing.T) {
 		"after rollback, authorized_keys must contain the original two-key content byte-for-byte")
 }
 
-// TestUserDetail_added_on_column_uses_FileInfo_ModTime — pre-seed
+// TestUserDetail_added_on_column_uses_FileInfo_ModTime - pre-seed
 // f.FileStats with a known ModTime; load via the async path; render
 // View; assert the rendered "added" cell contains a humanized
-// representation derived from that time. (B-06 — confirms the screen
+// representation derived from that time. (B-06 - confirms the screen
 // reads sysops.FileInfo.ModTime, not time.Now() or ReadFile-side
 // metadata.)
 func TestUserDetail_added_on_column_uses_FileInfo_ModTime(t *testing.T) {
@@ -380,7 +380,7 @@ func TestUserDetail_added_on_column_uses_FileInfo_ModTime(t *testing.T) {
 		strings.Contains(v, "week ago") || strings.Contains(v, "days ago"),
 		"FileInfo.ModTime (B-06) → humanize must render a 'week ago' or 'days ago' label for a 7-day-old mtime; got View=%s", v)
 
-	// Sanity — m.MtimeForTest must equal what we seeded.
+	// Sanity - m.MtimeForTest must equal what we seeded.
 	require.Equal(t, knownMtime, m.MtimeForTest(),
 		"the screen must store the FileInfo.ModTime verbatim (no rounding / re-stamping)")
 
@@ -391,7 +391,7 @@ func TestUserDetail_added_on_column_uses_FileInfo_ModTime(t *testing.T) {
 }
 
 // TestUserDetail_loadKeys_async_path_via_Init_sets_keysFileExists_false_on_missing
-// — exercises Init's async load with no Files entry → ErrNotExist →
+// - exercises Init's async load with no Files entry → ErrNotExist →
 // keysLoadedMsg{exists:false}. Drives the cmd to completion and feeds
 // the result back through Update.
 func TestUserDetail_loadKeys_async_path_via_Init_sets_keysFileExists_false_on_missing(t *testing.T) {
@@ -412,7 +412,7 @@ func TestUserDetail_loadKeys_async_path_via_Init_sets_keysFileExists_false_on_mi
 }
 
 // TestUserDetail_loadKeys_async_path_via_Init_populates_state_on_success
-// — pre-seed f.Files with valid authorized_keys content + Lstat with a
+// - pre-seed f.Files with valid authorized_keys content + Lstat with a
 // known ModTime; Init+Update should land the screen in a populated
 // non-loading state with the table rendered.
 func TestUserDetail_loadKeys_async_path_via_Init_populates_state_on_success(t *testing.T) {
@@ -438,7 +438,7 @@ func TestUserDetail_loadKeys_async_path_via_Init_populates_state_on_success(t *t
 	require.Contains(t, v, k.Fingerprint[:30])
 }
 
-// TestUserDetail_default_verifier_wraps_chrootcheck — sanity that the
+// TestUserDetail_default_verifier_wraps_chrootcheck - sanity that the
 // production verifier seam adapts chrootcheck.Violation → txn.VerifyViolation.
 // We can't easily invoke the default verifier with a real os/user.Lookup,
 // but we can confirm the type signatures compose: chrootcheck.Violation
@@ -452,7 +452,7 @@ func TestUserDetail_default_verifier_wraps_chrootcheck(t *testing.T) {
 	require.Equal(t, "test", v2.Reason)
 }
 
-// TestUserDetail_esc_pops — UI-SPEC: esc/q pops back to caller.
+// TestUserDetail_esc_pops - UI-SPEC: esc/q pops back to caller.
 func TestUserDetail_esc_pops(t *testing.T) {
 	t.Parallel()
 	m := userdetail.New(nil, testChrootRoot, testUsername)
@@ -464,7 +464,7 @@ func TestUserDetail_esc_pops(t *testing.T) {
 	require.Equal(t, nav.Pop, nm.Intent)
 }
 
-// TestUserDetail_jk_navigation_clamps — verify j/k cursor movement
+// TestUserDetail_jk_navigation_clamps - verify j/k cursor movement
 // stays within bounds.
 func TestUserDetail_jk_navigation_clamps(t *testing.T) {
 	t.Parallel()
@@ -485,7 +485,7 @@ func TestUserDetail_jk_navigation_clamps(t *testing.T) {
 	require.Equal(t, 0, m.CursorForTest(), "k at top clamps")
 }
 
-// TestUserDetail_d_no_keys_is_noop — pressing 'd' with no keys returns
+// TestUserDetail_d_no_keys_is_noop - pressing 'd' with no keys returns
 // no cmd (nothing to delete).
 func TestUserDetail_d_no_keys_is_noop(t *testing.T) {
 	t.Parallel()
@@ -529,7 +529,7 @@ type stubKeyMap struct{}
 func (stubKeyMap) ShortHelp() []nav.KeyBinding  { return nil }
 func (stubKeyMap) FullHelp() [][]nav.KeyBinding { return nil }
 
-// TestSUserDetail_r_pushes_addrule_with_user_prefill — pressing 'r' on
+// TestSUserDetail_r_pushes_addrule_with_user_prefill - pressing 'r' on
 // S-USER-DETAIL must emit nav.Push carrying the M-ADD-RULE modal
 // pre-filled with this screen's username. Wired via the package-level
 // AddRuleFactory + SetAddRuleFactory seam (analogous to the home
@@ -562,7 +562,7 @@ func TestSUserDetail_r_pushes_addrule_with_user_prefill(t *testing.T) {
 		"AddRuleFactory must be called with this screen's username")
 }
 
-// TestSUserDetail_r_noop_when_factory_nil — pressing 'r' with no
+// TestSUserDetail_r_noop_when_factory_nil - pressing 'r' with no
 // factory registered is a clean no-op.
 func TestSUserDetail_r_noop_when_factory_nil(t *testing.T) {
 	userdetail.SetAddRuleFactory(nil)
@@ -574,7 +574,7 @@ func TestSUserDetail_r_noop_when_factory_nil(t *testing.T) {
 	require.Nil(t, cmd, "'r' without factory must be a no-op")
 }
 
-// TestSUserDetail_a_still_pushes_addkey_after_phase4 — W-03 regression
+// TestSUserDetail_a_still_pushes_addkey_after_phase4 - W-03 regression
 // guard. The Phase 3 'a' = add-SSH-key wiring must NOT be replaced by
 // the M-ADD-RULE keybind. Phase 4 uses 'r' (mnemonic: rule) instead to
 // preserve Phase 3's UAT-validated muscle memory.

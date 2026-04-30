@@ -163,7 +163,7 @@ func TestDetectUfwIPv6_yes_ok(t *testing.T) {
 	require.False(t, r.UfwIPv6.Warning)
 }
 
-// Missing /etc/default/ufw → Missing=true (no warning — ufw may simply not
+// Missing /etc/default/ufw → Missing=true (no warning - ufw may simply not
 // be installed).
 func TestDetectUfwIPv6_missing_file(t *testing.T) {
 	f := sysops.NewFake()
@@ -246,7 +246,7 @@ func TestDetectAppArmor_not_installed(t *testing.T) {
 }
 
 // Malformed JSON → Available=false (the detector must not propagate the
-// parse error up — it's just a degraded state).
+// parse error up - it's just a degraded state).
 func TestDetectAppArmor_malformed_json(t *testing.T) {
 	f := sysops.NewFake()
 	f.ExecResponses["aa-status --json"] = sysops.ExecResult{Stdout: []byte("not json {{{"), ExitCode: 0}
@@ -418,7 +418,7 @@ func TestDetectUfwIPv6_errors_is_fs_errnotexist(t *testing.T) {
 
 // ---- Phase 3 plan 03-06: Service.Ops / ChrootRoot / NeedsCanonicalApply ----
 
-// Service.Ops returns exactly the SystemOps handle passed to New — pointer
+// Service.Ops returns exactly the SystemOps handle passed to New - pointer
 // equality, not a copy. M-APPLY-SETUP relies on this single-handle ownership
 // (the Fake's recorded Calls slice must reflect modal-driven invocations).
 func TestService_OpsAccessor_returns_handle_passed_to_New(t *testing.T) {

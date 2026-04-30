@@ -4,7 +4,7 @@
 // severity via Lip Gloss, and supports `c` to copy the text to the clipboard
 // via OSC 52 (TUI-06).
 //
-// The package is intentionally tiny — the heavy lifting (six detectors +
+// The package is intentionally tiny - the heavy lifting (six detectors +
 // text rendering) lives in internal/service/doctor. This screen is only a
 // presentation layer wrapped around that service.
 package doctorscreen
@@ -85,14 +85,14 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		case "c":
 			if m.report != nil {
 				text := doctor.RenderText(*m.report)
-				// C6: Toast.Flash returns (Toast, tea.Cmd) — capture both so
+				// C6: Toast.Flash returns (Toast, tea.Cmd) - capture both so
 				// the flash state survives across the tea.Cmd boundary.
 				var flashCmd tea.Cmd
 				m.toast, flashCmd = m.toast.Flash("copied via OSC 52")
 				return m, tea.Batch(tea.SetClipboard(text), flashCmd)
 			}
 		case "a", "A":
-			// Phase 3 / D-06: prescription action — push M-APPLY-SETUP when
+			// Phase 3 / D-06: prescription action - push M-APPLY-SETUP when
 			// the report indicates a SETUP-02..06 gap. NeedsCanonicalApply
 			// returns true for missing drop-in / chroot-chain violation /
 			// external-sftp warning. The modal sources its SystemOps via
@@ -179,7 +179,7 @@ func (m *Model) Title() string { return "diagnostic" }
 // KeyMap returns the doctor screen's KeyMap for the help overlay.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys is false — the doctor screen has no textinput.
+// WantsRawKeys is false - the doctor screen has no textinput.
 func (m *Model) WantsRawKeys() bool { return false }
 
 // LoadReportForTest bypasses Init and sets the report directly. Exported

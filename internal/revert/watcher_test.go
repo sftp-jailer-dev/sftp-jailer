@@ -59,7 +59,7 @@ func TestWatcher_Clear_removes_pointer_and_state(t *testing.T) {
 	require.NotNil(t, w.Get())
 	require.NoError(t, w.Clear(context.Background()))
 	require.Nil(t, w.Get())
-	// Pointer file is gone — Fake.RemoveAll deletes from f.Files.
+	// Pointer file is gone - Fake.RemoveAll deletes from f.Files.
 	_, err := f.ReadFile(context.Background(), PointerPath())
 	require.ErrorIs(t, err, fs.ErrNotExist)
 }

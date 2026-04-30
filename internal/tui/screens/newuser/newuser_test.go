@@ -1,4 +1,4 @@
-// Package newuser tests for M-NEW-USER — covers the D-12 useradd batch,
+// Package newuser tests for M-NEW-USER - covers the D-12 useradd batch,
 // D-14 / B-03 orphan reconcile path, B4 /etc/shells preflight, USER-04
 // reserved-UID gates (N-04 boundary tests at 60000 / 65535 / 65536), and
 // the chained-modal handoff to M-PASSWORD on submit success.
@@ -19,7 +19,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
 )
 
-// keyPress helper — special-cases esc / enter / tab so the textinput
+// keyPress helper - special-cases esc / enter / tab so the textinput
 // machinery sees recognisable Code fields. Mirrors the doctor / users
 // screen test helpers.
 func keyPress(s string) tea.KeyPressMsg {
@@ -42,7 +42,7 @@ func keyPress(s string) tea.KeyPressMsg {
 // callMethods returns a slice of f.Calls method names in order, with
 // `Lstat` calls filtered out. Lstat is the prior-state-capture probe that
 // txn.NewChmodStep / NewChownStep run inside Apply (plan 03-05) so the
-// Compensate path can restore — it's an implementation detail of the
+// Compensate path can restore - it's an implementation detail of the
 // substrate, not a step in the txn batch the modal wires. Filtering keeps
 // the assertions readable + decoupled from txn substrate internals.
 func callMethods(f *sysops.Fake) []string {
@@ -152,7 +152,7 @@ func TestNewUser_submit_runs_useradd_batch_when_clean(t *testing.T) {
 	f := freshFake(t)
 	cmd := buildAndSubmitFresh(t, f, "alice", "2000")
 	require.NotNil(t, cmd, "submit must return a tea.Cmd that runs the txn batch")
-	// Drive the batch — tea.BatchMsg fans out to spinner.Tick + the actual
+	// Drive the batch - tea.BatchMsg fans out to spinner.Tick + the actual
 	// txn closure. The txn closure is the one that records calls against
 	// the Fake; the spinner tick is a no-op for our purposes.
 	driveBatch(cmd, func(tea.Msg) {})
@@ -215,7 +215,7 @@ func TestNewUser_orphan_submit_uses_useradd_with_dash_g_and_skips_chmod_chown(t 
 	driveBatch(cmd, func(tea.Msg) {})
 	got := callMethods(f)
 	require.Equal(t, []string{"Useradd", "Gpasswd"}, got,
-		"orphan path must run Useradd + Gpasswd ONLY — Chmod + Chown SKIPPED per B-03")
+		"orphan path must run Useradd + Gpasswd ONLY - Chmod + Chown SKIPPED per B-03")
 	require.NotContains(t, got, "Chmod")
 	require.NotContains(t, got, "Chown")
 	// Inspect the recorded Useradd args to confirm UID=5555 + CreateHome=false.
@@ -241,7 +241,7 @@ func TestNewUser_fresh_create_submit_uses_useradd_with_gid_zero_and_runs_chmod_c
 	// default kicks in. The Fake records every opts field as "key=value";
 	// the expected serialization for the GID field is absent (the Fake
 	// only records UID/Home/Shell/CreateHome/MemberOfSftpJailer per plan
-	// 03-01) — so we just assert the call presence and CreateHome=true.
+	// 03-01) - so we just assert the call presence and CreateHome=true.
 	require.Contains(t, useraddCall.Args, "createHome=true",
 		"fresh-create must pass createHome=true (useradd -m)")
 }
@@ -308,7 +308,7 @@ func seededFreshCreate(t *testing.T) *newuser.Model {
 	m.SetUserLookupForTest(func(uid int) bool { return false })
 	m.LoadPreflightForTest(true, nil, nil)
 	require.Equal(t, newuser.PhaseEditingForTest, m.PhaseForTest(),
-		"seededFreshCreate must reach phaseEditing — got phase=%d errInline=%q",
+		"seededFreshCreate must reach phaseEditing - got phase=%d errInline=%q",
 		m.PhaseForTest(), m.ErrInlineForTest())
 	return m
 }
@@ -326,7 +326,7 @@ func seededFreshCreateWithFake(t *testing.T, f *sysops.Fake) *newuser.Model {
 
 // setRawForTest exposes a quick path to seed username + uid (the two most
 // commonly mutated fields in the table-tests). Re-uses the textinput-edit
-// flow via direct keypresses — saves typing per character in every test.
+// flow via direct keypresses - saves typing per character in every test.
 //
 // Implementation: navigate to the field, press 'e' to enter edit, type
 // each rune as a keypress, press Enter to commit. Mirrors what an admin
@@ -382,7 +382,7 @@ func jumpToCreateAndSubmit(t *testing.T, m *newuser.Model) {
 
 // buildAndSubmitFresh constructs a fresh-create model bound to f, sets the
 // given username/uid, and returns the tea.Cmd produced by attemptSubmit.
-// The cmd is a closure over (ops, opts) — execute it to drive the txn
+// The cmd is a closure over (ops, opts) - execute it to drive the txn
 // batch against f.Calls.
 func buildAndSubmitFresh(t *testing.T, f *sysops.Fake, username, uid string) tea.Cmd {
 	t.Helper()
@@ -391,7 +391,7 @@ func buildAndSubmitFresh(t *testing.T, f *sysops.Fake, username, uid string) tea
 	m.LoadPreflightForTest(true, nil, nil)
 	require.Equal(t, newuser.PhaseEditingForTest, m.PhaseForTest())
 	setRawForTest(m, username, uid)
-	// Navigate to [create] and submit — capture the cmd from the Update
+	// Navigate to [create] and submit - capture the cmd from the Update
 	// that processes the Enter on [create].
 	for i := 0; i < 5; i++ {
 		_, _ = m.Update(keyPress("down"))

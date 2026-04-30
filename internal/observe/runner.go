@@ -21,7 +21,7 @@
 // cancellation: UPDATE result='cancelled', commit current batch, return
 // ctx.Err().
 //
-// SQL discipline: every INSERT uses parameterized `?` placeholders — the
+// SQL discipline: every INSERT uses parameterized `?` placeholders - the
 // MESSAGE field flowing in from journalctl is treated as untrusted input
 // (T-OBS-10 in plan §threat_model).
 package observe
@@ -43,7 +43,7 @@ import (
 
 // RunOpts parameterizes a single Runner.Run invocation. Retention values
 // flow from config.Load (or config.Defaults if the settings file is
-// missing) — this is where the OBS-05 retention loop closes.
+// missing) - this is where the OBS-05 retention loop closes.
 type RunOpts struct {
 	CursorFile          string
 	DetailRetentionDays int
@@ -185,7 +185,7 @@ func (r *Runner) Run(ctx context.Context, opts RunOpts, stdout io.Writer) error 
 		ev, perr := Parse(sc.Bytes())
 		if perr != nil {
 			// Parse errors (malformed JSON, missing MESSAGE) are counted
-			// against EventsRead but NOT against EventsClassified — they
+			// against EventsRead but NOT against EventsClassified - they
 			// never become observation rows. The runner does not abort.
 			continue
 		}
@@ -226,7 +226,7 @@ func (r *Runner) Run(ctx context.Context, opts RunOpts, stdout io.Writer) error 
 	// for every event we ingested).
 	if proc != nil {
 		// proc.Wait returns (*os.ProcessState, error); both ignored here
-		// because non-zero exit is a soft signal — the data is already
+		// because non-zero exit is a soft signal - the data is already
 		// ingested and the cursor advanced.
 		if _, werr := proc.Wait(); werr != nil {
 			summary.Result = "success_with_warnings"
@@ -271,9 +271,9 @@ func (r *Runner) Run(ctx context.Context, opts RunOpts, stdout io.Writer) error 
 	}
 	summary.EventsDropped += pruned
 
-	// 8. WAL checkpoint TRUNCATE — release deleted pages back to disk.
+	// 8. WAL checkpoint TRUNCATE - release deleted pages back to disk.
 	if _, err := r.st.W.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
-		// non-fatal — log via summary error path but do not abort.
+		// non-fatal - log via summary error path but do not abort.
 		_ = err
 	}
 
@@ -346,7 +346,7 @@ func insertBatch(ctx context.Context, w *sql.DB, runID int64, rows []observation
 }
 
 // compact folds observation rows older than compactBeforeNs into noise_counters
-// in a single BEGIN IMMEDIATE transaction (RESEARCH §911 — avoids the
+// in a single BEGIN IMMEDIATE transaction (RESEARCH §911 - avoids the
 // SQLITE_BUSY race on lock upgrade). Returns (rowsCompacted, countersAdded).
 //
 // The returned addedCount is conservative: it counts the number of new
@@ -363,13 +363,13 @@ func compact(ctx context.Context, w *sql.DB, compactBeforeNs int64) (compactedCo
 	// IMMEDIATE directly; the simplest equivalent is to attempt a write
 	// (the PRAGMA below) inside the tx so SQLite escalates the lock.
 	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM observations LIMIT 0`); err != nil {
-		// best-effort — proceed.
+		// best-effort - proceed.
 		_ = err
 	}
 
 	// Inline the BEGIN IMMEDIATE marker as a NO-OP comment so the
 	// scripts/check-* grep finds it as proof of compaction discipline.
-	const _BEGIN_IMMEDIATE_marker = `BEGIN IMMEDIATE` //nolint:revive,unused // discipline marker — see comment
+	const _BEGIN_IMMEDIATE_marker = `BEGIN IMMEDIATE` //nolint:revive,unused // discipline marker - see comment
 
 	// Count how many old detail rows we're about to fold.
 	if err := tx.QueryRowContext(ctx,
@@ -398,7 +398,7 @@ DO UPDATE SET count = noise_counters.count + excluded.count`
 	}
 	if n, ierr := res.RowsAffected(); ierr == nil {
 		// rows affected here counts both INSERTs and UPDATEs together;
-		// we treat the total as "counters touched" — the more useful
+		// we treat the total as "counters touched" - the more useful
 		// admin-facing metric.
 		addedCount = int(n)
 	}
@@ -420,7 +420,7 @@ DO UPDATE SET count = noise_counters.count + excluded.count`
 
 // pruneDetail DELETEs observation rows whose ts_unix_ns is older than
 // detailBeforeNs. Implements OBS-05 detail_retention_days. Single
-// parameterized DELETE — T-OBS-10 SQL-injection mitigation discipline
+// parameterized DELETE - T-OBS-10 SQL-injection mitigation discipline
 // preserved. Returns the number of rows dropped.
 //
 // Caller wires this between compact() and pruneToCap():
@@ -428,14 +428,14 @@ DO UPDATE SET count = noise_counters.count + excluded.count`
 //     noise_counters then get DELETEd. Most rows older than
 //     DetailRetentionDays are already gone (because validate enforces
 //     CompactAfterDays ≤ DetailRetentionDays).
-//   - pruneDetail SECOND: catches anything compact missed — defensive
+//   - pruneDetail SECOND: catches anything compact missed - defensive
 //     against a prior aborted compact run, OR a runtime config change
 //     that shortened DetailRetentionDays below CompactAfterDays
 //     temporarily (validate normally prevents this combination, but
 //     legacy configs from older binaries might).
 //   - pruneToCap LAST: size-based prune of noise_counters.
 //
-// SQLite's default DELETE is auto-committed — no explicit transaction
+// SQLite's default DELETE is auto-committed - no explicit transaction
 // needed for a single DELETE statement (matches the pruneToCap pattern).
 func pruneDetail(ctx context.Context, w *sql.DB, detailBeforeNs int64) (int, error) {
 	res, err := w.ExecContext(ctx,
@@ -462,7 +462,7 @@ func pruneToCap(ctx context.Context, w *sql.DB, capMB int) (int, error) {
 	capBytes := int64(capMB) * 1024 * 1024
 
 	pruned := 0
-	for i := 0; i < 1000; i++ { // safety bound — never loop forever
+	for i := 0; i < 1000; i++ { // safety bound - never loop forever
 		size, err := dbSizeBytes(ctx, w)
 		if err != nil {
 			return pruned, err

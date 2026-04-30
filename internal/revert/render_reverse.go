@@ -46,7 +46,7 @@ type PendingMutation struct {
 // strings.Join(out, "; ") into the systemd-run ExecStart shell body
 // (D-S04-08 inline /bin/sh -c shape).
 //
-// The trailing `ufw reload` is appended automatically — it ensures the
+// The trailing `ufw reload` is appended automatically - it ensures the
 // kernel picks up the rolled-back ruleset cleanly. (Per smoke-ufw.sh
 // in Phase 1, comments survive across reload.)
 //
@@ -56,7 +56,7 @@ type PendingMutation struct {
 //
 // Preconditions:
 //   - Every Source value in mutations[i].Rule.Source has been validated
-//     via net.ParseCIDR (caller's responsibility — D-FW-CIDR).
+//     via net.ParseCIDR (caller's responsibility - D-FW-CIDR).
 //   - Every RawComment value is the output of ufwcomment.Encode (or a
 //     literal "" for the catch-all path).
 func RenderReverseCommands(mutations []PendingMutation) []string {
@@ -84,7 +84,7 @@ func RenderReverseCommands(mutations []PendingMutation) []string {
 // renderInsert reconstructs `ufw insert <id> allow proto <p> from <src>
 // to any port <port> [comment '<c>']`.
 //
-// Note (I2): Phase 4 SFTP rules are always tcp (D-FW-05 — SFTP port
+// Note (I2): Phase 4 SFTP rules are always tcp (D-FW-05 - SFTP port
 // source is parsed from sshd_config Port directives, which are TCP-only
 // by protocol). The Rule struct's Proto field carries the address-family
 // ("v4"/"v6"), not the L4 protocol; the L4 protocol is implicit "tcp".
@@ -97,14 +97,14 @@ func RenderReverseCommands(mutations []PendingMutation) []string {
 // (ufwcomment.Encode never returns an empty string for a valid user).
 func renderInsert(r firewall.Rule) string {
 	var b strings.Builder
-	// Literal "ufw insert %d allow proto tcp" pinned by acceptance grep —
+	// Literal "ufw insert %d allow proto tcp" pinned by acceptance grep -
 	// keep contiguous so future refactors don't accidentally split the
 	// canonical argv shape across two Fprintf calls.
 	fmt.Fprintf(&b, "ufw insert %d allow proto tcp", r.ID)
 	fmt.Fprintf(&b, " from %s to any port %s", r.Source, r.Port)
 	if r.RawComment != "" {
 		// Wrap in single-quotes; ufwcomment.Encode never emits a
-		// single-quote (the regex rejects it) — load-bearing per
+		// single-quote (the regex rejects it) - load-bearing per
 		// D-S04-08 / T-04-04-04.
 		fmt.Fprintf(&b, " comment '%s'", r.RawComment)
 	}

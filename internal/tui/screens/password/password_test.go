@@ -1,4 +1,4 @@
-// Package password tests for M-PASSWORD — covers the auto-gen + explicit
+// Package password tests for M-PASSWORD - covers the auto-gen + explicit
 // flows, OSC 52 copy + Toast.Flash, pam_pwquality stderr surfacing,
 // force-change checkbox + lockout warning, and (security invariant) the
 // "password literal NEVER reaches FakeCall.Args" assertion.
@@ -76,13 +76,13 @@ func TestPassword_autogen_mode_initial_phase_shows_password(t *testing.T) {
 
 // 2. 'c' emits a tea.SetClipboard cmd + a toast Flash.
 //
-// We capture View BEFORE invoking cmd — Flash schedules a 2s tea.Tick
+// We capture View BEFORE invoking cmd - Flash schedules a 2s tea.Tick
 // that we don't want to block on. The toast text is set synchronously
 // inside Update so View() shows it immediately.
 //
 // For the SetClipboard half: cmd() returns a tea.BatchMsg containing the
 // SetClipboard sub-cmd + the toast Tick. We unpack the BatchMsg and call
-// each sub-cmd — the SetClipboard cmd returns immediately with its
+// each sub-cmd - the SetClipboard cmd returns immediately with its
 // (unexported in v2) setClipboardMsg, which we sniff via "%T". The
 // toast Tick is the only one that would block; we identify it by its
 // message type and skip without invoking.
@@ -118,7 +118,7 @@ func TestPassword_copy_via_osc52_emits_setClipboard_and_toast(t *testing.T) {
 	require.True(t, sawClipboard, "expected a SetClipboard sub-cmd in the batch")
 }
 
-// 3. 'r' regenerates — m.PasswordForTest() returns a different value.
+// 3. 'r' regenerates - m.PasswordForTest() returns a different value.
 func TestPassword_regenerate_replaces_pw_value(t *testing.T) {
 	m := password.New(nil, "alice", password.AutoGenerateMode)
 	// Use a counter-based stub so each regenerate returns a distinct value.
@@ -140,7 +140,7 @@ func TestPassword_force_change_default_off(t *testing.T) {
 	m := password.New(nil, "alice", password.AutoGenerateMode)
 	m.LoadPasswordForTest("any-pw")
 	require.False(t, m.ForceChangeForTest(),
-		"force-change-next-login MUST default OFF — chrooted SFTP users have no shell to host the change-password prompt")
+		"force-change-next-login MUST default OFF - chrooted SFTP users have no shell to host the change-password prompt")
 }
 
 // 5. Space toggles the checkbox.
@@ -195,7 +195,7 @@ func TestPassword_submit_pamPwquality_rejection_surfaces_stderr_inline(t *testin
 	})
 	require.Equal(t, password.PhaseErrorForTest, m.PhaseForTest())
 	require.Contains(t, m.ErrInlineForTest(), "BAD PASSWORD",
-		"pam_pwquality stderr must be surfaced inline (B5) — got %q", m.ErrInlineForTest())
+		"pam_pwquality stderr must be surfaced inline (B5) - got %q", m.ErrInlineForTest())
 	require.Contains(t, m.ErrInlineForTest(), "pam_pwquality")
 }
 
@@ -235,7 +235,7 @@ func TestPassword_explicit_mode_validates_match_before_submit(t *testing.T) {
 	for _, r := range "abc12399" {
 		_, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: r, Text: string(r)}))
 	}
-	// Submit — should be blocked by the validation gate.
+	// Submit - should be blocked by the validation gate.
 	_, _ = m.Update(keyPress("enter"))
 	require.Contains(t, m.ErrInlineForTest(), "do not match")
 	require.Equal(t, password.PhaseExplicitForTest, m.PhaseForTest(),
@@ -257,11 +257,11 @@ func TestPassword_NEVER_records_password_literal_in_FakeCalls(t *testing.T) {
 	for _, c := range f.Calls {
 		for _, arg := range c.Args {
 			require.NotContains(t, arg, pwLiteral,
-				"password literal must NEVER appear in FakeCall.Args (T-03-01 / E3 / T-03-07-01) — found in %s args=%v",
+				"password literal must NEVER appear in FakeCall.Args (T-03-01 / E3 / T-03-07-01) - found in %s args=%v",
 				c.Method, c.Args)
 		}
 	}
-	// Sanity: the Chpasswd call DID happen — not a vacuous-pass via "no
+	// Sanity: the Chpasswd call DID happen - not a vacuous-pass via "no
 	// calls were made".
 	require.Contains(t, callMethods(f), "Chpasswd",
 		"sanity: Chpasswd MUST have been called for the security invariant to be meaningful")
@@ -270,7 +270,7 @@ func TestPassword_NEVER_records_password_literal_in_FakeCalls(t *testing.T) {
 // nav.Screen compile-time conformance.
 func TestPassword_implements_nav_Screen(t *testing.T) {
 	var s nav.Screen = password.New(nil, "alice", password.AutoGenerateMode)
-	require.Equal(t, "set password — alice", s.Title())
+	require.Equal(t, "set password - alice", s.Title())
 	km := s.KeyMap()
 	require.NotNil(t, km)
 	require.NotEmpty(t, km.ShortHelp())

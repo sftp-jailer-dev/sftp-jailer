@@ -1,4 +1,4 @@
-// Package home implements the TUI home dashboard — the landing screen
+// Package home implements the TUI home dashboard - the landing screen
 // after the splash dismisses. Phase 1 ships this with stub tiles
 // ("SSH: ? · Users: ? · Rules: ?"); later phases populate them from real
 // sysops state.
@@ -8,8 +8,8 @@
 // time. Plan 01-04's main.go calls home.SetDoctorFactory(...) before
 // program.Run.
 //
-// Phase 2 plan 02-04 adds four sibling hooks — SetUsersFactory,
-// SetFirewallFactory, SetLogsFactory, SetSettingsFactory — and the matching
+// Phase 2 plan 02-04 adds four sibling hooks - SetUsersFactory,
+// SetFirewallFactory, SetLogsFactory, SetSettingsFactory - and the matching
 // u/f/l/s key bindings. Wave-3+ plans (02-05/06/07) only ADD the matching
 // home.SetXFactory(...) call to main.go's runTUI; they do NOT modify this
 // package. Centralising the home modifications here avoids serial conflicts
@@ -28,7 +28,7 @@ import (
 // in plan 02-04 even though only usersFactory has a real screen wired in
 // this plan; firewall/logs/settings are wired by 02-05/06/07 in subsequent
 // waves. Pressing the corresponding key with no factory registered is a
-// no-op (returns nil tea.Cmd) — defensive against an admin pressing `f`
+// no-op (returns nil tea.Cmd) - defensive against an admin pressing `f`
 // before 02-05 ships.
 //
 // Package-level globals match the existing doctorFactory pattern (C2). The
@@ -42,7 +42,7 @@ var (
 	settingsFactory func() nav.Screen
 	// lockdownFactory is the Phase 4 plan 04-08 hook for the
 	// S-LOCKDOWN screen. Pressed via capital `L` (lowercase `l` is
-	// reserved for logs since 02-06). nil-safe — pressing L with no
+	// reserved for logs since 02-06). nil-safe - pressing L with no
 	// factory registered returns nil tea.Cmd.
 	lockdownFactory func() nav.Screen
 )
@@ -141,12 +141,12 @@ func New(version, projectURL string) *Model {
 	}
 }
 
-// Init returns nil — home does not kick off any async work in Phase 1.
+// Init returns nil - home does not kick off any async work in Phase 1.
 func (m *Model) Init() tea.Cmd { return nil }
 
 // Update handles the search widget (when active) and top-level bindings.
 // When the search widget is Active, nearly every message is forwarded to
-// it — WantsRawKeys() returns true in that state so the root App does not
+// it - WantsRawKeys() returns true in that state so the root App does not
 // steal the keystrokes.
 func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 	if ws, ok := msg.(tea.WindowSizeMsg); ok {
@@ -209,7 +209,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 
 // View renders the dashboard.
 func (m *Model) View() string {
-	body := "sftp-jailer — home\n\n" +
+	body := "sftp-jailer - home\n\n" +
 		"SSH: ?   ·   Users: ?   ·   Rules: ?\n\n" +
 		"(d diagnostic · u users · f firewall · l logs · s settings · L lockdown · a about · ? help · q quit)"
 	if m.search.Active {
@@ -245,7 +245,7 @@ func (s *doctorStub) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 	return s, nil
 }
 func (s *doctorStub) View() string {
-	return "diagnostic not yet wired — see plan 01-04\n\n(press any key to return)"
+	return "diagnostic not yet wired - see plan 01-04\n\n(press any key to return)"
 }
 func (s *doctorStub) Title() string      { return "doctor-stub" }
 func (s *doctorStub) KeyMap() nav.KeyMap { return emptyKeyMap{} }

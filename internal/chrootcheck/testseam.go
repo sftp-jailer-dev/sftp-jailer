@@ -5,7 +5,7 @@ package chrootcheck
 // (UserInfoForTest) is a transparent value type that the production code
 // converts back into the unexported userInfo internally.
 //
-// Production callers MUST NOT use these — they are an explicit test
+// Production callers MUST NOT use these - they are an explicit test
 // surface and any production usage is a bug. (No CI guard enforces this
 // today; the file naming convention `testseam.go` is the documentation.)
 

@@ -2,11 +2,11 @@
 # Phase 1 architecture-invalidating smoke test.
 # Validates the Phase 4 firewall-as-source-of-truth premise: Ubuntu 24.04's
 # ufw 0.36.2 must preserve the sftp-jailer structured comment across
-# `ufw reload`. If this fails, Phase 4 (FW-08 especially) cannot proceed —
+# `ufw reload`. If this fails, Phase 4 (FW-08 especially) cannot proceed -
 # user↔IP mapping lives in rule comments and nowhere else.
 #
 # Run on an Ubuntu 24.04 VM as root. CAUTION: calls `ufw --force reset`
-# which wipes the current ufw ruleset — DO NOT RUN ON A PRODUCTION BOX.
+# which wipes the current ufw ruleset - DO NOT RUN ON A PRODUCTION BOX.
 set -euo pipefail
 
 if [[ $(id -u) -ne 0 ]]; then
@@ -27,7 +27,7 @@ fi
 TEST_COMMENT='sftpj:v=1:user=alice'
 TEST_IP='203.0.113.1'
 
-echo "smoke-ufw: resetting ufw (wipes current rules — expected on a VM)"
+echo "smoke-ufw: resetting ufw (wipes current rules - expected on a VM)"
 ufw --force reset >/dev/null
 
 echo "smoke-ufw: adding test rule with comment"

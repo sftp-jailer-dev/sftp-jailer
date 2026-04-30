@@ -63,7 +63,7 @@ func TestFake_ReadShadow_returns_both_fields(t *testing.T) {
 }
 
 // TestFake_ReadShadow_returns_indefinite_max: a seeded entry with MaxDays
-// >= 99999 is round-tripped without normalization — the caller decides how
+// >= 99999 is round-tripped without normalization - the caller decides how
 // to interpret "no expiry policy."
 func TestFake_ReadShadow_returns_indefinite_max(t *testing.T) {
 	f := NewFake()

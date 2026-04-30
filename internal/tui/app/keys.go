@@ -4,7 +4,7 @@ import "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 
 // GlobalKeyMap is the always-on key surface owned by the root App. Every
 // screen's own KeyMap should include these (help them discoverable in the
-// overlay) — concrete wiring is done per-screen in Phase 1 because Go has no
+// overlay) - concrete wiring is done per-screen in Phase 1 because Go has no
 // mixin; for Phase 2 we may promote this to a nav.KeyMap interface.
 type GlobalKeyMap struct {
 	Quit nav.KeyBinding

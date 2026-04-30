@@ -1,4 +1,4 @@
-// Package pwauthdisable tests pin the M-DISABLE-PWAUTH safety-rail modal —
+// Package pwauthdisable tests pin the M-DISABLE-PWAUTH safety-rail modal -
 // USER-13 / D-16. The shape mirrors the deleteuser + applysetup test suites:
 // LoadPreflightForTest seeds the model in phaseReview, KeyPress helpers drive
 // state transitions, and Feed*ForTest synthesizes the off-loop submit result
@@ -44,7 +44,7 @@ const testChrootRoot = "/srv/sftp-jailer"
 
 // --- nav.Screen contract ----------------------------------------------------
 
-// TestPwAuthDisable_implements_nav_Screen — compile-time check + Title +
+// TestPwAuthDisable_implements_nav_Screen - compile-time check + Title +
 // KeyMap shape. Title text varies by Action so we pin both directions.
 func TestPwAuthDisable_implements_nav_Screen(t *testing.T) {
 	t.Parallel()
@@ -62,7 +62,7 @@ func TestPwAuthDisable_implements_nav_Screen(t *testing.T) {
 
 // --- Phase: preflight → review ----------------------------------------------
 
-// TestPwAuthDisable_preflight_with_all_users_keyed_phase_review_no_keyless —
+// TestPwAuthDisable_preflight_with_all_users_keyed_phase_review_no_keyless -
 // LoadPreflightForTest with empty keylessUsers seeds the model in
 // phaseReview; View must NOT show the BLOCKED banner because every managed
 // user has a working SSH key.
@@ -79,7 +79,7 @@ func TestPwAuthDisable_preflight_with_all_users_keyed_phase_review_no_keyless(t 
 		"clean preflight must render the all-clear copy")
 }
 
-// TestPwAuthDisable_preflight_with_keyless_users_phase_review_BLOCKED —
+// TestPwAuthDisable_preflight_with_keyless_users_phase_review_BLOCKED -
 // LoadPreflightForTest with two keyless users renders the BLOCKED banner +
 // both usernames as bullet items so the admin sees who would be locked out.
 func TestPwAuthDisable_preflight_with_keyless_users_phase_review_BLOCKED(t *testing.T) {
@@ -98,7 +98,7 @@ func TestPwAuthDisable_preflight_with_keyless_users_phase_review_BLOCKED(t *test
 
 // --- Phase advance: review → confirmingOverride -----------------------------
 
-// TestPwAuthDisable_disable_with_keyless_enter_advances_to_override_phase —
+// TestPwAuthDisable_disable_with_keyless_enter_advances_to_override_phase -
 // pressing Enter while keyless users are present advances the phase to
 // confirmingOverride (the typed-string gate).
 func TestPwAuthDisable_disable_with_keyless_enter_advances_to_override_phase(t *testing.T) {
@@ -114,7 +114,7 @@ func TestPwAuthDisable_disable_with_keyless_enter_advances_to_override_phase(t *
 
 // --- Override gate (T-03-09-02) ---------------------------------------------
 
-// TestPwAuthDisable_override_gate_blocks_when_text_does_not_match — typing
+// TestPwAuthDisable_override_gate_blocks_when_text_does_not_match - typing
 // anything other than the exact OverrideText keeps the modal in
 // phaseConfirmingOverride and surfaces an inline error mentioning
 // "verbatim".
@@ -127,12 +127,12 @@ func TestPwAuthDisable_override_gate_blocks_when_text_does_not_match(t *testing.
 
 	_, _ = m.Update(keyPress("enter"))
 	require.Equal(t, pwauthdisable.PhaseConfirmingOverrideForTest, m.PhaseForTest(),
-		"mismatched override text MUST NOT advance the phase — irreversibility gate")
+		"mismatched override text MUST NOT advance the phase - irreversibility gate")
 	require.Contains(t, m.ErrInlineForTest(), "verbatim",
 		"mismatched override text must produce an errInline that mentions 'verbatim' so admin understands the gate")
 }
 
-// TestPwAuthDisable_override_gate_blocks_when_text_lowercase — T-03-09-02
+// TestPwAuthDisable_override_gate_blocks_when_text_lowercase - T-03-09-02
 // pin: lowercase "i understand" MUST NOT bypass the case-sensitive match.
 // This is the explicit threat-register test; without it a future "case-fold
 // for forgiveness" refactor could silently weaken the safety rail.
@@ -141,14 +141,14 @@ func TestPwAuthDisable_override_gate_blocks_when_text_lowercase_T_03_09_02(t *te
 	m := pwauthdisable.New(nil, nil, testChrootRoot, pwauthdisable.ActionDisable)
 	m.LoadPreflightForTest(nil, []string{"alice"})
 	_, _ = m.Update(keyPress("enter")) // → phaseConfirmingOverride
-	m.SetConfirmTextForTest("i understand") // lowercase — must NOT bypass
+	m.SetConfirmTextForTest("i understand") // lowercase - must NOT bypass
 
 	_, _ = m.Update(keyPress("enter"))
 	require.Equal(t, pwauthdisable.PhaseConfirmingOverrideForTest, m.PhaseForTest(),
 		"T-03-09-02: lowercase 'i understand' MUST NOT bypass the case-sensitive override gate")
 }
 
-// TestPwAuthDisable_override_gate_proceeds_when_text_matches — typing the
+// TestPwAuthDisable_override_gate_proceeds_when_text_matches - typing the
 // exact OverrideText advances to phaseSubmitting.
 func TestPwAuthDisable_override_gate_proceeds_when_text_matches(t *testing.T) {
 	t.Parallel()
@@ -169,7 +169,7 @@ func TestPwAuthDisable_override_gate_proceeds_when_text_matches(t *testing.T) {
 // --- Phase advance: review → submitting (skips override) --------------------
 
 // TestPwAuthDisable_disable_with_no_keyless_enter_proceeds_directly_to_submit
-// — when no keyless users exist, the override gate is skipped: Enter from
+// - when no keyless users exist, the override gate is skipped: Enter from
 // review goes straight to phaseSubmitting (no extra friction when nobody
 // would be locked out).
 func TestPwAuthDisable_disable_with_no_keyless_enter_proceeds_directly_to_submit(t *testing.T) {
@@ -183,7 +183,7 @@ func TestPwAuthDisable_disable_with_no_keyless_enter_proceeds_directly_to_submit
 		"clean preflight + Enter must skip the override gate and go straight to phaseSubmitting")
 }
 
-// TestPwAuthDisable_enable_action_no_preflight_block_no_override — D-16
+// TestPwAuthDisable_enable_action_no_preflight_block_no_override - D-16
 // contract: re-enabling password auth has no lockout risk, so the override
 // gate is skipped even if the keyless-user set is non-empty (we still do
 // the preflight enumeration to keep the lifecycle uniform, but the result
@@ -202,7 +202,7 @@ func TestPwAuthDisable_enable_action_no_preflight_block_no_override(t *testing.T
 
 // --- setTopLevelPasswordAuthentication helper (the four-case decision matrix) -
 
-// TestPwAuthDisable_setTopLevelPasswordAuthentication_adds_when_disable —
+// TestPwAuthDisable_setTopLevelPasswordAuthentication_adds_when_disable -
 // ADD: directive absent + disable=true → top-level
 // `passwordauthentication no` appended; render emits the canonical form.
 func TestPwAuthDisable_setTopLevelPasswordAuthentication_adds_when_disable(t *testing.T) {
@@ -220,7 +220,7 @@ func TestPwAuthDisable_setTopLevelPasswordAuthentication_adds_when_disable(t *te
 	require.Contains(t, rendered, "passwordauthentication no")
 }
 
-// TestPwAuthDisable_setTopLevelPasswordAuthentication_removes_when_enable —
+// TestPwAuthDisable_setTopLevelPasswordAuthentication_removes_when_enable -
 // REMOVE: directive present + disable=false → directive deleted from the
 // top-level Directives slice. Cleaner than setting "yes" because OpenSSH
 // defaults to yes when absent.
@@ -237,7 +237,7 @@ func TestPwAuthDisable_setTopLevelPasswordAuthentication_removes_when_enable(t *
 }
 
 // TestPwAuthDisable_setTopLevelPasswordAuthentication_updates_existing_value_when_disable
-// — UPDATE: directive present with stale "yes" + disable=true → Value
+// - UPDATE: directive present with stale "yes" + disable=true → Value
 // becomes "no" AND RawLine is cleared so Render emits the canonical form
 // instead of the stale original.
 func TestPwAuthDisable_setTopLevelPasswordAuthentication_updates_existing_value_when_disable(t *testing.T) {
@@ -266,7 +266,7 @@ func TestPwAuthDisable_setTopLevelPasswordAuthentication_updates_existing_value_
 }
 
 // TestPwAuthDisable_setTopLevelPasswordAuthentication_strips_directive_from_match_blocks
-// — T-03-09-01 defensive: a passwordauthentication directive that an admin
+// - T-03-09-01 defensive: a passwordauthentication directive that an admin
 // hand-edited INSIDE a Match block is removed regardless of the disable flag.
 // The top-level directive is the single source of truth (pitfall A3).
 func TestPwAuthDisable_setTopLevelPasswordAuthentication_strips_directive_from_match_blocks_T_03_09_01(t *testing.T) {
@@ -294,7 +294,7 @@ func TestPwAuthDisable_setTopLevelPasswordAuthentication_strips_directive_from_m
 			keywords = append(keywords, d.Keyword)
 		}
 		require.NotContains(t, keywords, "passwordauthentication",
-			"T-03-09-01: passwordauthentication inside a Match.Body MUST be stripped (disable=%v) — top-level is the single source of truth (pitfall A3)", disable)
+			"T-03-09-01: passwordauthentication inside a Match.Body MUST be stripped (disable=%v) - top-level is the single source of truth (pitfall A3)", disable)
 		// The other match-body directives must survive.
 		require.Contains(t, keywords, "chrootdirectory")
 		require.Contains(t, keywords, "forcecommand")
@@ -303,11 +303,11 @@ func TestPwAuthDisable_setTopLevelPasswordAuthentication_strips_directive_from_m
 
 // --- Submit + post-reload sshd -T verifier ---------------------------------
 
-// TestPwAuthDisable_submit_runs_txn_batch_then_verifies_via_sshd_dump —
+// TestPwAuthDisable_submit_runs_txn_batch_then_verifies_via_sshd_dump -
 // Drives the full submit happy-path: prime the Fake's SshdConfigResponse so
 // the inline post-reload sshd -T verifier sees `passwordauthentication=no`,
 // then synthesize submitDoneMsg{nil} via FeedSubmitDoneForTest to advance to
-// phaseDone (mirrors applysetup test 12 — the txn batch itself is exercised
+// phaseDone (mirrors applysetup test 12 - the txn batch itself is exercised
 // in internal/txn tests, not duplicated here).
 func TestPwAuthDisable_submit_done_success_transitions_to_done_then_autopops(t *testing.T) {
 	t.Parallel()
@@ -325,7 +325,7 @@ func TestPwAuthDisable_submit_done_success_transitions_to_done_then_autopops(t *
 	require.NotNil(t, cmd, "phaseDone transition must schedule the autoPopMsg tick")
 }
 
-// TestPwAuthDisable_submit_done_with_error_renders_critical_inline_and_phase_error —
+// TestPwAuthDisable_submit_done_with_error_renders_critical_inline_and_phase_error -
 // submitDoneMsg{err} transitions to phaseError + Critical errInline carrying
 // both "rolled back" and the underlying error text. Mirrors applysetup
 // test 11.
@@ -346,7 +346,7 @@ func TestPwAuthDisable_submit_done_with_error_renders_critical_inline_and_phase_
 
 // --- WantsRawKeys flips while typing the override text ----------------------
 
-// TestPwAuthDisable_wants_raw_keys_true_in_confirming_override — the
+// TestPwAuthDisable_wants_raw_keys_true_in_confirming_override - the
 // override textinput must capture every keystroke (including 'q' / space)
 // so the global `q`-quits-program binding does not eat characters mid-type.
 func TestPwAuthDisable_wants_raw_keys_true_in_confirming_override(t *testing.T) {
@@ -367,7 +367,7 @@ func TestPwAuthDisable_wants_raw_keys_true_in_confirming_override(t *testing.T) 
 
 // --- Esc protocol -----------------------------------------------------------
 
-// TestPwAuthDisable_esc_in_review_pops_modal — Esc in phaseReview returns
+// TestPwAuthDisable_esc_in_review_pops_modal - Esc in phaseReview returns
 // the nav.PopCmd intent so the parent App pops the modal off the stack.
 func TestPwAuthDisable_esc_in_review_pops_modal(t *testing.T) {
 	t.Parallel()
@@ -384,7 +384,7 @@ func TestPwAuthDisable_esc_in_review_pops_modal(t *testing.T) {
 
 // --- Render sanity (Action labels surface in copy) --------------------------
 
-// TestPwAuthDisable_view_action_label_disable_vs_enable — renderReview
+// TestPwAuthDisable_view_action_label_disable_vs_enable - renderReview
 // wording must reflect the active Action so admins know which direction the
 // modal is about to drive.
 func TestPwAuthDisable_view_action_label_disable_vs_enable(t *testing.T) {
@@ -399,12 +399,12 @@ func TestPwAuthDisable_view_action_label_disable_vs_enable(t *testing.T) {
 	require.Contains(t, v, "Re-enable",
 		"ActionEnable review render must mention re-enabling so admin sees the direction")
 	require.NotContains(t, v, "BLOCKED",
-		"ActionEnable must never render BLOCKED — there is no lockout risk to gate")
+		"ActionEnable must never render BLOCKED - there is no lockout risk to gate")
 }
 
 // --- Compile-time sanity: OverrideText is the documented constant ----------
 
-// TestPwAuthDisable_OverrideText_is_canonical — pin the literal so a future
+// TestPwAuthDisable_OverrideText_is_canonical - pin the literal so a future
 // rename refactor (e.g. translating to another language) is a deliberate
 // edit, not a silent drift away from the spec.
 func TestPwAuthDisable_OverrideText_is_canonical(t *testing.T) {

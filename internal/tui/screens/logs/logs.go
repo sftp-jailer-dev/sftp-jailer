@@ -10,14 +10,14 @@
 //
 //  1. Split-pane layout via lipgloss.JoinHorizontal with a 120-col
 //     breakpoint (D-06 / RESEARCH Pattern 5).
-//  2. tea.ExecProcess for live-tail subprocess hand-off — the *exec.Cmd
+//  2. tea.ExecProcess for live-tail subprocess hand-off - the *exec.Cmd
 //     literal lives inside internal/sysops (CI guard); this package only
 //     calls m.ops.JournalctlFollowCmd("ssh").
 //  3. State-driven status row styling (Healthy / Stale / Schema-drift)
 //     with dustin/go-humanize.Time for relative timestamps (D-08).
 //
 // Mirrors the S-USERS / S-FIREWALL template (async-load via Init+queries,
-// LoadXForTest seam, OSC 52 + Toast wiring) — see
+// LoadXForTest seam, OSC 52 + Toast wiring) - see
 // internal/tui/screens/users/users.go for the canonical template.
 package logsscreen
 
@@ -55,7 +55,7 @@ const (
 	// StaleDuration is the threshold beyond which the status row renders
 	// in styles.Warn instead of healthy styling (D-08 / UI-SPEC line 282).
 	StaleDuration = 14 * 24 * time.Hour
-	// EventLimit caps the FilterEvents query — matches the 02-01 default
+	// EventLimit caps the FilterEvents query - matches the 02-01 default
 	// (T-OBS-03 accept-disposition for offset-based paging at v1).
 	EventLimit = 500
 )
@@ -74,7 +74,7 @@ func SetObserveRunFactory(f func() nav.Screen) { observerunFactory = f }
 // tierFilter cycles through the 5 filter states (`t` keypress). When
 // tierAll is selected, FilterOpts.Tier is left empty and the query
 // returns all tiers; for the other 4 the tierFilter.String() value is
-// passed verbatim as opts.Tier — the classifier (02-01) emits the same
+// passed verbatim as opts.Tier - the classifier (02-01) emits the same
 // 4 strings.
 type tierFilter int
 
@@ -84,7 +84,7 @@ const (
 	tierTargeted
 	tierNoise
 	tierUnmatched
-	tierFilterCount // sentinel — modulus for the cycle
+	tierFilterCount // sentinel - modulus for the cycle
 )
 
 func (t tierFilter) String() string {
@@ -103,7 +103,7 @@ func (t tierFilter) String() string {
 	return "all"
 }
 
-// Message types (exported via constructors only — internal to package).
+// Message types (exported via constructors only - internal to package).
 type eventsLoadedMsg struct {
 	events []store.Event
 	err    error
@@ -121,11 +121,11 @@ type Model struct {
 	queries *store.Queries
 	ops     sysops.SystemOps
 
-	// Loaded data — populated either from messages or LoadXForTest seams.
+	// Loaded data - populated either from messages or LoadXForTest seams.
 	events []store.Event
 	// filtered is the search-narrowed view of `events`. When the search
 	// query is empty (or search inactive) this aliases `events`. The
-	// cursor indexes into `filtered`, NOT `events` — mirrors S-USERS
+	// cursor indexes into `filtered`, NOT `events` - mirrors S-USERS
 	// m.filtered (02-04).
 	filtered     []store.Event
 	status       store.StatusRow
@@ -157,8 +157,8 @@ func New(queries *store.Queries, ops sysops.SystemOps) *Model {
 	}
 }
 
-// Init kicks off two parallel async loads — the event list and the
-// status row — via tea.Batch. If queries is nil (test path), Init returns
+// Init kicks off two parallel async loads - the event list and the
+// status row - via tea.Batch. If queries is nil (test path), Init returns
 // nil and the test is expected to call LoadEventsForTest /
 // LoadStatusForTest before any View().
 func (m *Model) Init() tea.Cmd {
@@ -170,7 +170,7 @@ func (m *Model) Init() tea.Cmd {
 
 // loadEvents returns a tea.Cmd that calls FilterEvents with the current
 // tier filter. Re-issued whenever the tier filter changes (`t`) so the
-// SQL filter — not just a client-side filter — drives the visible set.
+// SQL filter - not just a client-side filter - drives the visible set.
 func (m *Model) loadEvents() tea.Cmd {
 	q := m.queries
 	if q == nil {
@@ -201,7 +201,7 @@ func (m *Model) loadStatus() tea.Cmd {
 }
 
 // currentFilterOpts returns the FilterOpts for the active tier filter.
-// The search query is applied client-side over the loaded slice — the
+// The search query is applied client-side over the loaded slice - the
 // observation DB doesn't have a "fuzzy match" SQL operator and v1 caps
 // at 500 rows so the client-side cost is trivial.
 func (m *Model) currentFilterOpts() store.FilterOpts {
@@ -218,7 +218,7 @@ func (m *Model) currentFilterOpts() store.FilterOpts {
 // Search uses sahilm/fuzzy against a compound corpus of
 // `User + SourceIP + EventType + Tier` per UI-SPEC line 235. Mirrors the
 // S-USERS applySortAndFilter pattern (02-04 line 287). Sort is unnecessary
-// here — events arrive in DB-returned ts-DESC order from FilterEvents.
+// here - events arrive in DB-returned ts-DESC order from FilterEvents.
 func (m *Model) applyFilter() {
 	q := strings.TrimSpace(m.search.Value())
 	if !m.search.Active || q == "" {
@@ -264,7 +264,7 @@ func (m *Model) Title() string { return "logs" }
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — true while the search textinput
+// WantsRawKeys implements nav.Screen - true while the search textinput
 // is focused so the root App forwards letters into the input rather than
 // quitting on `q`.
 func (m *Model) WantsRawKeys() bool { return m.search.Active }
@@ -301,20 +301,20 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 	case nav.ObserveRunCompleteToast:
 		var flashCmd tea.Cmd
 		m.toast, flashCmd = m.toast.Flash(fmt.Sprintf(
-			"observe-run done — %d events, %d counters, %d dropped",
+			"observe-run done - %d events, %d counters, %d dropped",
 			msg.Events, msg.Counters, msg.Dropped))
 		return m, tea.Batch(flashCmd, m.loadStatus())
 
 	case nav.ObserveRunCancelledToast:
 		var flashCmd tea.Cmd
 		m.toast, flashCmd = m.toast.Flash(fmt.Sprintf(
-			"observe-run cancelled — %d events ingested", msg.Count))
+			"observe-run cancelled - %d events ingested", msg.Count))
 		return m, tea.Batch(flashCmd, m.loadStatus())
 
 	case liveTailFinishedMsg:
 		// Resume; nothing to update. Errors from the subprocess (e.g.
 		// ENOENT for journalctl) are surfaced via the user's terminal
-		// scrollback during the ExecProcess hand-off — we deliberately
+		// scrollback during the ExecProcess hand-off - we deliberately
 		// do not toast on liveTailFinishedMsg.err to avoid double-reporting.
 		return m, nil
 
@@ -344,7 +344,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		m.search, cmd = m.search.Activate()
 		return m, cmd
 	case "F":
-		// tea.ExecProcess hand-off — Bubble Tea owns Start/Wait. The
+		// tea.ExecProcess hand-off - Bubble Tea owns Start/Wait. The
 		// *exec.Cmd literal lives in internal/sysops; this package never
 		// imports os/exec (architectural invariant
 		// scripts/check-no-exec-outside-sysops.sh).
@@ -373,7 +373,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 	case "enter":
 		// Wide mode: no-op (cursor movement already updates the right
 		// pane live).
-		// Narrow mode: detail-modal push deferred to v1.x — UI-SPEC line
+		// Narrow mode: detail-modal push deferred to v1.x - UI-SPEC line
 		// 446 lists this; the RawJSON is copyable via `c` and the
 		// wide-mode pane already shows full detail. Mirrors S-USERS /
 		// S-FIREWALL Enter no-op.
@@ -429,9 +429,9 @@ func (m *Model) View() string {
 	var headerLine string
 	isFiltered := (m.search.Active && strings.TrimSpace(m.search.Value()) != "") || m.tier != tierAll
 	if isFiltered {
-		headerLine = fmt.Sprintf("logs — %d of %d events", len(m.filtered), len(m.events))
+		headerLine = fmt.Sprintf("logs - %d of %d events", len(m.filtered), len(m.events))
 	} else {
-		headerLine = fmt.Sprintf("logs — %d events", len(m.events))
+		headerLine = fmt.Sprintf("logs - %d events", len(m.events))
 	}
 	b.WriteString(styles.Primary.Render(headerLine))
 	b.WriteString("\n")
@@ -450,7 +450,7 @@ func (m *Model) View() string {
 		b.WriteString(m.renderListOnly())
 	}
 
-	// Footer — current tier filter on its own line, then short help.
+	// Footer - current tier filter on its own line, then short help.
 	b.WriteString("\n")
 	b.WriteString(styles.Dim.Render(fmt.Sprintf("tier: %s", m.tier.String())))
 	b.WriteString("\n")
@@ -466,22 +466,22 @@ func (m *Model) View() string {
 }
 
 // renderStatusRow renders the D-08 status header in one of three states
-// per UI-SPEC lines 280–286:
+// per UI-SPEC lines 280-286:
 //
-//   - Schema drift (Critical) — current schema > ExpectedSchemaVersion;
+//   - Schema drift (Critical) - current schema > ExpectedSchemaVersion;
 //     observer disabled message.
-//   - Stale (Warn whole row) — last_run > StaleDuration ago.
-//   - Healthy — Schema seg in Primary, rest in Dim.
+//   - Stale (Warn whole row) - last_run > StaleDuration ago.
+//   - Healthy - Schema seg in Primary, rest in Dim.
 //
 // LastSuccessNs == 0 renders as "last run never" (RESEARCH §"Code
-// Examples" line 1465 — branch on IsZero first).
+// Examples" line 1465 - branch on IsZero first).
 func (m *Model) renderStatusRow() string {
 	if !m.statusLoaded {
 		return styles.Dim.Render("loading status…")
 	}
 	if m.status.SchemaVersion > store.ExpectedSchemaVersion {
 		return styles.Critical.Render(fmt.Sprintf(
-			"Schema v%d (binary expects v%d) — observer disabled — apt upgrade sftp-jailer",
+			"Schema v%d (binary expects v%d) - observer disabled - apt upgrade sftp-jailer",
 			m.status.SchemaVersion, store.ExpectedSchemaVersion))
 	}
 	var lastRunTxt string
@@ -497,7 +497,7 @@ func (m *Model) renderStatusRow() string {
 	if isStale {
 		return styles.Warn.Render(base)
 	}
-	// Healthy — Schema seg in Primary, rest in Dim.
+	// Healthy - Schema seg in Primary, rest in Dim.
 	schemaSeg := styles.Primary.Render(fmt.Sprintf("Schema v%d", m.status.SchemaVersion))
 	rest := styles.Dim.Render(fmt.Sprintf(" • %d events • %d counters • last run %s",
 		m.status.DetailCount, m.status.CounterCount, lastRunTxt))
@@ -505,7 +505,7 @@ func (m *Model) renderStatusRow() string {
 }
 
 // renderSplit composes the wide-mode split-pane via lipgloss.JoinHorizontal
-// with a single separator column. RESEARCH Pattern 5 (lines 497–524).
+// with a single separator column. RESEARCH Pattern 5 (lines 497-524).
 func (m *Model) renderSplit() string {
 	leftW := (m.width - SepWidth) * 60 / 100
 	rightW := m.width - SepWidth - leftW
@@ -524,7 +524,7 @@ func (m *Model) renderSplit() string {
 // renderListOnly renders the list at full terminal width.
 func (m *Model) renderListOnly() string { return m.renderList(m.width) }
 
-// renderList produces the events table — UI-SPEC line 432 columns:
+// renderList produces the events table - UI-SPEC line 432 columns:
 // ts(UTC) / user / src / tier glyph. Selection in reverse-video; tier
 // colours via colorByTier.
 func (m *Model) renderList(_ int) string {
@@ -558,14 +558,14 @@ func (m *Model) renderDetailPane(w int) string {
 
 // displayN pads s to exactly n columns (truncating with ellipsis if
 // needed). Used for the fixed-width list columns. Empty strings render
-// as `—` followed by enough spaces.
+// as `-` followed by enough spaces.
 func displayN(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
 	if s == "" {
-		// Fill with `—` followed by padding.
-		out := "—"
+		// Fill with `-` followed by padding.
+		out := "-"
 		if n > 1 {
 			out += strings.Repeat(" ", n-1)
 		}
@@ -598,7 +598,7 @@ func colorByTier(tier, line string) string {
 	return line
 }
 
-// KeyMap is the S-LOGS key bindings — implements nav.KeyMap.
+// KeyMap is the S-LOGS key bindings - implements nav.KeyMap.
 type KeyMap struct {
 	Back      nav.KeyBinding
 	Search    nav.KeyBinding
@@ -624,7 +624,7 @@ func DefaultKeyMap() KeyMap {
 }
 
 // ShortHelp surfaces the bindings in the footer / `?` overlay's compact
-// mode. Detail (Enter) and tier-cycle (t) live in FullHelp only — they're
+// mode. Detail (Enter) and tier-cycle (t) live in FullHelp only - they're
 // power-user / exploratory bindings and the footer is already busy.
 func (k KeyMap) ShortHelp() []nav.KeyBinding {
 	return []nav.KeyBinding{k.Back, k.Search, k.LiveTail, k.RunNow, k.Copy}

@@ -4,7 +4,7 @@
 //
 // Phase 1 surface was strictly read-only. Phase 2 introduces the first
 // mutation method (AtomicWriteFile) as the D-07 carve-out for
-// /etc/sftp-jailer/config.yaml — the tool's own settings file. Other
+// /etc/sftp-jailer/config.yaml - the tool's own settings file. Other
 // mutation methods land in Phase 3 / Phase 4 where SAFE-03 backup
 // discipline applies. Phase 2 also adds three subprocess-stream methods
 // (JournalctlStream, JournalctlFollowCmd, ObserveRunStream) and the flock
@@ -38,7 +38,7 @@ type FileInfo struct {
 }
 
 // ExecResult captures the outcome of a subprocess execution. A non-zero
-// ExitCode is NOT a Go error — the caller interprets. Go errors are reserved
+// ExitCode is NOT a Go error - the caller interprets. Go errors are reserved
 // for things like context cancellation or exec failures (ENOENT, permission
 // denied).
 type ExecResult struct {
@@ -54,7 +54,7 @@ type JournalctlStreamOpts struct {
 	// CursorFile is the path passed to `journalctl --cursor-file=…`. The file
 	// is created/updated by journalctl itself; the caller never writes to it
 	// directly. A nonexistent file means "start from the beginning of the
-	// available journal" — see RESEARCH §"--cursor-file semantics" for the
+	// available journal" - see RESEARCH §"--cursor-file semantics" for the
 	// initial-baseline mitigation.
 	CursorFile string
 
@@ -88,7 +88,7 @@ type ObserveRunSubprocessOpts struct {
 var ErrLockHeld = errors.New("sysops: observe-run lock already held by another process")
 
 // ----------------------------------------------------------------------------
-// Phase 3 typed-opts structs — argument shapes for the new mutation methods
+// Phase 3 typed-opts structs - argument shapes for the new mutation methods
 // added to SystemOps below. Grouped here next to JournalctlStreamOpts for
 // readability.
 // ----------------------------------------------------------------------------
@@ -127,7 +127,7 @@ type TarMode int
 
 // TarMode values map to tar(1) operation flags.
 const (
-	TarCreateGzip TarMode = iota // -czf (create gzipped archive) — D-15 Archive path
+	TarCreateGzip TarMode = iota // -czf (create gzipped archive) - D-15 Archive path
 )
 
 // TarOpts is the typed argument shape for Tar. SourceDir is appended as the
@@ -144,7 +144,7 @@ type TarOpts struct {
 // Plain SshdT (no -C) only validates global config.
 //
 // Threat model T-03-01-09: callers MUST validate username through the
-// existing `^[a-z][a-z0-9_-]{0,31}$` regex before calling — a comma or `=`
+// existing `^[a-z][a-z0-9_-]{0,31}$` regex before calling - a comma or `=`
 // in any field would create a malformed -C value. Host/Addr are tool-set
 // literals ("localhost"/"127.0.0.1") and not user-influenced.
 type SshdTContextOpts struct {
@@ -154,12 +154,12 @@ type SshdTContextOpts struct {
 }
 
 // ----------------------------------------------------------------------------
-// Phase 4 typed-opts structs — argument shapes for the new ufw / systemd-run
+// Phase 4 typed-opts structs - argument shapes for the new ufw / systemd-run
 // mutation methods. Grouped before SystemOps for readability.
 // ----------------------------------------------------------------------------
 
 // UfwAllowOpts is the typed argument shape for UfwAllow / UfwInsert
-// (D-FW-01). The Comment field MUST come from ufwcomment.Encode — do NOT
+// (D-FW-01). The Comment field MUST come from ufwcomment.Encode - do NOT
 // pass arbitrary strings here. The ufwcomment regex is the load-bearing
 // safety net for shell-quote-free systemd-run ExecStart per D-S04-08.
 //
@@ -168,7 +168,7 @@ type SshdTContextOpts struct {
 // promoted to /32 (v4) or /128 (v6) at the caller layer.
 type UfwAllowOpts struct {
 	Proto   string // "tcp" | "udp" | "" (omit "proto X" entirely)
-	Source  string // CIDR or single IP — pre-validated upstream
+	Source  string // CIDR or single IP - pre-validated upstream
 	Port    string // "22" | "22/tcp" | …
 	Comment string // ufwcomment.Encode result (or "" for the catch-all path)
 }
@@ -211,7 +211,7 @@ type SystemOps interface {
 	// Returns fs.ErrNotExist if the user is not present in /etc/shadow.
 	// Returns the underlying ReadFile error for permission / missing-file
 	// failures (callers should treat any error as "leave PasswordAgeDays /
-	// PasswordMaxDays at -1; render `—`" — graceful degradation).
+	// PasswordMaxDays at -1; render `-`" - graceful degradation).
 	ReadShadow(ctx context.Context, username string) (lstchg int, maxDays int, err error)
 
 	// External command runner (allowlisted, absolute paths cached at startup).
@@ -219,11 +219,11 @@ type SystemOps interface {
 	// Phase 2 extends the allowlist with: journalctl, ufw.
 	Exec(ctx context.Context, name string, args ...string) (ExecResult, error)
 
-	// Convenience wrapper for `sshd -T` — returns parsed directive map.
+	// Convenience wrapper for `sshd -T` - returns parsed directive map.
 	// Keys are lowercase; duplicate-key directives accumulate in the slice.
 	SshdDumpConfig(ctx context.Context) (map[string][]string, error)
 
-	// Phase 2 additions — D-07 mutation carve-out + observation pipeline.
+	// Phase 2 additions - D-07 mutation carve-out + observation pipeline.
 
 	// AtomicWriteFile writes data to path atomically (tmp + fsync + rename).
 	// The carve-out is /etc/sftp-jailer/config.yaml (D-07); other writes
@@ -237,7 +237,7 @@ type SystemOps interface {
 
 	// JournalctlFollowCmd returns an *exec.Cmd for `journalctl -u <unit> -f`,
 	// unstarted, suitable for tea.ExecProcess. The ExecProcess hand-off
-	// means the caller does NOT call Start/Run — Bubble Tea owns that.
+	// means the caller does NOT call Start/Run - Bubble Tea owns that.
 	// CI guard exception: the exec.Command literal lives in this package.
 	JournalctlFollowCmd(unit string) *exec.Cmd
 
@@ -252,7 +252,7 @@ type SystemOps interface {
 	AcquireRunLock(ctx context.Context, path string) (release func(), err error)
 
 	// ------------------------------------------------------------------
-	// Phase 3 additions — mutation surface for users + sshd config +
+	// Phase 3 additions - mutation surface for users + sshd config +
 	// reload + archive. Architectural invariant: every Phase 3 call site
 	// for useradd/userdel/gpasswd/chpasswd/chage/tar/sshd -t/systemctl
 	// reload-restart-daemon-reload/chmod/chown lives inside this package
@@ -261,12 +261,12 @@ type SystemOps interface {
 
 	// Useradd creates a system user via `useradd`. Pre-flight checks
 	// (/etc/shells contains /usr/sbin/nologin, UID-collision, path-walk on
-	// <home> parent) are the CALLER's responsibility — the wrapper is
+	// <home> parent) are the CALLER's responsibility - the wrapper is
 	// mechanical. Compensator: Userdel(ctx, opts.Username, opts.CreateHome).
 	Useradd(ctx context.Context, opts UseraddOpts) error
 
 	// Userdel removes a system user via `userdel`. removeHome=true adds -r
-	// (irreversible — deletes home directory). D-15 Permanent path uses true;
+	// (irreversible - deletes home directory). D-15 Permanent path uses true;
 	// D-15 Archive path (post-tarball) uses false.
 	Userdel(ctx context.Context, username string, removeHome bool) error
 
@@ -277,12 +277,12 @@ type SystemOps interface {
 	// piped to stdin (NEVER argv per pitfall E3). On non-zero exit (typically
 	// a pam_pwquality rejection), returns *ChpasswdError carrying stderr
 	// verbatim for B5 surfacing in M-PASSWORD. Caller MUST apply a context
-	// deadline (recommended 30s) — chpasswd can hang on stdin pipe.
+	// deadline (recommended 30s) - chpasswd can hang on stdin pipe.
 	Chpasswd(ctx context.Context, username, password string) error
 
 	// Chage updates password-aging via `chage`. D-13 force-change-next-login
 	// sets ChageOpts.LastDay=0 (`-d 0`). WARNING: chrooted SFTP-only users
-	// cannot complete password change (pitfall 2 / RH solution 24758) — the
+	// cannot complete password change (pitfall 2 / RH solution 24758) - the
 	// CALLER is responsible for surfacing this UX warning.
 	Chage(ctx context.Context, username string, opts ChageOpts) error
 
@@ -309,7 +309,7 @@ type SystemOps interface {
 	// WriteAuthorizedKeys atomically writes a per-user authorized_keys file
 	// at <chrootRoot>/<username>/.ssh/authorized_keys, then chowns to
 	// <username>:<username> and chmods to 0o600 (D-17, D-18). Composite
-	// wrapper — fewer call sites = less surface for the architectural-tax
+	// wrapper - fewer call sites = less surface for the architectural-tax
 	// discussion in D-18. Lookup of the user's UID/GID is via os/user.Lookup
 	// inside this wrapper; missing user → typed error.
 	WriteAuthorizedKeys(ctx context.Context, username, chrootRoot string, keys []byte) error
@@ -347,7 +347,7 @@ type SystemOps interface {
 	Tar(ctx context.Context, opts TarOpts) error
 
 	// ------------------------------------------------------------------
-	// Phase 4 mutation methods — ufw CRUD, systemd-run transient unit,
+	// Phase 4 mutation methods - ufw CRUD, systemd-run transient unit,
 	// systemctl idempotent stop / is-active, public IPv6 detection,
 	// /etc/default/ufw atomic rewrite. CI guard
 	// scripts/check-no-exec-outside-sysops.sh enforces these are the
@@ -362,7 +362,7 @@ type SystemOps interface {
 	// Always called with position=1 in production per D-FW-02 (newest at top).
 	UfwInsert(ctx context.Context, position int, opts UfwAllowOpts) error
 
-	// UfwDelete wraps `ufw delete <ruleID>`. Idempotent at the call site —
+	// UfwDelete wraps `ufw delete <ruleID>`. Idempotent at the call site -
 	// the caller maps "rule not found" exit to success. (D-FW-07)
 	UfwDelete(ctx context.Context, ruleID int) error
 
@@ -382,12 +382,12 @@ type SystemOps interface {
 
 	// SystemdRunOnActive wraps `systemd-run --on-active=<dur> --unit=<n>
 	// /bin/sh -c '<cmd>'` for the SAFE-04 transient-unit revert window
-	// (D-S04-08). The Command string is shell-quoted by /bin/sh —
+	// (D-S04-08). The Command string is shell-quoted by /bin/sh -
 	// callers MUST validate every embedded value upstream.
 	SystemdRunOnActive(ctx context.Context, opts SystemdRunOpts) error
 
 	// SystemctlStop wraps `systemctl stop <unit>`. Idempotent on
-	// non-existent / already-stopped units — non-zero exit is mapped to
+	// non-existent / already-stopped units - non-zero exit is mapped to
 	// nil at the caller layer (NewCancelRevertStep + revert.Watcher.Clear).
 	SystemctlStop(ctx context.Context, unitName string) error
 

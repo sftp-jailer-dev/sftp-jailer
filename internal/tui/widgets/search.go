@@ -28,7 +28,7 @@ func NewSearch() Search {
 // Activate focuses the underlying textinput and flips Active=true. Returns
 // the focus tea.Cmd for the cursor blink (callers must thread it through
 // their Update return). Use this from screen `/` handlers instead of
-// poking `s.Active = true` directly — without Focus() the textinput
+// poking `s.Active = true` directly - without Focus() the textinput
 // silently swallows keystrokes (see internal/tui/screens/users for the
 // canonical caller).
 func (s Search) Activate() (Search, tea.Cmd) {

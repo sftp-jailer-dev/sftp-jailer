@@ -1,10 +1,10 @@
-// Package revert owns the SAFE-04 armed-revert state — the in-process
+// Package revert owns the SAFE-04 armed-revert state - the in-process
 // singleton + on-disk pointer file (D-S04-06). The TUI reads the
 // current state via Get(); txn Steps mutate via Set/Clear. Survives
 // TUI crashes via Restore() on next startup.
 //
 // Architectural invariants:
-//   - All filesystem reads/writes go through sysops.SystemOps — this
+//   - All filesystem reads/writes go through sysops.SystemOps - this
 //     package never imports os.
 //   - PointerPath is in the sysops AtomicWriteFile allowlist (Plan
 //     04-01 added /var/lib/sftp-jailer/ as a prefix).
@@ -44,7 +44,7 @@ func PointerPath() string {
 
 // State is the JSON shape persisted to PointerPath.
 //
-// The reverseCmds slice is intentionally NOT serialized — it is baked
+// The reverseCmds slice is intentionally NOT serialized - it is baked
 // into the systemd-run unit's ExecStart (D-S04-08), so it is already
 // authoritative there. Restore() therefore does not repopulate
 // ReverseCommands(); the next Set call reseeds it.
@@ -66,7 +66,7 @@ type Watcher struct {
 }
 
 // New constructs a Watcher with the given sysops handle. Does NOT
-// restore prior state — call Restore explicitly at TUI startup.
+// restore prior state - call Restore explicitly at TUI startup.
 func New(ops sysops.SystemOps) *Watcher {
 	return &Watcher{ops: ops}
 }
@@ -112,7 +112,7 @@ func (w *Watcher) Clear(ctx context.Context) error {
 }
 
 // Get returns a defensive copy of the current state, or nil when no
-// revert is armed. Read-only — does not need a context.
+// revert is armed. Read-only - does not need a context.
 func (w *Watcher) Get() *State {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -141,10 +141,10 @@ func (w *Watcher) ReverseCommands() []string {
 // Returns:
 //   - (false, nil): pointer not found (clean state) OR pointer found
 //     and unit still active (state restored).
-//   - (true, nil):  pointer found but unit is no longer active — the
+//   - (true, nil):  pointer found but unit is no longer active - the
 //     transient unit fired (timer expired) OR was killed externally.
 //     The pointer file is auto-cleared. Caller should surface a toast
-//     "Revert window fired — pre-change rules restored" + rebuild the
+//     "Revert window fired - pre-change rules restored" + rebuild the
 //     FW-08 mirror.
 //   - (true, err):  the pointer file was unreadable as JSON (corrupt /
 //     orphaned). The pointer is best-effort cleared and `fired=true`
@@ -155,7 +155,7 @@ func (w *Watcher) ReverseCommands() []string {
 //     a real I/O or exec error.
 //
 // The reverseCmds field is NOT restored from the pointer (the
-// pointer-file format intentionally omits the reverse cmds — they are
+// pointer-file format intentionally omits the reverse cmds - they are
 // baked into the systemd-run unit's ExecStart, so they're already
 // authoritative there). After Restore, ReverseCommands() returns nil
 // until the next Set call.
@@ -172,7 +172,7 @@ func (w *Watcher) Restore(ctx context.Context) (fired bool, err error) {
 	}
 	var st State
 	if err := json.Unmarshal(data, &st); err != nil {
-		// Corrupted pointer — treat as orphan, Clear it, surface as
+		// Corrupted pointer - treat as orphan, Clear it, surface as
 		// fired (admin needs to know the box state may be off).
 		if cerr := w.ops.RemoveAll(ctx, PointerPath()); cerr != nil && !errors.Is(cerr, fs.ErrNotExist) {
 			return true, fmt.Errorf("revert.Restore corrupt pointer + cleanup failed: unmarshal=%v cleanup=%v", err, cerr)
@@ -184,11 +184,11 @@ func (w *Watcher) Restore(ctx context.Context) (fired bool, err error) {
 		return false, fmt.Errorf("revert.Restore systemctl is-active: %w", err)
 	}
 	if active {
-		// Unit still running — restore in-process state.
+		// Unit still running - restore in-process state.
 		w.state = &st
 		return false, nil
 	}
-	// Unit no longer active — fired or killed. Clear the pointer.
+	// Unit no longer active - fired or killed. Clear the pointer.
 	if err := w.ops.RemoveAll(ctx, PointerPath()); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return true, fmt.Errorf("revert.Restore fired+cleanup failed: %w", err)
 	}

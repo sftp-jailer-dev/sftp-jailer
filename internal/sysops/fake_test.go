@@ -10,7 +10,7 @@ import (
 // Plan 04-12 (gap closure): ExecResponseQueue mechanism tests.
 //
 // The queue is a FIFO drain map<key, []ExecResult> that lets tests script
-// STATEFUL responses across successive Exec calls — e.g. a `ufw status
+// STATEFUL responses across successive Exec calls - e.g. a `ufw status
 // numbered` invocation that returns a different rule listing on each call
 // to model ufw's ID compaction after each delete (see plan 04-12's
 // NewUfwDeleteCatchAllByEnumerateStep tests).

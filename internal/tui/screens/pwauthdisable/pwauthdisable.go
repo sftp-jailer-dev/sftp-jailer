@@ -1,38 +1,38 @@
-// Package pwauthdisable renders M-DISABLE-PWAUTH — the USER-13 / D-16
+// Package pwauthdisable renders M-DISABLE-PWAUTH - the USER-13 / D-16
 // safety-rail modal that gates the "globally disable password auth" flow
 // behind a managed-user pre-flight + a typed-string override.
 //
 // Lifecycle phases:
 //
-//	phasePreflight          — Init runs the asynchronous preflight: read the
+//	phasePreflight          - Init runs the asynchronous preflight: read the
 //	                          existing canonical drop-in, enumerate sftp-group
 //	                          users via internal/users.Enumerator, run
 //	                          chrootcheck.CheckAuthKeysFile per user, collect
 //	                          the keyless-or-strict-modes-broken set.
-//	phaseReview             — admin reviews the proposal. For ActionDisable
+//	phaseReview             - admin reviews the proposal. For ActionDisable
 //	                          with no keyless users → Enter starts submit
 //	                          immediately. For ActionDisable with keyless
 //	                          users → Enter advances to phaseConfirmingOverride.
 //	                          For ActionEnable → Enter starts submit (no
 //	                          preflight gate; re-enabling password auth has
 //	                          no lockout risk per D-16).
-//	phaseConfirmingOverride — admin types `I understand` verbatim. Match is
+//	phaseConfirmingOverride - admin types `I understand` verbatim. Match is
 //	                          exact-string and case-sensitive (T-03-09-02).
 //	                          Enter on a non-matching value sets errInline
 //	                          and stays in phase.
-//	phaseSubmitting         — txn batch in flight inside an off-loop tea.Cmd:
+//	phaseSubmitting         - txn batch in flight inside an off-loop tea.Cmd:
 //	                          (1) WriteSshdDropIn (backup + atomic write),
 //	                          (2) SshdValidate (`sshd -t`),
 //	                          (3) SystemctlReload (PasswordAuthentication is
 //	                              NOT socket-affecting per pitfall 4 → use
 //	                              ReloadService, NOT RestartSocket),
 //	                          (4) post-reload sshd -T verifier (inline, NOT
-//	                              the SshdVerifyChrootDirective step — that
+//	                              the SshdVerifyChrootDirective step - that
 //	                              one checks for chrootdirectory/forcecommand,
 //	                              not the directive we just changed).
-//	phaseDone               — apply succeeded; modal lingers briefly then
+//	phaseDone               - apply succeeded; modal lingers briefly then
 //	                          auto-pops back to S-SETTINGS.
-//	phaseError              — apply failed (txn rolled back) OR preflight
+//	phaseError              - apply failed (txn rolled back) OR preflight
 //	                          error; inline Critical errInline; Esc back.
 //
 // The setTopLevelPasswordAuthentication helper handles all four cases of
@@ -40,12 +40,12 @@
 //   - ADD: directive absent + ActionDisable → append `passwordauthentication no`
 //     at top level.
 //   - REMOVE: directive present + ActionEnable → delete (preferred over
-//     setting `yes` — keeps the drop-in minimal; OpenSSH defaults to yes
+//     setting `yes` - keeps the drop-in minimal; OpenSSH defaults to yes
 //     so the absence is functionally equivalent).
 //   - UPDATE: directive present with stale value + ActionDisable → overwrite
 //     Value to "no" AND clear RawLine so Render emits the canonical form.
 //   - STRIP-FROM-MATCH: defensive against an admin who hand-edited the
-//     directive into a Match block (pitfall A3) — strip from MatchBlock.Body
+//     directive into a Match block (pitfall A3) - strip from MatchBlock.Body
 //     so the top-level write is the single source of truth.
 //
 // Architectural invariants:
@@ -100,7 +100,7 @@ const (
 	// keyless-user preflight gate.
 	ActionDisable Action = iota
 	// ActionEnable removes the directive (or no-op if absent). No preflight
-	// gate — re-enabling password auth has no lockout risk per D-16.
+	// gate - re-enabling password auth has no lockout risk per D-16.
 	ActionEnable
 )
 
@@ -149,7 +149,7 @@ type Model struct {
 	toast     widgets.Toast
 	keyMap    KeyMap
 
-	// time source seam — production binds time.Now; tests pin via
+	// time source seam - production binds time.Now; tests pin via
 	// SetNowFnForTest so the WriteSshdDropIn backup-path timestamp is
 	// deterministic across runs.
 	nowFn func() time.Time
@@ -270,7 +270,7 @@ func (m *Model) Title() string {
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keyMap }
 
-// WantsRawKeys implements nav.Screen — true while the override-text
+// WantsRawKeys implements nav.Screen - true while the override-text
 // textinput is focused so the root App forwards every key (including
 // space + 'q') into the input rather than acting on global bindings.
 func (m *Model) WantsRawKeys() bool { return m.phase == phaseConfirmingOverride }
@@ -295,11 +295,11 @@ func (m *Model) Init() tea.Cmd {
 }
 
 // runPreflight performs the synchronous preflight: read the current drop-in
-// (best-effort — a missing file is normal on a fresh install and yields
+// (best-effort - a missing file is normal on a fresh install and yields
 // an empty currentDropIn), enumerate sftp-group users, and run
 // chrootcheck.CheckAuthKeysFile per user to populate the keylessUsers set.
 //
-// "Keyless" here means "fails sshd's StrictModes prerequisites" — either
+// "Keyless" here means "fails sshd's StrictModes prerequisites" - either
 // the authorized_keys file is missing OR exists with wrong perms / owner.
 // Either way the user cannot SSH-key in, so disabling password auth would
 // lock them out (D-16 step 2).
@@ -317,7 +317,7 @@ func runPreflight(ctx context.Context, ops sysops.SystemOps, enum *users.Enumera
 		vios, verr := chrootcheck.CheckAuthKeysFile(ctx, ops, r.Username, chrootRoot)
 		if verr != nil {
 			// A single user's lookup failure (e.g. user vanished mid-walk)
-			// is treated as "no working key" for safety — the override gate
+			// is treated as "no working key" for safety - the override gate
 			// will surface this and let the admin decide.
 			keyless = append(keyless, fmt.Sprintf("%s (lookup error: %v)", r.Username, verr))
 			continue
@@ -331,7 +331,7 @@ func runPreflight(ctx context.Context, ops sysops.SystemOps, enum *users.Enumera
 
 // summarizeViolations joins the first violation Reason for compactness
 // (and indicates "+N more" when several are present). The full detail is
-// always recoverable via the doctor / S-USER-DETAIL screens — the modal's
+// always recoverable via the doctor / S-USER-DETAIL screens - the modal's
 // keyless list is meant to be at-a-glance.
 func summarizeViolations(vios []chrootcheck.Violation) string {
 	if len(vios) == 0 {
@@ -339,8 +339,8 @@ func summarizeViolations(vios []chrootcheck.Violation) string {
 	}
 	first := vios[0].Reason
 	// Truncate verbose reasons (e.g. the long chmod hint) at the first ';'
-	// or '—' to keep the bullet line readable.
-	if idx := strings.IndexAny(first, ";—"); idx > 0 {
+	// or '-' to keep the bullet line readable.
+	if idx := strings.IndexAny(first, ";-"); idx > 0 {
 		first = strings.TrimSpace(first[:idx])
 	}
 	if len(vios) > 1 {
@@ -415,7 +415,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		}
 		return m, nil
 	case phasePreflight, phaseSubmitting, phaseDone:
-		// Esc still backs out fast — admins should be able to bail at any
+		// Esc still backs out fast - admins should be able to bail at any
 		// time even if the spinner is still running.
 		if msg.String() == "esc" {
 			return m, nav.PopCmd()
@@ -431,7 +431,7 @@ func (m *Model) handleReviewKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 	case "esc", "q":
 		return m, nav.PopCmd()
 	case "enter":
-		// ActionEnable: no preflight gate — re-enabling password auth has
+		// ActionEnable: no preflight gate - re-enabling password auth has
 		// no lockout risk per D-16.
 		if m.action == ActionEnable {
 			return m, m.startSubmit()
@@ -453,14 +453,14 @@ func (m *Model) handleConfirmKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		// Back out of override to review. The confirm field is intentionally
-		// preserved — admin can re-focus and continue if they Esc by accident.
+		// preserved - admin can re-focus and continue if they Esc by accident.
 		m.phase = phaseReview
 		m.errInline = ""
 		m.confirmTI.Blur()
 		return m, nil
 	case "enter":
 		// T-03-09-02: exact case-sensitive match. Lowercase "i understand"
-		// MUST NOT bypass — that's the point of the gate.
+		// MUST NOT bypass - that's the point of the gate.
 		if m.confirmTI.Value() != OverrideText {
 			m.errInline = fmt.Sprintf("type %q verbatim to override (case-sensitive)", OverrideText)
 			return m, nil
@@ -478,7 +478,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 func (m *Model) startSubmit() tea.Cmd {
 	m.phase = phaseSubmitting
 	if m.ops == nil {
-		// Test path — caller drives FeedSubmitDoneForTest manually.
+		// Test path - caller drives FeedSubmitDoneForTest manually.
 		return func() tea.Msg { return m.spinner.Tick() }
 	}
 	ops, action, current, dropInPath, now := m.ops, m.action, m.currentDropIn, m.dropInPath, m.nowFn
@@ -489,7 +489,7 @@ func (m *Model) startSubmit() tea.Cmd {
 			defer cancel()
 			// Build the proposed drop-in: parse current, splice or strip
 			// the top-level PasswordAuthentication directive, render. Per
-			// pitfall A3 / D-16 step 5, the directive lives at TOP LEVEL —
+			// pitfall A3 / D-16 step 5, the directive lives at TOP LEVEL -
 			// putting it inside a Match block would scope it to that block
 			// only and miss every other connection.
 			d, _ := sshdcfg.ParseDropIn(current)
@@ -508,7 +508,7 @@ func (m *Model) startSubmit() tea.Cmd {
 				txn.NewSshdValidateStep(),
 				// Pitfall 4: PasswordAuthentication is NOT socket-affecting
 				// (only Port / ListenAddress / AddressFamily are). Use
-				// ReloadService — NEVER RestartSocket here.
+				// ReloadService - NEVER RestartSocket here.
 				txn.NewSystemctlReloadStep(txn.ReloadService),
 			}
 			tx := txn.New(ops)
@@ -516,14 +516,14 @@ func (m *Model) startSubmit() tea.Cmd {
 				return submitDoneMsg{err: err}
 			}
 
-			// Inline post-reload verifier — sshd -T reports the active
+			// Inline post-reload verifier - sshd -T reports the active
 			// global value of passwordauthentication. We read it back and
 			// confirm the change actually took effect (catches the case
 			// where the drop-in was overwritten by a higher-precedence
 			// admin-edit between our write and reload, or where the
 			// directive landed inside a stale Match block we missed).
 			//
-			// Note: `sshd -T` (no -C) only reports global directives — for
+			// Note: `sshd -T` (no -C) only reports global directives - for
 			// our top-level directive that is exactly what we want. If a
 			// future plan ever moves PasswordAuthentication into a Match
 			// block (D-16 explicitly forbids this), the verifier would
@@ -546,7 +546,7 @@ func (m *Model) startSubmit() tea.Cmd {
 }
 
 // setTopLevelPasswordAuthentication implements the four-case decision
-// matrix for the directive's lifecycle. Returns the modified DropIn —
+// matrix for the directive's lifecycle. Returns the modified DropIn -
 // caller passes the result to sshdcfg.Render.
 //
 // Decision matrix:
@@ -554,10 +554,10 @@ func (m *Model) startSubmit() tea.Cmd {
 //	disable=true,  directive absent  → ADD top-level `passwordauthentication no`
 //	disable=true,  directive present → UPDATE Value to "no", clear RawLine
 //	                                   (forces Render to emit canonical form
-//	                                   instead of the original line — protects
+//	                                   instead of the original line - protects
 //	                                   against admin-authored exotic spacing
 //	                                   or trailing comments)
-//	disable=false, directive present → REMOVE (cleaner than setting "yes" —
+//	disable=false, directive present → REMOVE (cleaner than setting "yes" -
 //	                                   OpenSSH defaults to yes so absence is
 //	                                   functionally equivalent and keeps the
 //	                                   drop-in minimal)
@@ -568,7 +568,7 @@ func (m *Model) startSubmit() tea.Cmd {
 // top-level directive is the single source of truth; a stray Match-scoped
 // directive would scope to that block only and create surprising behaviour.
 // This tool never writes inside Match blocks for this directive, but an
-// admin hand-edit could land one — we strip defensively.
+// admin hand-edit could land one - we strip defensively.
 func setTopLevelPasswordAuthentication(d sshdcfg.DropIn, disable bool) sshdcfg.DropIn {
 	const keyword = "passwordauthentication"
 
@@ -604,7 +604,7 @@ func setTopLevelPasswordAuthentication(d sshdcfg.DropIn, disable bool) sshdcfg.D
 	}
 	d.Directives = newDirs
 
-	// Defensive Match-block strip (pitfall A3). Independent of disable flag —
+	// Defensive Match-block strip (pitfall A3). Independent of disable flag -
 	// the top-level directive is the single source of truth; any same-keyword
 	// directive inside a Match.Body is removed regardless.
 	for i := range d.Matches {
@@ -658,7 +658,7 @@ func (m *Model) View() string {
 // users → BLOCKED list with override prompt; ActionDisable + clean → simple
 // confirm; ActionEnable → re-enable confirm (no preflight gate).
 func (m *Model) renderReview(b *strings.Builder) {
-	b.WriteString(styles.Primary.Render("M-DISABLE-PWAUTH — PasswordAuthentication " + m.action.String()))
+	b.WriteString(styles.Primary.Render("M-DISABLE-PWAUTH - PasswordAuthentication " + m.action.String()))
 	b.WriteString("\n\n")
 	switch m.action {
 	case ActionEnable:
@@ -674,7 +674,7 @@ func (m *Model) renderReview(b *strings.Builder) {
 			b.WriteString("[enter] proceed   [esc] cancel")
 			return
 		}
-		b.WriteString(styles.Critical.Render("BLOCKED: these managed users have no working SSH key —"))
+		b.WriteString(styles.Critical.Render("BLOCKED: these managed users have no working SSH key -"))
 		b.WriteString("\n")
 		b.WriteString(styles.Critical.Render("disabling password auth will lock them out:"))
 		b.WriteString("\n\n")
@@ -685,11 +685,11 @@ func (m *Model) renderReview(b *strings.Builder) {
 	}
 }
 
-// renderConfirm renders the phaseConfirmingOverride surface — the typed-
+// renderConfirm renders the phaseConfirmingOverride surface - the typed-
 // string gate. `OverrideText` is rendered verbatim AS WELL AS quoted in
 // the prompt to avoid the "what exactly do I type?" guessing game.
 func (m *Model) renderConfirm(b *strings.Builder) {
-	b.WriteString(styles.Critical.Render("Override gate — irreversible to the affected users until you re-enable"))
+	b.WriteString(styles.Critical.Render("Override gate - irreversible to the affected users until you re-enable"))
 	b.WriteString("\n\n")
 	fmt.Fprintf(b, "Type %q verbatim (case-sensitive) to confirm:\n  ", OverrideText)
 	b.WriteString(m.confirmTI.View())

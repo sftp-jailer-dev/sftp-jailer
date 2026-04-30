@@ -1,5 +1,5 @@
 // ipv6_preflight.go is the M-FW-IPV6-FIX modal landed by Plan 04-05
-// Task 2. It is the FW-06 leak remediation — when M-ADD-RULE / M-DELETE-
+// Task 2. It is the FW-06 leak remediation - when M-ADD-RULE / M-DELETE-
 // RULE / S-LOCKDOWN preflight detects /etc/default/ufw IPV6=no AND
 // HasPublicIPv6=true, it pushes this modal (D-FW-03 step 3).
 //
@@ -14,7 +14,7 @@
 //
 //	[NewScheduleRevertStep, NewWriteUfwIPV6Step("yes"), NewSystemctlRestartUfwStep]
 //
-// The reverse-cmd payload restores IPV6=no + restarts ufw — the box is
+// The reverse-cmd payload restores IPV6=no + restarts ufw - the box is
 // returned to its prior state if admin doesn't Confirm in 3 min. The
 // SAFE-04 wrapper means even a wrong rewrite is auto-rolled back.
 //
@@ -24,7 +24,7 @@
 //     at Apply time. AtomicWriteFile path-allowlist prevents writes
 //     outside /etc/default/ufw. SAFE-04 schedule covers any subsequent
 //     observability gap.
-//   - T-04-05-06 (info disclosure, leakDetail): accept — the IPv6 is
+//   - T-04-05-06 (info disclosure, leakDetail): accept - the IPv6 is
 //     already in `ip -6 addr show` output; reading it requires root.
 package firewallrule
 
@@ -45,7 +45,7 @@ import (
 // ipv6FixApplyTimeout bounds the SAFE-04-wrapped txn batch.
 const ipv6FixApplyTimeout = 60 * time.Second
 
-// ipv6FixRevertWindow is the SAFE-04 deadline for the FW-06 fix —
+// ipv6FixRevertWindow is the SAFE-04 deadline for the FW-06 fix -
 // 3 min, mirroring the M-ADD-RULE window.
 const ipv6FixRevertWindow = 3 * time.Minute
 
@@ -99,7 +99,7 @@ func (m *IPv6FixModel) Title() string { return "fix ufw IPv6 leak (FW-06)" }
 // KeyMap implements nav.Screen.
 func (m *IPv6FixModel) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — false, this is a single-action
+// WantsRawKeys implements nav.Screen - false, this is a single-action
 // confirm modal with no textinput.
 func (m *IPv6FixModel) WantsRawKeys() bool { return false }
 
@@ -143,7 +143,7 @@ func (m *IPv6FixModel) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 // are idempotent on a re-run.
 func (m *IPv6FixModel) applyCmd() tea.Cmd {
 	if m.ops == nil {
-		// Test path — surface a benign error.
+		// Test path - surface a benign error.
 		return func() tea.Msg {
 			return ipv6AppliedMsg{err: fmt.Errorf("internal: ops is nil (test path mis-wired)")}
 		}
@@ -180,15 +180,15 @@ func (m *IPv6FixModel) View() string {
 	case ipv6PhaseConfirm:
 		body := styles.Critical.Render("⚠ FW-06 IPv6 LEAK") + "\n\n"
 		body += m.leakDetail + "\n\n"
-		body += "[A]pply fix — rewrites /etc/default/ufw IPV6=yes + restarts ufw\n"
+		body += "[A]pply fix - rewrites /etc/default/ufw IPV6=yes + restarts ufw\n"
 		body += "             (3-min auto-revert armed under SAFE-04)\n"
-		body += "[C]ancel — return to caller; FW mutation blocked until fixed"
+		body += "[C]ancel - return to caller; FW mutation blocked until fixed"
 		return wrapModal(body)
 	case ipv6PhaseApplying:
 		return wrapModal("Applying IPv6 fix…")
 	case ipv6PhaseDone:
 		return wrapModal(styles.Success.Render(
-			"✓ ufw IPV6=yes applied — restart succeeded; 3-min revert armed"))
+			"✓ ufw IPV6=yes applied - restart succeeded; 3-min revert armed"))
 	case ipv6PhaseError:
 		return wrapModal(
 			styles.Critical.Render(fmt.Sprintf("Failed to apply fix: %v", m.applyErr)) +

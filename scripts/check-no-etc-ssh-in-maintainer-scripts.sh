@@ -6,7 +6,7 @@
 # binary which knows the drop-in path internally. A regression that shells
 # out to /etc/ssh from a maintainer script breaks the brownfield contract
 # (admin's main sshd_config must remain byte-identical pre-install vs
-# post-purge — verified empirically in Phase 5 UAT Variant B). Run from
+# post-purge - verified empirically in Phase 5 UAT Variant B). Run from
 # repo root. Exits 0 on clean, 1 on any violation.
 set -euo pipefail
 
@@ -24,7 +24,7 @@ for s in "${scripts[@]}"; do
         continue
     fi
     if grep -nE '/etc/ssh' "$s"; then
-        echo "FAIL: $s references /etc/ssh — DIST-09 brownfield safety regression" >&2
+        echo "FAIL: $s references /etc/ssh - DIST-09 brownfield safety regression" >&2
         fail=1
     fi
 done

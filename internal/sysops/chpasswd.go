@@ -19,14 +19,14 @@ import (
 // chpasswd builds.
 //
 // Non-zero exit (typically a pam_pwquality rejection) returns *ChpasswdError
-// containing stderr bytes verbatim — surface to admin via theme.Critical
+// containing stderr bytes verbatim - surface to admin via theme.Critical
 // inline error per D-13 / B5.
 //
 // Threat model T-03-01-01 / T-03-01-02 / T-03-01-06:
 //   - Password is in stdin only, never argv.
-//   - ChpasswdError.Stderr is pam_pwquality output only — chpasswd writes
+//   - ChpasswdError.Stderr is pam_pwquality output only - chpasswd writes
 //     nothing else to stderr on a rejection.
-//   - Caller MUST apply a context deadline (recommended 30s) — chpasswd
+//   - Caller MUST apply a context deadline (recommended 30s) - chpasswd
 //     can in principle hang on stdin pipe if the child misbehaves.
 //
 // chpasswd is INTENTIONALLY excluded from real.go's Exec allowlist: this
@@ -58,7 +58,7 @@ func (r *Real) Chpasswd(ctx context.Context, username, password string) error {
 }
 
 // ChpasswdError is returned when chpasswd exits non-zero. The Stderr field
-// carries pam_pwquality (or other PAM module) rejection text verbatim —
+// carries pam_pwquality (or other PAM module) rejection text verbatim -
 // surface to admin via theme.Critical inline error per D-13 / B5. Callers
 // extract the typed error via errors.As(err, &cerr).
 type ChpasswdError struct {

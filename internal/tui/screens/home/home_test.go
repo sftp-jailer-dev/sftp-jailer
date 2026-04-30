@@ -39,7 +39,7 @@ func TestHome_KeyMap_exposesAllExpectedBindings(t *testing.T) {
 }
 
 // TestHome_keymap_extended_help_text confirms each new wave-3+ binding
-// carries a recognisable Help text — surfaces the screen name in the help
+// carries a recognisable Help text - surfaces the screen name in the help
 // overlay so an admin pressing `?` immediately sees what `u` does.
 func TestHome_keymap_extended_help_text(t *testing.T) {
 	km := home.DefaultKeyMap()
@@ -161,7 +161,7 @@ func TestHome_factories_independent(t *testing.T) {
 }
 
 // TestHome_no_factory_no_crash verifies that pressing u/f/l/s with no
-// factory registered emits a nil tea.Cmd — defensive: shipping the four
+// factory registered emits a nil tea.Cmd - defensive: shipping the four
 // SetXFactory hooks but only wiring usersFactory in this plan must not
 // crash the TUI when an admin presses f/l/s before 02-05/06/07 land.
 func TestHome_no_factory_no_crash(t *testing.T) {
@@ -195,7 +195,7 @@ func TestHome_L_pushes_lockdown_factory_when_set(t *testing.T) {
 }
 
 // TestHome_L_no_factory_no_crash asserts capital L without a registered
-// factory returns nil tea.Cmd — defensive parity with the
+// factory returns nil tea.Cmd - defensive parity with the
 // u/f/l/s no-factory path.
 func TestHome_L_no_factory_no_crash(t *testing.T) {
 	home.SetLockdownFactory(nil)

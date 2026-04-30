@@ -3,10 +3,10 @@ package keys
 // This file exposes a controlled mutation surface to external _test
 // packages so they can stub the GitHub HTTP endpoints with httptest.
 // Naming convention `testseam.go` mirrors internal/chrootcheck/testseam.go
-// from plan 03-02 — single file per package, public Set/Reset symbols
+// from plan 03-02 - single file per package, public Set/Reset symbols
 // only, never the underlying var.
 //
-// Production callers must NEVER use these helpers — they exist to keep
+// Production callers must NEVER use these helpers - they exist to keep
 // the unexported `githubBaseURL` / `githubAPIBaseURL` package vars
 // unexported while still allowing tests to override them. There is no
 // CI guard today; the discipline lives in code review.

@@ -14,7 +14,7 @@ import (
 // process already holds the lock.
 //
 // flock semantics:
-//   - The lock is advisory — only processes that also call flock() see it.
+//   - The lock is advisory - only processes that also call flock() see it.
 //   - The lock is bound to the file *description*; closing the fd releases it.
 //   - The lock is auto-released when the process dies (kernel clean-up).
 //

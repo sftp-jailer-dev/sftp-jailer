@@ -67,9 +67,9 @@ func TestPurgeBackupDir_OutsideVarLib(t *testing.T) {
 	// maintainer moves the backup dir there, this test will fail and
 	// surface the regression at PR time.
 	if strings.HasPrefix(purgeBackupDir, "/var/lib/sftp-jailer") {
-		t.Errorf("purgeBackupDir %q is under /var/lib/sftp-jailer — postrm will wipe backups on purge", purgeBackupDir)
+		t.Errorf("purgeBackupDir %q is under /var/lib/sftp-jailer - postrm will wipe backups on purge", purgeBackupDir)
 	}
-	// Also pin the canonical drop-in path constant — if Phase 3 moves it,
+	// Also pin the canonical drop-in path constant - if Phase 3 moves it,
 	// the import error will catch it at build time, but this assertion
 	// provides a clearer failure message.
 	const wantPath = "/etc/ssh/sshd_config.d/50-sftp-jailer.conf"

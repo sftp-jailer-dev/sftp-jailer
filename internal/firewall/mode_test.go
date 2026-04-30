@@ -1,8 +1,8 @@
-// Package firewall — Phase 4 plan 04-03 Task 1 RED gate.
+// Package firewall - Phase 4 plan 04-03 Task 1 RED gate.
 //
 // These tests pin the four-state classifier DetectMode (D-L0809-02) and the
 // Mode enum's String() formatting. The tests live in `package firewall`
-// (internal — not _test) so the unexported portMatches helper isn't a
+// (internal - not _test) so the unexported portMatches helper isn't a
 // blocker if a sibling file ever exercises it indirectly.
 package firewall
 
@@ -56,7 +56,7 @@ func TestDetectMode_string_formatting(t *testing.T) {
 
 // TestDetectMode_skips_forward_compat_rules pins that ParseErr != nil rules
 // (e.g. ufwcomment.ErrBadVersion from a newer binary's v=2 comment) are
-// NOT classified as sftpj rules — they're treated as opaque foreign rules
+// NOT classified as sftpj rules - they're treated as opaque foreign rules
 // per the forward-compat contract from internal/ufwcomment.
 func TestDetectMode_skips_forward_compat_rules(t *testing.T) {
 	t.Parallel()
@@ -66,12 +66,12 @@ func TestDetectMode_skips_forward_compat_rules(t *testing.T) {
 		User:       "", // Decode left it empty
 		ParseErr:   ufwcomment.ErrBadVersion,
 	}
-	// Forward-compat rule alone — no catch-all, no v=1 sftpj rule → UNKNOWN.
+	// Forward-compat rule alone - no catch-all, no v=1 sftpj rule → UNKNOWN.
 	require.Equal(t, ModeUnknown, DetectMode([]Rule{forwardCompat}, "22"))
 }
 
 // TestDetectMode_ignores_deny_rules pins that DENY rules don't qualify as
-// catch-alls or sftpj rules — only ALLOW (action contains "ALLOW") matters.
+// catch-alls or sftpj rules - only ALLOW (action contains "ALLOW") matters.
 func TestDetectMode_ignores_deny_rules(t *testing.T) {
 	t.Parallel()
 	denyAll := Rule{ID: 1, Port: "22", Source: "Anywhere", Action: "DENY IN", RawComment: ""}

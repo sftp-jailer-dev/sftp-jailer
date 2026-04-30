@@ -8,7 +8,7 @@
 // the lockdown package name because D-S04-09 step 2 names the caller
 // path as `internal/lockdown.RenderReverseCommands`.
 //
-// This file is intentionally thin — the production logic lives in
+// This file is intentionally thin - the production logic lives in
 // internal/revert/render_reverse.go. Tests for the renderer live there
 // too (revert/render_reverse_test.go); the shim itself is exercised
 // transitively by the M-ADD-RULE / M-DELETE-RULE / S-LOCKDOWN modal

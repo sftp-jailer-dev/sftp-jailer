@@ -37,12 +37,12 @@ type Step interface {
 	// Compensate reverses the effect of Apply. Called in reverse order
 	// for steps whose Apply previously returned nil. The Step whose
 	// Apply failed is NOT compensated (its mutation is presumed not to
-	// have taken effect — the contract for Apply is "atomic or no-op").
+	// have taken effect - the contract for Apply is "atomic or no-op").
 	Compensate(ctx context.Context, ops sysops.SystemOps) error
 }
 
 // Tx orchestrates the apply+compensate flow over a sysops.SystemOps.
-// Single-use: do not call Apply twice on the same Tx — construct a new
+// Single-use: do not call Apply twice on the same Tx - construct a new
 // one per batch.
 type Tx struct {
 	ops     sysops.SystemOps
@@ -78,7 +78,7 @@ func (t *Tx) Apply(ctx context.Context, steps []Step) error {
 
 // rollback runs Compensate in reverse on the applied steps. Returns the
 // original error joined with any compensator errors (errors.Join, Go
-// 1.20+ stdlib). Compensator errors do NOT abort the rollback — the
+// 1.20+ stdlib). Compensator errors do NOT abort the rollback - the
 // remaining compensators still run (best-effort cleanup).
 func (t *Tx) rollback(ctx context.Context, steps []Step, applyErr error) error {
 	var compErrs []error

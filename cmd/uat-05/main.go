@@ -9,13 +9,13 @@
 //
 // Subcommands:
 //
-//	install          — asserts all 5 install paths + timer active + static binary
-//	doctor           — asserts sftp-jailer doctor runs and returns ≥6 detector keys
-//	apply-sshd       — post-condition check: drop-in exists + sshd -T output sane
-//	user-crud        — stub: directs operator to manual TUI flow in runbook
-//	observe-fire     — fires the one-shot timer, polls for completion, checks DB rows
-//	lockdown-cycle   — stub: directs operator to manual TUI flow for SAFE-04 revert
-//	brownfield-purge — DIST-09 gate: sha256sum main sshd_config unchanged post-purge
+//	install          - asserts all 5 install paths + timer active + static binary
+//	doctor           - asserts sftp-jailer doctor runs and returns ≥6 detector keys
+//	apply-sshd       - post-condition check: drop-in exists + sshd -T output sane
+//	user-crud        - stub: directs operator to manual TUI flow in runbook
+//	observe-fire     - fires the one-shot timer, polls for completion, checks DB rows
+//	lockdown-cycle   - stub: directs operator to manual TUI flow for SAFE-04 revert
+//	brownfield-purge - DIST-09 gate: sha256sum main sshd_config unchanged post-purge
 //
 // JSON receipts are written to /var/log/sftp-jailer-uat-05/<subcmd>.json after
 // each invocation. This directory is outside /var/lib/sftp-jailer so apt purge
@@ -25,9 +25,9 @@
 // evidence (map[string]string), error (omitempty), host_info (map[string]string).
 //
 // IMPORTANT: this helper temporarily mutates real system state (apt, systemctl,
-// ufw, sshd). Run ONLY on staging boxes dedicated to UAT — never production.
+// ufw, sshd). Run ONLY on staging boxes dedicated to UAT - never production.
 //
-// This helper is intentionally one-shot — it should be removed from cmd/ after
+// This helper is intentionally one-shot - it should be removed from cmd/ after
 // the empirical UAT completes, mirroring the Phase 3/4 pattern documented in
 // the 03-08b/03-09 and 04-10 SUMMARYs.
 package main
@@ -113,7 +113,7 @@ JSON receipts written to %s/<subcmd>.json
 		HostInfo:  make(map[string]string),
 	}
 
-	// Always write the receipt, even on failure — it is the audit trail.
+	// Always write the receipt, even on failure - it is the audit trail.
 	defer func() {
 		r.FinishedAt = time.Now().UTC()
 		if werr := writeReceipt(r); werr != nil {
@@ -137,7 +137,7 @@ JSON receipts written to %s/<subcmd>.json
 }
 
 // gatherHostInfo collects basic system identification via ops.Exec.
-// Failures are ignored — this is audit decoration, not a gate.
+// Failures are ignored - this is audit decoration, not a gate.
 func gatherHostInfo(ctx context.Context, ops sysops.SystemOps) map[string]string {
 	info := make(map[string]string)
 
@@ -298,7 +298,7 @@ func runDoctor(ctx context.Context, ops sysops.SystemOps, r *receipt) error {
 	return nil
 }
 
-// runApplySshd is a POST-CONDITION asserter — the operator drives the
+// runApplySshd is a POST-CONDITION asserter - the operator drives the
 // S-APPLY-SETUP TUI flow first, then runs this subcommand.
 // Asserts:
 //   - /etc/ssh/sshd_config.d/50-sftp-jailer.conf exists
@@ -337,7 +337,7 @@ func runApplySshd(ctx context.Context, ops sysops.SystemOps, r *receipt) error {
 // fully automated without a headless Bubble Tea harness. The operator must
 // follow the runbook steps manually.
 func runUserCrud(_ context.Context, _ sysops.SystemOps, _ *receipt) error {
-	return fmt.Errorf(`user-crud is a manual TUI flow — this subcommand is intentionally a stub.
+	return fmt.Errorf(`user-crud is a manual TUI flow - this subcommand is intentionally a stub.
 
 Follow docs/uat/05-ubuntu24-uat.md Step 5 (per-user CRUD):
   5.1 Create user "uattest" via TUI (S-USERS → New)
@@ -396,10 +396,10 @@ func runObserveFire(ctx context.Context, ops sysops.SystemOps, r *receipt) error
 	fmt.Printf("  OK: observations.db present (%d bytes)\n", info.Size())
 
 	if finalState == "failed" {
-		fmt.Printf("  NOTE: service reported \"failed\" — check journalctl -u sftp-jailer-observer.service for details\n")
+		fmt.Printf("  NOTE: service reported \"failed\" - check journalctl -u sftp-jailer-observer.service for details\n")
 		r.Evidence["service_state_note"] = "failed; inspect journal for error details"
 		// A failed oneshot is recorded as evidence but is not a hard FAIL for
-		// the uat-05 tool — the operator interprets the journal to determine if
+		// the uat-05 tool - the operator interprets the journal to determine if
 		// the failure was expected (e.g., no sshd events yet on a fresh install).
 		// Comment out the return to make this a hard failure if desired.
 		//
@@ -412,11 +412,11 @@ func runObserveFire(ctx context.Context, ops sysops.SystemOps, r *receipt) error
 // runLockdownCycle is a STUB. The lockdown commit + SAFE-04 auto-revert
 // flow requires interactive TUI operation and cannot be fully automated.
 func runLockdownCycle(_ context.Context, _ sysops.SystemOps, _ *receipt) error {
-	return fmt.Errorf(`lockdown-cycle is a manual TUI flow — this subcommand is intentionally a stub.
+	return fmt.Errorf(`lockdown-cycle is a manual TUI flow - this subcommand is intentionally a stub.
 
 Follow docs/uat/05-ubuntu24-uat.md Step 7 (lockdown commit + rollback):
   7.1 Operator drives S-LOCKDOWN: Propose → Dry-run → Commit
-      DO NOT confirm the 3-minute revert window — let SAFE-04 auto-revert fire.
+      DO NOT confirm the 3-minute revert window - let SAFE-04 auto-revert fire.
       Watch the ufw rules return to OPEN after ~3 minutes.
       Verify via: ufw status numbered  (pre, during, and post)
 
@@ -439,7 +439,7 @@ func runBrownfieldPurge(_ context.Context, _ sysops.SystemOps, r *receipt) error
 	baseline := os.Getenv("UAT_BASELINE_SHA256")
 
 	if baseline == "" {
-		// BASELINE CAPTURE MODE — print the current hash for the operator.
+		// BASELINE CAPTURE MODE - print the current hash for the operator.
 		hash, err := fileSHA256(mainConfig)
 		if err != nil {
 			return fmt.Errorf("sha256(%s): %w", mainConfig, err)
@@ -449,11 +449,11 @@ func runBrownfieldPurge(_ context.Context, _ sysops.SystemOps, r *receipt) error
 		fmt.Printf("  BASELINE: sha256(%s)=%s\n", mainConfig, hash)
 		fmt.Printf("\n  Record this hash, then run apt purge sftp-jailer, and re-run with:\n")
 		fmt.Printf("  UAT_BASELINE_SHA256=%s uat-05 brownfield-purge\n\n", hash)
-		// This invocation succeeds — it is a capture, not an assertion.
+		// This invocation succeeds - it is a capture, not an assertion.
 		return nil
 	}
 
-	// ASSERTION MODE — compare current hash to baseline.
+	// ASSERTION MODE - compare current hash to baseline.
 	currentHash, err := fileSHA256(mainConfig)
 	if err != nil {
 		return fmt.Errorf("sha256(%s) post-purge: %w", mainConfig, err)
@@ -467,7 +467,7 @@ func runBrownfieldPurge(_ context.Context, _ sysops.SystemOps, r *receipt) error
 		return fmt.Errorf("DIST-09 VIOLATION: %s sha256 changed post-purge\n  baseline: %s\n  current:  %s\n  The drop-in purge must NOT have touched the main sshd_config file", mainConfig, baseline, currentHash)
 	}
 	r.Evidence["dist09_status"] = "main_sshd_config_byte_identical"
-	fmt.Printf("  OK: DIST-09 PASS — %s is byte-identical (sha256=%s)\n", mainConfig, currentHash)
+	fmt.Printf("  OK: DIST-09 PASS - %s is byte-identical (sha256=%s)\n", mainConfig, currentHash)
 
 	// Assert the drop-in is absent post-purge.
 	if _, err := os.Stat(dropIn); err == nil {

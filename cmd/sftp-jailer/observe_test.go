@@ -43,7 +43,7 @@ func TestObserveRunCmd_flags(t *testing.T) {
 func TestSchemaCheck_drift_returns_true(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "drift.db")
 
-	// Create the file with user_version=99 — well above ExpectedSchemaVersion.
+	// Create the file with user_version=99 - well above ExpectedSchemaVersion.
 	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)")
 	require.NoError(t, err)
 	_, err = db.Exec(`PRAGMA user_version = 99`)

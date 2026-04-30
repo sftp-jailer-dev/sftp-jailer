@@ -1,4 +1,4 @@
-// Tests for M-DELETE-RULE (Plan 04-06) — three-mode discriminator
+// Tests for M-DELETE-RULE (Plan 04-06) - three-mode discriminator
 // (ModeByID / ModeByUser / ModeBySource) + load+confirm+commit phase
 // machine + descending-by-ID sort for the txn batch (D-FW-07 strategy 1).
 //
@@ -19,7 +19,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewallrule"
 )
 
-// TestNewDeleteByID_initial_phase_skips_loading — ModeByID has the
+// TestNewDeleteByID_initial_phase_skips_loading - ModeByID has the
 // rule already; Init should NOT call firewall.Enumerate. The phase
 // transitions directly to phaseConfirm with one target.
 func TestNewDeleteByID_initial_phase_skips_loading(t *testing.T) {
@@ -31,7 +31,7 @@ func TestNewDeleteByID_initial_phase_skips_loading(t *testing.T) {
 	}
 	m := firewallrule.NewDeleteByID(f, nil, rule)
 	cmd := m.Init()
-	// ModeByID — payload already known; Init returns nil (no async load).
+	// ModeByID - payload already known; Init returns nil (no async load).
 	require.Nil(t, cmd, "ModeByID Init must NOT spawn an Enumerate goroutine")
 	require.Equal(t, firewallrule.DeletePhaseConfirmForTest, m.PhaseForTest(),
 		"ModeByID skips loading and lands in phaseConfirm")
@@ -39,7 +39,7 @@ func TestNewDeleteByID_initial_phase_skips_loading(t *testing.T) {
 	require.Equal(t, 5, m.TargetsForTest()[0].ID)
 }
 
-// TestNewDeleteByUser_loading_filters_to_matching_user — ModeByUser
+// TestNewDeleteByUser_loading_filters_to_matching_user - ModeByUser
 // runs Enumerate, then keeps only rules where r.User == username AND
 // r.ParseErr == nil.
 func TestNewDeleteByUser_loading_filters_to_matching_user(t *testing.T) {
@@ -69,7 +69,7 @@ func TestNewDeleteByUser_loading_filters_to_matching_user(t *testing.T) {
 	}
 }
 
-// TestNewDeleteBySource_loading_filters_by_source — ModeBySource
+// TestNewDeleteBySource_loading_filters_by_source - ModeBySource
 // retains rules where r.Source == source verbatim.
 func TestNewDeleteBySource_loading_filters_by_source(t *testing.T) {
 	t.Parallel()
@@ -97,7 +97,7 @@ func TestNewDeleteBySource_loading_filters_by_source(t *testing.T) {
 	}
 }
 
-// TestNewDeleteByUser_no_matches_renders_warn_view — when Enumerate
+// TestNewDeleteByUser_no_matches_renders_warn_view - when Enumerate
 // returns no rules for the requested user, the View must render the
 // "no rules found" warning copy referencing the username.
 func TestNewDeleteByUser_no_matches_renders_warn_view(t *testing.T) {
@@ -111,7 +111,7 @@ func TestNewDeleteByUser_no_matches_renders_warn_view(t *testing.T) {
 		"no-matches view must surface 'No rules found'; got %q", m.View())
 }
 
-// TestDeleteModel_ModeByUser_targets_sorted_descending_for_commit — the
+// TestDeleteModel_ModeByUser_targets_sorted_descending_for_commit - the
 // commit batch must sort target IDs DESCENDING per D-FW-07 strategy 1
 // (lower IDs don't shift after a higher delete). When commitCmd runs
 // against a Fake, the recorded UfwDelete calls must follow descending
@@ -135,7 +135,7 @@ func TestDeleteModel_ModeByUser_targets_sorted_descending_for_commit(t *testing.
 	require.NotNil(t, cmd)
 	_ = cmd() // executes the goroutine body inline
 
-	// Inspect Fake.Calls — extract the order of UfwDelete invocations.
+	// Inspect Fake.Calls - extract the order of UfwDelete invocations.
 	var deleteOrder []string
 	for _, c := range f.Calls {
 		if c.Method == "UfwDelete" {
@@ -148,7 +148,7 @@ func TestDeleteModel_ModeByUser_targets_sorted_descending_for_commit(t *testing.
 		"UfwDelete calls must be in descending-ID order per D-FW-07 strategy 1")
 }
 
-// TestDeleteModel_commit_arms_safe04_schedule_first — the commit batch
+// TestDeleteModel_commit_arms_safe04_schedule_first - the commit batch
 // must call SystemdRunOnActive (NewScheduleRevertStep) BEFORE any
 // UfwDelete (D-S04-09 step 3 ordering). Ensures partial-failure rollback
 // can stop the timer.
@@ -181,7 +181,7 @@ func TestDeleteModel_commit_arms_safe04_schedule_first(t *testing.T) {
 		"D-S04-09 step 3: Schedule arms BEFORE the FW mutation")
 }
 
-// TestDeleteModel_ModeByID_commit_uses_payload_rule_in_reverse_payload —
+// TestDeleteModel_ModeByID_commit_uses_payload_rule_in_reverse_payload -
 // the SAFE-04 reverse-cmd payload renders an `ufw insert <ID> …` for
 // each deleted rule (lockdown.RenderReverseCommands with OpDelete).
 // ModeByID with Source="203.0.113.7/32" must include that source string
@@ -226,13 +226,13 @@ func TestDeleteModel_ModeByID_commit_uses_payload_rule_in_reverse_payload(t *tes
 		"reverse-cmd must include the trailing `ufw reload` finalizer")
 }
 
-// TestDeleteModel_targetsLoadedMsg_with_error_lands_phaseError — when
+// TestDeleteModel_targetsLoadedMsg_with_error_lands_phaseError - when
 // Enumerate fails (network down, ufw missing, ctx canceled), the model
 // must land in phaseError with the wrapped error visible in the View.
 func TestDeleteModel_targetsLoadedMsg_with_error_lands_phaseError(t *testing.T) {
 	t.Parallel()
 	f := sysops.NewFake()
-	// Drive the error path via the test seam — directly synthesise a
+	// Drive the error path via the test seam - directly synthesise a
 	// loaded-msg with a non-nil error.
 	m := firewallrule.NewDeleteByUser(f, nil, "alice")
 	m.FeedTargetsLoadedMsgForTest(nil, context.DeadlineExceeded)
@@ -240,7 +240,7 @@ func TestDeleteModel_targetsLoadedMsg_with_error_lands_phaseError(t *testing.T) 
 	require.Contains(t, m.View(), "context deadline exceeded")
 }
 
-// TestDeleteModel_implements_nav_Screen — compile-time + runtime check
+// TestDeleteModel_implements_nav_Screen - compile-time + runtime check
 // that the model satisfies nav.Screen.
 func TestDeleteModel_implements_nav_Screen(t *testing.T) {
 	t.Parallel()
@@ -252,9 +252,9 @@ func TestDeleteModel_implements_nav_Screen(t *testing.T) {
 	require.NotNil(t, km)
 }
 
-// TestDeleteModel_RebuildUserIPs_called_on_success — after a successful
+// TestDeleteModel_RebuildUserIPs_called_on_success - after a successful
 // commit batch, the modal must call store.RebuildUserIPs to keep the
-// FW-08 mirror in sync (W2 — best-effort cache rebuild). This is
+// FW-08 mirror in sync (W2 - best-effort cache rebuild). This is
 // pinned by the post-Apply hook; failure of the call does NOT roll back.
 //
 // Test note: instead of wiring a real *store.Queries (which would
@@ -279,7 +279,7 @@ func TestDeleteModel_post_commit_enumerate_runs(t *testing.T) {
 	require.NotNil(t, cmd)
 	_ = cmd()
 
-	// Count `ufw status numbered` invocations — there should be at least
+	// Count `ufw status numbered` invocations - there should be at least
 	// 1 from the post-commit Enumerate that feeds RebuildUserIPs (W2).
 	// Fake.Exec records argv as separate args: ["ufw", "status", "numbered"].
 	var enumCount int

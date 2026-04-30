@@ -24,19 +24,19 @@ func WriteRecoveryScript(pid int) (path string, err error) {
 	path = fmt.Sprintf("/tmp/sftp-jailer-recover-%d.sh", pid)
 	script := `#!/bin/sh
 # Restores terminal state after a crashed sftp-jailer session.
-#   stty sane             — resets line discipline (raw/echo/etc.)
-#   ?1049l                — leaves the alternate screen buffer
-#   ?25h                  — re-enables the cursor
-#   ?1000/1002/1003/1006l — disables every mouse-reporting mode
-#   ?2004l                — disables bracketed-paste mode
+#   stty sane             - resets line discipline (raw/echo/etc.)
+#   ?1049l                - leaves the alternate screen buffer
+#   ?25h                  - re-enables the cursor
+#   ?1000/1002/1003/1006l - disables every mouse-reporting mode
+#   ?2004l                - disables bracketed-paste mode
 stty sane 2>/dev/null || true
 printf '\033[?1049l\033[?25h\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?2004l' > /dev/tty
 `
-	// gosec G306/G302: 0o700 is intentional — the script must be executable.
+	// gosec G306/G302: 0o700 is intentional - the script must be executable.
 	// It contains no user data; only static terminal-reset escapes.
 	//
 	// The sftpj-allow-raw-write tag below carves this call out of the
-	// scripts/check-no-raw-config-write.sh guard — target is a transient
+	// scripts/check-no-raw-config-write.sh guard - target is a transient
 	// PID-namespaced /tmp file (pitfall E2 recovery script), nothing to do
 	// with the /etc/sftp-jailer/config.yaml seam.
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // sftpj-allow-raw-write G306: script must be exec
@@ -52,7 +52,7 @@ printf '\033[?1049l\033[?25h\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?20
 
 // InstallSignalCleanup traps SIGTERM/SIGHUP and calls restore before
 // re-raising the signal with the default handler. SIGKILL remains
-// unhandlable — the recovery script is the fallback there.
+// unhandlable - the recovery script is the fallback there.
 //
 // SIGINT is deliberately NOT trapped here: Bubble Tea's default signal
 // handler (installed when the program starts) owns Ctrl-C; trapping it

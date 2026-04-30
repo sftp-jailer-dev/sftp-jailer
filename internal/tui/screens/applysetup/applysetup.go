@@ -1,28 +1,28 @@
-// Package applysetup renders the M-APPLY-SETUP modal — the doctor-driven
+// Package applysetup renders the M-APPLY-SETUP modal - the doctor-driven
 // prescription surface that applies the canonical chroot-SFTP drop-in to
 // /etc/ssh/sshd_config.d/50-sftp-jailer.conf via the SAFE-02/03/05/06-compliant
 // txn batch (D-09 sequence).
 //
 // Lifecycle phases:
 //
-//	phasePreflight   — Init runs the asynchronous preflight: parse existing
+//	phasePreflight   - Init runs the asynchronous preflight: parse existing
 //	                   drop-in (D-08 chroot root extraction), walk chroot
 //	                   chain (chrootcheck.WalkRoot), check for external
 //	                   sftp-server (SETUP-06 advisory).
-//	phaseReview      — admin reviews the proposed root + diff + violations,
+//	phaseReview      - admin reviews the proposed root + diff + violations,
 //	                   presses 'a' to apply, 'e' to edit the root, esc to back out.
-//	phaseEditingRoot — textinput is focused; admin types a new chroot root.
+//	phaseEditingRoot - textinput is focused; admin types a new chroot root.
 //	                   Enter validates filepath.IsAbs (T-03-06-01) and triggers
 //	                   phaseRePreflight; Esc reverts without changes.
-//	phaseRePreflight — W-05: chrootcheck.WalkRoot is re-running against the
+//	phaseRePreflight - W-05: chrootcheck.WalkRoot is re-running against the
 //	                   admin-edited root; m.violations is cleared during this
 //	                   window so stale violations from the prior root cannot
 //	                   trick the admin into applying. Apply is gated on
-//	                   phaseReview only — handleKey refuses 'a' here.
-//	phaseApplying    — txn.New(ops).Apply(ctx, txn.CanonicalApplySetupSteps(...))
+//	                   phaseReview only - handleKey refuses 'a' here.
+//	phaseApplying    - txn.New(ops).Apply(ctx, txn.CanonicalApplySetupSteps(...))
 //	                   is in flight inside an off-loop tea.Cmd. Spinner ticks.
-//	phaseDone        — apply succeeded; modal lingers ~500ms then auto-pops.
-//	phaseError       — apply failed (txn rolled back) OR preflight error;
+//	phaseDone        - apply succeeded; modal lingers ~500ms then auto-pops.
+//	phaseError       - apply failed (txn rolled back) OR preflight error;
 //	                   inline Critical errInline; Esc back to doctor.
 //
 // Single-handle ownership: the SystemOps handle is sourced from the doctor
@@ -36,12 +36,12 @@
 //     CanonicalDropIn timestamp so the rendered diff is stable across runs.
 //
 // SETUP-06 disposition: the modal surfaces an informational note when an
-// external Subsystem is detected (W-01 / RESEARCH OQ-5 — auto-fix is
+// external Subsystem is detected (W-01 / RESEARCH OQ-5 - auto-fix is
 // deliberately deferred because it would require mutating admin-owned
 // /etc/ssh/sshd_config, not just the drop-in this tool owns end-to-end).
 //
 // CI invariants: this package issues zero direct subprocess calls (all
-// shell-out routes through the sysops seam via the txn batch — see
+// shell-out routes through the sysops seam via the txn batch - see
 // scripts/check-no-exec-outside-sysops.sh). The SAFE-05 unified-diff
 // renderer uses github.com/aymanbagabas/go-udiff promoted to a direct dep
 // in plan 03-06 Task 1.
@@ -270,7 +270,7 @@ func (m *Model) Title() string { return "apply canonical config" }
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
 
-// WantsRawKeys implements nav.Screen — true while the chroot-root textinput
+// WantsRawKeys implements nav.Screen - true while the chroot-root textinput
 // is focused so the root App forwards every key (including 'q', 'a', '/')
 // into the input rather than acting on global bindings.
 func (m *Model) WantsRawKeys() bool { return m.phase == phaseEditingRoot }
@@ -341,7 +341,7 @@ func runPreflight(ctx context.Context, ops sysops.SystemOps) preflightLoadedMsg 
 
 // runRePreflight (W-05) re-walks the chroot chain against a NEW root the
 // admin chose in the edit-root flow. Returns just the new violations slice
-// — the diff / proposedBytes were already updated synchronously in
+// - the diff / proposedBytes were already updated synchronously in
 // handleKey before this Cmd was scheduled.
 func runRePreflight(ctx context.Context, ops sysops.SystemOps, newRoot string) rePreflightLoadedMsg {
 	v, err := chrootcheck.WalkRoot(ctx, ops, newRoot)
@@ -368,7 +368,7 @@ func unified(oldStr, newStr string) string {
 		return fmt.Sprintf("(diff error: %v)", err)
 	}
 	if u == "" {
-		return "(no changes — existing drop-in already canonical)"
+		return "(no changes - existing drop-in already canonical)"
 	}
 	return u
 }
@@ -401,7 +401,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		// W-05: violations now reflect the new root; allow Apply if clean.
 		if msg.err != nil {
 			m.errInline = "re-preflight error: " + msg.err.Error()
-			m.errFatal = false // recoverable — admin can edit root again
+			m.errFatal = false // recoverable - admin can edit root again
 			m.phase = phaseError
 			return m, nil
 		}
@@ -455,7 +455,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 			return m, nil
 		case "enter":
 			newRoot := strings.TrimSpace(m.ti.Value())
-			// Empty input keeps the prior root — admins who pressed 'e' but
+			// Empty input keeps the prior root - admins who pressed 'e' but
 			// then changed their mind get the same UX as Esc.
 			if newRoot == "" {
 				m.phase = phaseReview
@@ -566,7 +566,7 @@ func (m *Model) View() string {
 	case phaseRePreflight:
 		b.WriteString(m.spinner.View() + " re-validating chroot chain against new root " + m.proposedRoot + "…")
 	case phaseReview, phaseEditingRoot:
-		b.WriteString(styles.Primary.Render("M-APPLY-SETUP — canonical chroot-SFTP drop-in"))
+		b.WriteString(styles.Primary.Render("M-APPLY-SETUP - canonical chroot-SFTP drop-in"))
 		b.WriteString("\n\nchroot root:\n  ")
 		if m.phase == phaseEditingRoot {
 			b.WriteString(m.ti.View())
@@ -578,13 +578,13 @@ func (m *Model) View() string {
 			b.WriteString("  " + styles.Dim.Render("(press 'e' to edit)"))
 		}
 		if len(m.violations) > 0 {
-			b.WriteString("\n\n" + styles.Critical.Render("path-walk violations — fix before apply:"))
+			b.WriteString("\n\n" + styles.Critical.Render("path-walk violations - fix before apply:"))
 			for _, v := range m.violations {
 				b.WriteString("\n  • " + v.Reason)
 			}
 		}
 		if m.externalSftpServer {
-			b.WriteString("\n\n" + styles.Warn.Render("note: existing Subsystem points at external sftp-server (SETUP-06 advisory only — RESEARCH OQ-5 deferred auto-fix). The canonical Match Group ForceCommand internal-sftp will override at connection time for sftp-jailer-group users; consider removing the external Subsystem entry from /etc/ssh/sshd_config manually."))
+			b.WriteString("\n\n" + styles.Warn.Render("note: existing Subsystem points at external sftp-server (SETUP-06 advisory only - RESEARCH OQ-5 deferred auto-fix). The canonical Match Group ForceCommand internal-sftp will override at connection time for sftp-jailer-group users; consider removing the external Subsystem entry from /etc/ssh/sshd_config manually."))
 		}
 		b.WriteString("\n\ndiff (SAFE-05):\n")
 		b.WriteString(m.diffText)
@@ -592,7 +592,7 @@ func (m *Model) View() string {
 	case phaseApplying:
 		b.WriteString(m.spinner.View() + " applying canonical config (backup → write → sshd -t → reload → verify)…")
 	case phaseDone:
-		b.WriteString(styles.Success.Render("✓ canonical config applied — sshd reloaded."))
+		b.WriteString(styles.Success.Render("✓ canonical config applied - sshd reloaded."))
 	case phaseError:
 		b.WriteString(styles.Critical.Render(m.errInline))
 		b.WriteString("\n\n[esc] back to doctor")

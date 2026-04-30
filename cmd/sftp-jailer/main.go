@@ -46,7 +46,7 @@ const defaultChrootRoot = "/srv/sftp-jailer"
 
 // defaultSFTPPort is the literal that M-ADD-RULE renders into the
 // proposed `ufw insert 1 allow proto tcp from <src> to any port <port>`
-// command. Phase 4 v1 hard-codes "22" — sftp-jailer assumes the standard
+// command. Phase 4 v1 hard-codes "22" - sftp-jailer assumes the standard
 // OpenSSH port. Future phases (D-FW-PORT) may parse Port from
 // sshd_config.d/*.conf, at which point this becomes a fallback.
 const defaultSFTPPort = "22"
@@ -114,7 +114,7 @@ func rootCmd() *cobra.Command {
 			doctorCmd(),
 			observeRunCmd(),          // Phase 2 plan 02-02
 			purgeSshdCleanupCmd(),    // Phase 5 plan 05-03 (Hidden:true)
-			initDBCmd(),              // Phase 5 plan 05-07 (Hidden:true) — DIST-04 SC3 gap closure
+			initDBCmd(),              // Phase 5 plan 05-07 (Hidden:true) - DIST-04 SC3 gap closure
 		},
 	})
 }
@@ -140,7 +140,7 @@ func versionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print version and exit",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Printf("sftp-jailer %s — %s\n", version.Version, version.ProjectURL)
+			fmt.Printf("sftp-jailer %s - %s\n", version.Version, version.ProjectURL)
 			return nil
 		},
 	}
@@ -187,7 +187,7 @@ var observationsDBPath = "/var/lib/sftp-jailer/observations.db"
 // configFilePath is the canonical on-disk YAML path for sftp-jailer's own
 // settings (D-07 / OBS-05). The S-SETTINGS screen reads + atomically
 // rewrites this file; observe-run reads it via config.Load. Variable (not
-// const) for symmetry with observationsDBPath — tests can override if a
+// const) for symmetry with observationsDBPath - tests can override if a
 // future test seam needs it. Same path is also hardcoded in
 // cmd/sftp-jailer/observe.go's --config flag default; both must stay in
 // sync.
@@ -206,25 +206,25 @@ var observerCursorPath = "/var/lib/sftp-jailer/observer.cursor"
 //
 // Bootstrap ownership (plan 02-04): this function constructs the full
 // production graph that wave-3+ feature plans extend by adding ONE
-// `home.SetXFactory(...)` line each — they do NOT modify the bootstrap.
+// `home.SetXFactory(...)` line each - they do NOT modify the bootstrap.
 //   - 02-05 adds home.SetFirewallFactory(...)
 //   - 02-06 adds home.SetLogsFactory(...)    (also captures `p` for goroutine Send)
 //   - 02-07 adds home.SetSettingsFactory(...)
 //   - 02-08 wires logsscreen.SetObserveRunFactory(...) (different shape)
 //   - 04-05 adds firewallscreen.SetAddRuleFactory(...) and
-//     userdetail.SetAddRuleFactory(...) — both inject an M-ADD-RULE
+//     userdetail.SetAddRuleFactory(...) - both inject an M-ADD-RULE
 //     constructor that captures the per-process *revert.Watcher (D-S04-04
 //     singleton: exactly one Watcher per TUI process so the 3-min revert
 //     state is shared across modals).
 //   - 04-06 adds firewallscreen.SetDeleteRuleFactory(...) and
-//     usersscreen.SetDeleteUserFwRulesFactory(...) — both inject an
+//     usersscreen.SetDeleteUserFwRulesFactory(...) - both inject an
 //     M-DELETE-RULE constructor sharing the same *revert.Watcher
 //     singleton. The firewallscreen factory dispatches by mode
 //     (ModeByID for 'd', ModeBySource for 's'); the usersscreen
 //     factory always builds ModeByUser scoped to the selected user
 //     (W1 keybind deviation: uppercase 'D' on S-USERS reserves
 //     lowercase 'd' for Phase 3 03-08a M-DELETE-USER).
-//   - 04-08 adds home.SetLockdownFactory(...) — injects an
+//   - 04-08 adds home.SetLockdownFactory(...) - injects an
 //     S-LOCKDOWN constructor that captures the live ops, the
 //     per-process *revert.Watcher singleton, a freshly-built
 //     lockdown.Generator (reads the observation DB through the
@@ -257,7 +257,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// Open the observation DB (read pool + single-conn writer split). The
 	// DB file may not yet exist on a fresh install; sqlite auto-creates it
 	// and Migrate brings the schema up to ExpectedSchemaVersion. A nonzero
-	// open error is fatal — without the DB the users / logs / firewall
+	// open error is fatal - without the DB the users / logs / firewall
 	// screens cannot enrich rows from observations.
 	st, err := store.Open(observationsDBPath)
 	if err != nil {
@@ -277,7 +277,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// password-age legend + threshold buckets reflect what the admin set.
 	// A missing file yields config.Defaults() (180 / 365), so first launch
 	// renders sensible buckets without requiring the admin to write the
-	// file first. A genuine read/parse error is surfaced upstream — at
+	// file first. A genuine read/parse error is surfaced upstream - at
 	// that point the TUI can still launch with Defaults() to keep the
 	// degradation graceful.
 	usersCfg := config.Defaults()
@@ -301,7 +301,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// ONE *revert.Watcher per TUI process so the 3-min revert window is
 	// shared across all FW-mutation modals (M-ADD-RULE today; M-DELETE-RULE
 	// in 04-06; S-LOCKDOWN commit in 04-08). The watcher's on-disk pointer
-	// at /var/lib/sftp-jailer/revert.active survives crashes — the Restore
+	// at /var/lib/sftp-jailer/revert.active survives crashes - the Restore
 	// flow on next launch reloads pending revert state.
 	revertWatcher := revert.New(ops)
 
@@ -330,12 +330,12 @@ func runTUI(cmd *cobra.Command, args []string) error {
 				"sftp-jailer: warning: revert.Restore failed: %v (continuing without revert state)\n", err)
 		case fired:
 			fmt.Fprintf(os.Stderr,
-				"sftp-jailer: prior revert window fired before this launch — pre-change ufw rules were restored by the systemd unit\n")
+				"sftp-jailer: prior revert window fired before this launch - pre-change ufw rules were restored by the systemd unit\n")
 		}
 		restoreCancel()
 	}
 
-	// Factory injections — sorted alphabetically by screen name so future
+	// Factory injections - sorted alphabetically by screen name so future
 	// wave plans can insert their own line without merge conflict noise.
 	firewallscreen.SetAddRuleFactory(func() nav.Screen {
 		m := firewallrule.New(ops, revertWatcher, defaultSFTPPort, "")
@@ -344,7 +344,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	})
 	// Plan 04-06: M-DELETE-RULE factory dispatches by mode. ModeByID
 	// receives the firewall.Rule selected on S-FIREWALL; ModeBySource
-	// receives the source-CIDR string ("" in v1 — modal renders the
+	// receives the source-CIDR string ("" in v1 - modal renders the
 	// no-matches state). ModeByUser is reachable via the per-user
 	// factory below (usersscreen.SetDeleteUserFwRulesFactory).
 	firewallscreen.SetDeleteRuleFactory(func(mode firewallrule.DeleteMode, payload interface{}) nav.Screen {
@@ -370,16 +370,16 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// Plan 04-08: capital `L` on home opens S-LOCKDOWN. The factory
 	// closure constructs a fresh model per push so each navigation
 	// re-reads the observation DB + firewall state. Captures:
-	//   - ops             — sysops.SystemOps for `who`, ufw, systemctl, ip
-	//   - revertWatcher   — per-process SAFE-04 singleton (D-S04-04)
-	//   - lockdown.NewGenerator(queries) — proposal generator (LOCK-02)
+	//   - ops             - sysops.SystemOps for `who`, ufw, systemctl, ip
+	//   - revertWatcher   - per-process SAFE-04 singleton (D-S04-04)
+	//   - lockdown.NewGenerator(queries) - proposal generator (LOCK-02)
 	//     constructed inside the closure so each push gets a fresh
 	//     instance; the Generator is stateless beyond its queries
 	//     handle, so this is cheap.
-	//   - usersEnum       — sftp-jailer-managed user enumerator (shared
+	//   - usersEnum       - sftp-jailer-managed user enumerator (shared
 	//     with S-USERS, S-SETTINGS, etc.)
-	//   - defaultSFTPPort — Phase 4 v1 hard-coded "22"
-	//   - usersCfg.LockdownProposalWindowDays — koanf-loaded window
+	//   - defaultSFTPPort - Phase 4 v1 hard-coded "22"
+	//   - usersCfg.LockdownProposalWindowDays - koanf-loaded window
 	//     (D-L0204-01); defaults to 90 if config absent (config.Defaults).
 	// SetStore registers the *store.Queries handle for FW-08 mirror
 	// rebuild post-commit (W2 best-effort).
@@ -430,7 +430,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	//   - tea.WithAltScreen is not a ProgramOption in v2; alt-screen is set
 	//     via v.AltScreen = true in the root View() (see internal/tui/app).
 	//   - Panic catching is default in v2; there is no WithCatchPanics.
-	//     To disable it use tea.WithoutCatchPanics() — we want the default.
+	//     To disable it use tea.WithoutCatchPanics() - we want the default.
 	p := tea.NewProgram(a)
 
 	// M-OBSERVE wiring (plan 02-08): the observerun modal needs the
@@ -438,7 +438,7 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// Pattern 4). Captured here AFTER the program is constructed above
 	// and BEFORE p.Run. This is structurally different from the
 	// home.SetXFactory wiring above because the dependency graph is
-	// asymmetric — only M-OBSERVE needs to push events back into the
+	// asymmetric - only M-OBSERVE needs to push events back into the
 	// program from a goroutine.
 	observeRunOpts := sysops.ObserveRunSubprocessOpts{
 		// SelfPath empty → ObserveRunStream resolves os.Executable() at runtime.

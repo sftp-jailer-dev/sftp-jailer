@@ -1,4 +1,4 @@
-// Package logsscreen tests for S-LOGS — wave-5 / plan 02-06.
+// Package logsscreen tests for S-LOGS - wave-5 / plan 02-06.
 //
 // Mirrors the S-USERS / S-FIREWALL test shape (key helper + nav.Screen
 // compile-time check + LoadXForTest seam) per UI-SPEC §"Async / Loading
@@ -40,9 +40,9 @@ func keyPress(s string) tea.KeyPressMsg {
 	return tea.KeyPressMsg(tea.Key{Code: r, Text: s})
 }
 
-// --- Task 1 — RenderDetail tests ---------------------------------------
+// --- Task 1 - RenderDetail tests ---------------------------------------
 
-// TestRenderDetail_full_event — every label must appear in the rendered
+// TestRenderDetail_full_event - every label must appear in the rendered
 // output for a fully-populated Event.
 func TestRenderDetail_full_event(t *testing.T) {
 	e := store.Event{
@@ -69,7 +69,7 @@ func TestRenderDetail_full_event(t *testing.T) {
 	}
 }
 
-// TestRenderDetail_truncates_safely — a very long raw MESSAGE must not
+// TestRenderDetail_truncates_safely - a very long raw MESSAGE must not
 // cause a panic and must be present in the output (we soft-wrap; hard
 // truncation lives at the parent View layer).
 func TestRenderDetail_truncates_safely(t *testing.T) {
@@ -84,16 +84,16 @@ func TestRenderDetail_truncates_safely(t *testing.T) {
 	})
 }
 
-// TestRenderDetail_word_after_tier — UI-SPEC line 444: tier line shows
+// TestRenderDetail_word_after_tier - UI-SPEC line 444: tier line shows
 // the word followed by the glyph (e.g. "success ✓").
 func TestRenderDetail_word_after_tier(t *testing.T) {
 	e := store.Event{Tier: "success"}
 	require.Contains(t, logsscreen.RenderDetail(e, 60), "success ✓")
 }
 
-// --- Task 2 — S-LOGS screen tests --------------------------------------
+// --- Task 2 - S-LOGS screen tests --------------------------------------
 
-// TestLogsScreen_implements_nav_Screen — compile-time check that *Model
+// TestLogsScreen_implements_nav_Screen - compile-time check that *Model
 // satisfies nav.Screen plus runtime checks on Title / KeyMap / WantsRawKeys.
 func TestLogsScreen_implements_nav_Screen(t *testing.T) {
 	var s nav.Screen = logsscreen.New(nil, nil)
@@ -105,13 +105,13 @@ func TestLogsScreen_implements_nav_Screen(t *testing.T) {
 	require.NotEmpty(t, km.FullHelp())
 }
 
-// TestLogsScreen_loading_state — initial View shows the loading copy.
+// TestLogsScreen_loading_state - initial View shows the loading copy.
 func TestLogsScreen_loading_state(t *testing.T) {
 	m := logsscreen.New(nil, nil)
 	require.Contains(t, m.View(), "loading events…")
 }
 
-// TestLogsScreen_LoadEventsForTest_renders_list — feeding events via the
+// TestLogsScreen_LoadEventsForTest_renders_list - feeding events via the
 // test seam bypasses Init+queries; View must render every supplied user.
 func TestLogsScreen_LoadEventsForTest_renders_list(t *testing.T) {
 	m := logsscreen.New(nil, nil)
@@ -127,7 +127,7 @@ func TestLogsScreen_LoadEventsForTest_renders_list(t *testing.T) {
 	}
 }
 
-// TestLogsScreen_LoadStatusForTest_healthy — Schema vN, event count,
+// TestLogsScreen_LoadStatusForTest_healthy - Schema vN, event count,
 // counter count, "X ago"/"now"/"seconds" relative time.
 func TestLogsScreen_LoadStatusForTest_healthy(t *testing.T) {
 	m := logsscreen.New(nil, nil)
@@ -148,10 +148,10 @@ func TestLogsScreen_LoadStatusForTest_healthy(t *testing.T) {
 		"healthy status row must include a humanize-style relative time fragment; got %q", v)
 }
 
-// TestLogsScreen_LoadStatusForTest_stale — LastSuccessNs ≥14 days old →
+// TestLogsScreen_LoadStatusForTest_stale - LastSuccessNs ≥14 days old →
 // status row rendered in the stale (Warn) styling per UI-SPEC line 282.
 // We assert (a) the relative-time fragment is present (humanize.Time
-// chooses "weeks"/"days"/"month" depending on the exact delta — we
+// chooses "weeks"/"days"/"month" depending on the exact delta - we
 // accept any of those rather than pin a specific literal) and (b) the
 // healthy "Schema v" segment is NOT rendered in the Primary token (the
 // stale path renders the whole row in Warn, so the Primary-coloured
@@ -177,7 +177,7 @@ func TestLogsScreen_LoadStatusForTest_stale(t *testing.T) {
 	require.Contains(t, v, "Schema v2", "status row body must include the schema literal")
 }
 
-// TestLogsScreen_LoadStatusForTest_schema_drift — SchemaVersion >
+// TestLogsScreen_LoadStatusForTest_schema_drift - SchemaVersion >
 // ExpectedSchemaVersion → drift message rendered with the Critical
 // styling and the literal apt-upgrade hint.
 func TestLogsScreen_LoadStatusForTest_schema_drift(t *testing.T) {
@@ -194,7 +194,7 @@ func TestLogsScreen_LoadStatusForTest_schema_drift(t *testing.T) {
 	require.Contains(t, v, "apt upgrade sftp-jailer")
 }
 
-// TestLogsScreen_LoadStatusForTest_never_run — LastSuccessNs == 0 →
+// TestLogsScreen_LoadStatusForTest_never_run - LastSuccessNs == 0 →
 // renders "last run never" verbatim.
 func TestLogsScreen_LoadStatusForTest_never_run(t *testing.T) {
 	m := logsscreen.New(nil, nil)
@@ -205,7 +205,7 @@ func TestLogsScreen_LoadStatusForTest_never_run(t *testing.T) {
 	require.Contains(t, m.View(), "last run never")
 }
 
-// TestLogsScreen_split_pane_wide_mode — width=140 (≥120) triggers the
+// TestLogsScreen_split_pane_wide_mode - width=140 (≥120) triggers the
 // split layout; the detail pane labels must appear.
 func TestLogsScreen_split_pane_wide_mode(t *testing.T) {
 	m := logsscreen.New(nil, nil)
@@ -219,7 +219,7 @@ func TestLogsScreen_split_pane_wide_mode(t *testing.T) {
 	require.Contains(t, v, "raw MESSAGE:", "wide-mode View must include raw MESSAGE label; got %q", v)
 }
 
-// TestLogsScreen_list_only_narrow_mode — width<120 → no detail-pane
+// TestLogsScreen_list_only_narrow_mode - width<120 → no detail-pane
 // labels visible; list still rendered.
 func TestLogsScreen_list_only_narrow_mode(t *testing.T) {
 	m := logsscreen.New(nil, nil)
@@ -233,7 +233,7 @@ func TestLogsScreen_list_only_narrow_mode(t *testing.T) {
 	require.Contains(t, v, "alice", "narrow-mode View must still render the list; got %q", v)
 }
 
-// TestLogsScreen_tier_filter_cycle — pressing `t` repeatedly cycles
+// TestLogsScreen_tier_filter_cycle - pressing `t` repeatedly cycles
 // through all → success → targeted → noise → unmatched → all. The
 // footer renders the active tier label so View() can be substring-asserted.
 func TestLogsScreen_tier_filter_cycle(t *testing.T) {
@@ -249,7 +249,7 @@ func TestLogsScreen_tier_filter_cycle(t *testing.T) {
 	}
 }
 
-// TestLogsScreen_copy_emits_SetClipboard — `c` on a loaded event with
+// TestLogsScreen_copy_emits_SetClipboard - `c` on a loaded event with
 // non-empty RawJSON emits a tea.BatchMsg containing tea.SetClipboard
 // with the RawJSON; toast announces the OSC 52 copy.
 func TestLogsScreen_copy_emits_SetClipboard(t *testing.T) {
@@ -278,7 +278,7 @@ func TestLogsScreen_copy_emits_SetClipboard(t *testing.T) {
 	require.Contains(t, m.View(), "copied raw record via OSC 52")
 }
 
-// TestLogsScreen_F_invokes_ExecProcess_via_sysops_helper — pressing `F`
+// TestLogsScreen_F_invokes_ExecProcess_via_sysops_helper - pressing `F`
 // must call m.ops.JournalctlFollowCmd("ssh"). Asserted via the Fake's
 // Calls log: after the F handler runs, Calls records a JournalctlFollowCmd
 // invocation with arg "ssh".
@@ -300,7 +300,7 @@ func TestLogsScreen_F_invokes_ExecProcess_via_sysops_helper(t *testing.T) {
 	require.True(t, found, "Fake.Calls must record a JournalctlFollowCmd call; got %+v", fake.Calls)
 }
 
-// TestLogsScreen_empty_state — zero events AND DetailCount == 0 → the
+// TestLogsScreen_empty_state - zero events AND DetailCount == 0 → the
 // empty-state copy from UI-SPEC line 359 is rendered verbatim.
 func TestLogsScreen_empty_state(t *testing.T) {
 	m := logsscreen.New(nil, nil)
@@ -309,7 +309,7 @@ func TestLogsScreen_empty_state(t *testing.T) {
 	require.Contains(t, m.View(), "No events recorded yet.")
 }
 
-// TestLogsScreen_db_error_state — UI-SPEC line 360 copy when load
+// TestLogsScreen_db_error_state - UI-SPEC line 360 copy when load
 // surfaces an error.
 func TestLogsScreen_db_error_state(t *testing.T) {
 	m := logsscreen.New(nil, nil)
@@ -317,7 +317,7 @@ func TestLogsScreen_db_error_state(t *testing.T) {
 	require.Contains(t, m.View(), "Could not open observation DB:")
 }
 
-// TestLogsScreen_keymap_bindings — assert the S-LOGS bindings list per
+// TestLogsScreen_keymap_bindings - assert the S-LOGS bindings list per
 // must_haves.
 func TestLogsScreen_keymap_bindings(t *testing.T) {
 	km := logsscreen.DefaultKeyMap()
@@ -346,7 +346,7 @@ func TestLogsScreen_keymap_bindings(t *testing.T) {
 	}
 }
 
-// TestLogsScreen_esc_pops — esc/q pops back to home.
+// TestLogsScreen_esc_pops - esc/q pops back to home.
 func TestLogsScreen_esc_pops(t *testing.T) {
 	m := logsscreen.New(nil, nil)
 	m.LoadEventsForTest([]store.Event{{ID: 1, User: "alice"}}, nil)
@@ -357,7 +357,7 @@ func TestLogsScreen_esc_pops(t *testing.T) {
 	require.Equal(t, nav.Pop, nm.Intent)
 }
 
-// TestLogsScreen_r_placeholder_when_no_factory — pressing `r` with no
+// TestLogsScreen_r_placeholder_when_no_factory - pressing `r` with no
 // observerunFactory registered shows a placeholder toast. In production the
 // factory is wired by main.go (plan 02-08); this asserts the safety net for
 // callers that construct the screen without bootstrapping the factory.
@@ -369,10 +369,10 @@ func TestLogsScreen_r_placeholder_when_no_factory(t *testing.T) {
 	require.Contains(t, m.View(), "observe-run modal coming in plan 02-08")
 }
 
-// TestLogsScreen_consumes_nav_StatusRefreshMsg — sending a
+// TestLogsScreen_consumes_nav_StatusRefreshMsg - sending a
 // nav.StatusRefreshMsg must trigger a re-issue of the status query
 // (returned tea.Cmd is non-nil even when queries==nil because we still
-// emit the loadStatus closure shape — but to keep the test deterministic
+// emit the loadStatus closure shape - but to keep the test deterministic
 // we assert that the cmd is non-nil only when queries is set; with nil
 // queries, the cmd is nil. Either way the message must NOT panic.)
 func TestLogsScreen_consumes_nav_StatusRefreshMsg(t *testing.T) {
@@ -383,27 +383,27 @@ func TestLogsScreen_consumes_nav_StatusRefreshMsg(t *testing.T) {
 	})
 }
 
-// TestLogsScreen_consumes_nav_ObserveRunCompleteToast — sending a
-// nav.ObserveRunCompleteToast must surface the "observe-run done — N events,
+// TestLogsScreen_consumes_nav_ObserveRunCompleteToast - sending a
+// nav.ObserveRunCompleteToast must surface the "observe-run done - N events,
 // M counters, K dropped" toast in View().
 func TestLogsScreen_consumes_nav_ObserveRunCompleteToast(t *testing.T) {
 	m := logsscreen.New(nil, nil)
 	m.LoadEventsForTest([]store.Event{{ID: 1, User: "alice"}}, nil)
 	_, _ = m.Update(nav.ObserveRunCompleteToast{Events: 5, Counters: 1, Dropped: 0})
-	require.Contains(t, m.View(), "observe-run done — 5 events, 1 counters, 0 dropped")
+	require.Contains(t, m.View(), "observe-run done - 5 events, 1 counters, 0 dropped")
 }
 
-// TestLogsScreen_consumes_nav_ObserveRunCancelledToast — sending a
-// nav.ObserveRunCancelledToast must surface the "observe-run cancelled — N
+// TestLogsScreen_consumes_nav_ObserveRunCancelledToast - sending a
+// nav.ObserveRunCancelledToast must surface the "observe-run cancelled - N
 // events ingested" toast in View() (UI-SPEC line 306).
 func TestLogsScreen_consumes_nav_ObserveRunCancelledToast(t *testing.T) {
 	m := logsscreen.New(nil, nil)
 	m.LoadEventsForTest([]store.Event{{ID: 1, User: "alice"}}, nil)
 	_, _ = m.Update(nav.ObserveRunCancelledToast{Count: 3})
-	require.Contains(t, m.View(), "observe-run cancelled — 3 events ingested")
+	require.Contains(t, m.View(), "observe-run cancelled - 3 events ingested")
 }
 
-// --- Plan 02-10 — S-LOGS search-filter wire-up tests -------------------
+// --- Plan 02-10 - S-LOGS search-filter wire-up tests -------------------
 //
 // These four tests close the SC #2 BLOCKER from 02-VERIFICATION.md
 // (Gap 1): the `/` search widget today activates and accepts keystrokes
@@ -413,7 +413,7 @@ func TestLogsScreen_consumes_nav_ObserveRunCancelledToast(t *testing.T) {
 // visible row, and the header must surface `F of N events` whenever a
 // filter is active.
 
-// TestLogsScreen_search_narrows_visible_events_by_user — typing into the
+// TestLogsScreen_search_narrows_visible_events_by_user - typing into the
 // active `/` widget restricts which rows the View renders. After typing
 // `alice`, the rendered View must contain `alice` and exclude `bob`
 // and `xerxes`, and the header must read `1 of 3 events` (NOT
@@ -450,7 +450,7 @@ func TestLogsScreen_search_narrows_visible_events_by_user(t *testing.T) {
 		"header must show `1 of 3 events` when filter is active; got %q", v)
 }
 
-// TestLogsScreen_search_narrows_by_source_ip_and_event_type_and_tier —
+// TestLogsScreen_search_narrows_by_source_ip_and_event_type_and_tier -
 // the corpus covers all four columns, so an admin typing `192`,
 // `pubkey`, or `targeted` gets the expected narrowing without a
 // per-dimension filter pill (UI-SPEC line 235).
@@ -524,13 +524,13 @@ func TestLogsScreen_search_narrows_by_source_ip_and_event_type_and_tier(t *testi
 	})
 }
 
-// TestLogsScreen_search_clamps_cursor_to_filtered_length — when the
+// TestLogsScreen_search_clamps_cursor_to_filtered_length - when the
 // admin has the cursor on a row, then activates search and types a
 // query that shrinks the result, the cursor must clamp to within the
 // filtered slice. While search is active, the rendered View must
 // contain only the matching row(s). After deactivating search and
 // pressing `c`, the SetClipboard sub-cmd must carry the formerly-first
-// (now sole-visible-during-search) row's RawJSON — proving the cursor
+// (now sole-visible-during-search) row's RawJSON - proving the cursor
 // clamped to 0 during typing rather than retaining its pre-search
 // out-of-bounds index.
 func TestLogsScreen_search_clamps_cursor_to_filtered_length(t *testing.T) {
@@ -559,15 +559,15 @@ func TestLogsScreen_search_clamps_cursor_to_filtered_length(t *testing.T) {
 	// While search is active, the rendered View must contain `alice`
 	// and exclude `eve` (the cursor row before search activated). The
 	// substring `eve ` (with the trailing space from the user-column
-	// padding) is a tighter assertion than bare `eve` — `events` in
+	// padding) is a tighter assertion than bare `eve` - `events` in
 	// the header would otherwise match.
 	v := m.View()
 	require.Contains(t, v, "alice     ", "during active search, View must contain the `alice` row; got %q", v)
 	require.NotContains(t, v, "eve       ", "during active search, View must NOT contain the `eve` row; got %q", v)
 	require.NotContains(t, v, "10.0.0.5", "during active search, View must NOT contain eve's source IP; got %q", v)
 	require.Contains(t, v, "1 of 5 events", "header must show `1 of 5 events`; got %q", v)
-	// Deactivate search via esc — this clears the query and restores
-	// the full slice — but the cursor must already have been clamped
+	// Deactivate search via esc - this clears the query and restores
+	// the full slice - but the cursor must already have been clamped
 	// to 0 during typing (when the filtered slice shrank to length 1).
 	// After esc, m.filtered = m.events again, but m.cursor is 0, so
 	// pressing `c` copies the first row's RawJSON, not the fifth's.
@@ -590,12 +590,12 @@ func TestLogsScreen_search_clamps_cursor_to_filtered_length(t *testing.T) {
 			"`c` after search-shrink must NOT copy the pre-search cursor row; got %q", s)
 	}
 	require.True(t, found,
-		"batch must include a clipboard sub-cmd carrying the first row's RawJSON (`alice`) — proves the cursor clamped to 0 during search")
+		"batch must include a clipboard sub-cmd carrying the first row's RawJSON (`alice`) - proves the cursor clamped to 0 during search")
 }
 
-// TestLogsScreen_search_composes_with_tier_filter — proves that SQL
+// TestLogsScreen_search_composes_with_tier_filter - proves that SQL
 // tier filter (`t`) and client-side fuzzy search (`/`) compose: SQL
-// narrows 4 events down to 2 (tier=critical) — then search narrows
+// narrows 4 events down to 2 (tier=critical) - then search narrows
 // 2 → 1. Closes the SC #2 missing-coverage second bullet from
 // 02-VERIFICATION.md.
 func TestLogsScreen_search_composes_with_tier_filter(t *testing.T) {
@@ -606,7 +606,7 @@ func TestLogsScreen_search_composes_with_tier_filter(t *testing.T) {
 	// production tier is one of {success, targeted, noise, unmatched};
 	// we use `targeted` here as the narrowing tier (mirrors the plan
 	// language; the actual classifier emits these four).
-	// Load only the 2 `targeted` rows directly via the test seam — this
+	// Load only the 2 `targeted` rows directly via the test seam - this
 	// short-circuits the SQL round-trip (the plan accepts this idiom).
 	m.LoadEventsForTest([]store.Event{
 		{ID: 3, TsUnixNs: now, Tier: "targeted", User: "carol", SourceIP: "192.168.1.1", EventType: "auth-fail"},

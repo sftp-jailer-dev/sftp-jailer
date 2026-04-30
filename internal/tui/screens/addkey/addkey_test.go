@@ -1,4 +1,4 @@
-// Package addkey tests for M-ADD-KEY — covers the phase state machine,
+// Package addkey tests for M-ADD-KEY - covers the phase state machine,
 // parser dispatch (paste / gh: / file:), gh: pre-fetch validation, the
 // mandatory review table (D-20: even single-key gh: fetches go through
 // review), the three-step verifier closure (D-21 steps 1+2 / 3 / 4), and
@@ -82,7 +82,7 @@ func driveBatch(cmd tea.Cmd, visit func(tea.Msg)) {
 	pc := reflect.ValueOf(cmd).Pointer()
 	if fn := runtime.FuncForPC(pc); fn != nil {
 		if strings.Contains(strings.ToLower(fn.Name()), "tick") {
-			return // skip tea.Tick — would block on real wallclock
+			return // skip tea.Tick - would block on real wallclock
 		}
 	}
 	msg := cmd()
@@ -137,7 +137,7 @@ func TestAddKey_New_starts_in_phaseInput(t *testing.T) {
 	t.Parallel()
 	m := addkey.New(nil, testChrootRoot, testUsername)
 	require.Equal(t, "input", m.PhaseForTest())
-	require.Equal(t, "add ssh key — alice", m.Title())
+	require.Equal(t, "add ssh key - alice", m.Title())
 }
 
 // 2. WantsRawKeys is true in input + error phases (textarea typing); false
@@ -213,7 +213,7 @@ func TestAddKey_attemptParse_empty_textarea_surfaces_no_keys_error(t *testing.T)
 // reject before FetchGitHub fires, so request count stays at 0.
 //
 // NOT parallel: keys.SetGithubBaseURLForTest mutates a package-level
-// var that all gh: tests share — running them in parallel would race.
+// var that all gh: tests share - running them in parallel would race.
 func TestAddKey_attemptParse_gh_user_invalid_charset_rejects_before_fetch(t *testing.T) {
 	var mu sync.Mutex
 	requests := 0
@@ -336,7 +336,7 @@ func TestAddKey_attemptParse_gh_user_429_surfaces_retry_after_verbatim(t *testin
 	require.Equal(t, "error", m.PhaseForTest())
 	require.Contains(t, m.ErrInlineForTest(), "60",
 		"Retry-After header value must surface verbatim in errInline; got %q", m.ErrInlineForTest())
-	// Surface from FetchGitHub: message contains "rate-limited (429)" — assert one or the other to be robust.
+	// Surface from FetchGitHub: message contains "rate-limited (429)" - assert one or the other to be robust.
 	require.True(t,
 		strings.Contains(m.ErrInlineForTest(), "rate-limited") ||
 			strings.Contains(m.ErrInlineForTest(), "429"),
@@ -386,7 +386,7 @@ func TestAddKey_attemptParse_file_path_rejects_dotdot_traversal_CR_01(t *testing
 				"path with .. must land in error phase BEFORE any ReadFile")
 			require.Contains(t, m.ErrInlineForTest(), "..",
 				"error must mention the traversal pattern")
-			// Must never have called ReadFile — Fake records all calls.
+			// Must never have called ReadFile - Fake records all calls.
 			for _, c := range f.Calls {
 				require.NotEqual(t, "ReadFile", c.Method,
 					"CR-01: traversal path must be rejected BEFORE any ReadFile call")
@@ -528,7 +528,7 @@ func TestAddKey_review_footer_count_reflects_selection(t *testing.T) {
 }
 
 // 14. **D-20 mandate**: gh:user returning ONE key STILL goes through the
-// review table — never auto-commits on fetch. Defeats the gh-account-
+// review table - never auto-commits on fetch. Defeats the gh-account-
 // compromise threat (T-03-08b-03).
 //
 // NOT parallel: keys.SetGithubBaseURLForTest mutates a package-level var.
@@ -641,7 +641,7 @@ func TestAddKey_attemptCommit_no_selected_rows_blocks_with_inline_error(t *testi
 
 // 17. **D-21 step 1+2 rollback**: chrootcheck violation (.ssh dir mode
 // 0750 instead of 0700) triggers verifier failure (step 1+2 fires
-// BEFORE step 3, so Raw doesn't need to be valid here — but we use a
+// BEFORE step 3, so Raw doesn't need to be valid here - but we use a
 // valid line anyway for symmetry with tests 15+18). Txn rolls back the
 // authorized_keys write, errInline contains "StrictModes failed" and the
 // fix hint mentioning "0700".
@@ -735,16 +735,16 @@ func TestAddKey_attemptCommit_sshd_t_user_context_failure_rolls_back(t *testing.
 // 19. **D-21 step 3 rollback**: post-write re-parse failure (the file
 // content fails keys.Parse). We script via the new
 // Fake.ReadFileResponses pop-queue if available; if not, skip the test
-// (documented gap — see plan note in task 1 description).
+// (documented gap - see plan note in task 1 description).
 //
 // To force step 3 failure deterministically without adding a new fake
 // hook, we override the verifier on a ReadFile-returning-bad-bytes path:
 // we pre-seed the authorized_keys path with content that is valid for
 // the prior-read (Apply step) but the WriteAuthorizedKeys hook
-// overwrites the same Files[path] entry with the new bytes — so by the
+// overwrites the same Files[path] entry with the new bytes - so by the
 // time the verifier reads, it sees the NEW bytes. To break re-parse, we
 // inject a row whose Raw bytes are intentionally malformed
-// authorized_keys content (e.g. "garbage\n") — the verifier's
+// authorized_keys content (e.g. "garbage\n") - the verifier's
 // re-read+keys.Parse will choke on it.
 func TestAddKey_attemptCommit_post_write_re_parse_failure_rolls_back(t *testing.T) {
 	stubUserLookup(t)
@@ -782,7 +782,7 @@ func TestAddKey_attemptCommit_post_write_re_parse_failure_rolls_back(t *testing.
 }
 
 // 20. Successful commit emits phase=done; the cmd schedules an autoPop
-// tick that we identify by name (we don't invoke it — would block).
+// tick that we identify by name (we don't invoke it - would block).
 //
 // NOT parallel: chrootcheck.SetUserLookupForTest mutates a package-level var.
 func TestAddKey_attemptCommit_success_emits_done_phase_then_autoPopMsg(t *testing.T) {
@@ -799,7 +799,7 @@ func TestAddKey_attemptCommit_success_emits_done_phase_then_autoPopMsg(t *testin
 
 	driveBatch(cmd, func(msg tea.Msg) {
 		_, post := m.Update(msg)
-		// post (from handleCommitted) carries flash + auto-pop tick — we
+		// post (from handleCommitted) carries flash + auto-pop tick - we
 		// identify the auto-pop tick by closure name. We don't invoke it.
 		if post != nil {
 			pc := reflect.ValueOf(post).Pointer()
@@ -820,7 +820,7 @@ func TestAddKey_handleKey_esc_in_review_returns_to_input_preserving_textarea(t *
 	_, _ = m.Update(keyPress("enter"))
 	require.Equal(t, "review", m.PhaseForTest())
 
-	// Now Esc — back to input; textarea content preserved.
+	// Now Esc - back to input; textarea content preserved.
 	_, _ = m.Update(keyPress("esc"))
 	require.Equal(t, "input", m.PhaseForTest())
 	require.Equal(t, samplePub, m.TextareaValueForTest(),
@@ -868,7 +868,7 @@ func TestAddKey_review_columns_match_D20_order(t *testing.T) {
 func TestAddKey_implements_nav_Screen(t *testing.T) {
 	t.Parallel()
 	var s nav.Screen = addkey.New(nil, testChrootRoot, testUsername)
-	require.Equal(t, "add ssh key — alice", s.Title())
+	require.Equal(t, "add ssh key - alice", s.Title())
 	km := s.KeyMap()
 	require.NotNil(t, km)
 	require.NotEmpty(t, km.ShortHelp())

@@ -2,7 +2,7 @@
 // the sftp-jailer ufw rule comment schema (sftpj:v=1:user=<name>).
 //
 // The comment is the load-bearing contract for the user↔IP mapping that
-// Phase 4's progressive lockdown depends on — Phase 2 reads these comments
+// Phase 4's progressive lockdown depends on - Phase 2 reads these comments
 // to render the firewall-view reverse-lookup (FW-04), Phase 4 writes them
 // when adding allow rules (FW-02). Any regression here silently corrupts
 // that mapping.

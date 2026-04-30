@@ -1,4 +1,4 @@
-// Package firewallrule tests for M-ADD-RULE (Plan 04-05) — input
+// Package firewallrule tests for M-ADD-RULE (Plan 04-05) - input
 // validation surface (CIDR strict / promote bare IP / reject zone-id /
 // warn loopback+link-local) + locked-user constructor path +
 // WantsRawKeys phase discipline.
@@ -18,14 +18,14 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewallrule"
 )
 
-// TestAttemptParse_bare_ipv4_promotes_to_slash_32 — table-driven CIDR
+// TestAttemptParse_bare_ipv4_promotes_to_slash_32 - table-driven CIDR
 // validation per D-FW-CIDR rules (M-ADD-RULE input validation):
 //
 //   - Bare IPv4 → /32; bare IPv6 → /128.
-//   - Strict CIDR via net.ParseCIDR — rejects 300.0.0.1/24 and
+//   - Strict CIDR via net.ParseCIDR - rejects 300.0.0.1/24 and
 //     leading-zero octets and obviously malformed strings.
 //   - Empty input rejected with "source CIDR is required".
-//   - Zone-id (% suffix) rejected — link-local-with-zone is local-only.
+//   - Zone-id (% suffix) rejected - link-local-with-zone is local-only.
 func TestAttemptParse_bare_ipv4_promotes_to_slash_32(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -67,7 +67,7 @@ func TestAttemptParse_bare_ipv4_promotes_to_slash_32(t *testing.T) {
 	}
 }
 
-// TestAttemptParse_loopback_warns_but_does_not_reject — loopback IPs
+// TestAttemptParse_loopback_warns_but_does_not_reject - loopback IPs
 // produce a non-blocking warning but accept; errInline stays empty.
 func TestAttemptParse_loopback_warns_but_does_not_reject(t *testing.T) {
 	t.Parallel()
@@ -84,7 +84,7 @@ func TestAttemptParse_loopback_warns_but_does_not_reject(t *testing.T) {
 	require.Equal(t, "127.0.0.1/32", m.NormalizedSourceForTest())
 }
 
-// TestAttemptParse_link_local_warns — fe80:: addresses produce a
+// TestAttemptParse_link_local_warns - fe80:: addresses produce a
 // warning but are not rejected.
 func TestAttemptParse_link_local_warns(t *testing.T) {
 	t.Parallel()
@@ -100,7 +100,7 @@ func TestAttemptParse_link_local_warns(t *testing.T) {
 	require.Equal(t, "fe80::1/128", m.NormalizedSourceForTest())
 }
 
-// TestAttemptParse_zone_id_rejected — IPv6 with zone-id (% suffix) is
+// TestAttemptParse_zone_id_rejected - IPv6 with zone-id (% suffix) is
 // rejected as not internet-routable.
 func TestAttemptParse_zone_id_rejected(t *testing.T) {
 	t.Parallel()
@@ -113,7 +113,7 @@ func TestAttemptParse_zone_id_rejected(t *testing.T) {
 	require.Empty(t, m.NormalizedSourceForTest())
 }
 
-// TestNew_locked_user_path — when New is called with a non-empty
+// TestNew_locked_user_path - when New is called with a non-empty
 // lockedUser, userLocked is true and userField is pre-populated.
 func TestNew_locked_user_path(t *testing.T) {
 	t.Parallel()
@@ -128,7 +128,7 @@ func TestNew_locked_user_path(t *testing.T) {
 	require.Equal(t, "", mUnlocked.UserFieldForTest())
 }
 
-// TestWantsRawKeys_true_in_phaseInput_and_phaseError — D-FW-CIDR
+// TestWantsRawKeys_true_in_phaseInput_and_phaseError - D-FW-CIDR
 // requires the source-CIDR textinput to receive 'q' as a typed letter
 // (not as the global quit shortcut). WantsRawKeys must return true in
 // phaseInput AND phaseError; false in all other phases.

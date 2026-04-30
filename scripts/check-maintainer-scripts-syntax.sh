@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Enforces POSIX sh syntax validity for the Debian maintainer scripts.
 # A syntax error in postinst/prerm/postrm fails dpkg with a non-recoverable
-# state mid-install or mid-purge — `sh -n` catches the regression at PR time
+# state mid-install or mid-purge - `sh -n` catches the regression at PR time
 # instead of on a tagged-release UAT host. Run from repo root.
 # Exits 0 on clean, 1 on any violation.
 set -euo pipefail
