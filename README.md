@@ -34,7 +34,7 @@ sha256sum -c SHA256SUMS.txt --ignore-missing
 
 ```bash
 # Requires Go 1.25+.
-# DO NOT `apt install golang-go` on Ubuntu 24.04 (ships Go 1.22.2) — it cannot build this project.
+# DO NOT `apt install golang-go` on Ubuntu 24.04 (ships Go 1.22.2) - it cannot build this project.
 # Use either:
 #   • the longsleep PPA: sudo add-apt-repository ppa:longsleep/golang-backports && sudo apt install golang-1.25
 #   • or the official tarball from https://go.dev/dl/ (works on Ubuntu and Debian)
@@ -47,7 +47,7 @@ sudo apt install ./dist/sftp-jailer_<version>_<arch>.deb
 
 ## Recovery
 
-`apt purge sftp-jailer` removes everything — including the observation database at
+`apt purge sftp-jailer` removes everything - including the observation database at
 `/var/lib/sftp-jailer/observations.db`. To preserve the database before purging:
 
 ```bash
