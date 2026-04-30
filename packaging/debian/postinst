@@ -47,6 +47,23 @@ case "$1" in
         # observer.cursor and falls back to --since=7days for the first run.
         # This avoids slurping the entire journal history on a fresh box.
         install -d -m 0755 /var/lib/sftp-jailer
+
+        # DIST-04 SC3 (plan 05-07): initialize observations.db at the
+        # current schema version. The binary's `init-db` subcommand opens
+        # the store + runs Migrate idempotently. Guarded by [ -x ... ] so
+        # the script tolerates a partially-unpacked tree (mirrors the
+        # prerm purge-sshd-cleanup guard pattern). NO `|| true` —
+        # set -e propagates a real failure (sqlite open/migrate error,
+        # or schema drift on a downgrade install) so dpkg marks the
+        # configure step failed and the admin investigates. The DB at
+        # /var/lib/sftp-jailer/observations.db is created mode 0644
+        # root:root by sqlite — same ownership as the observer.service
+        # (User=root in packaging/systemd/sftp-jailer-observer.service),
+        # so subsequent observe-run writes are consistent.
+        if [ -x /usr/bin/sftp-jailer ]; then
+            /usr/bin/sftp-jailer init-db
+        fi
+
         : > /var/lib/sftp-jailer/observer.cursor
         chmod 0600 /var/lib/sftp-jailer/observer.cursor
     ;;

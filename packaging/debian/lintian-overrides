@@ -52,3 +52,14 @@ sftp-jailer: maintainer-script-calls-systemctl [prerm:49]
 # build artifact tracking; it does not affect package installation or
 # functionality. Filed upstream: goreleaser/nfpm#999.
 sftp-jailer: unknown-field Architecture-Variant
+
+# WHY: The postinst script (DIST-04 SC3 closure, plan 05-07) calls
+# /usr/bin/sftp-jailer init-db to initialize observations.db at the
+# current schema version IMMEDIATELY at install time — before the
+# systemd timer fires for the first time. The absolute path is correct
+# for the same reason as the prerm purge-sshd-cleanup invocation: the
+# script must target the installed binary, not whatever is in PATH.
+# This is the canonical Debian pattern for postinst scripts that invoke
+# the package's own binary to perform install-time initialization.
+sftp-jailer: command-with-path-in-maintainer-script /usr/bin/sftp-jailer (in test syntax) [postinst:64]
+sftp-jailer: command-with-path-in-maintainer-script /usr/bin/sftp-jailer (plain script) [postinst:64]
