@@ -45,7 +45,7 @@ jobs:
 
       # 2. Setup Go - pinned to 1.25.x per CLAUDE.md TL;DR pin list (Bubble Tea v2 floor).
       - name: Setup Go 1.25
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.25.x'
           cache: true
