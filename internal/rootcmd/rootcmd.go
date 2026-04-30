@@ -3,8 +3,8 @@
 //
 // Both cmd/sftp-jailer/main.go and cmd/gen-manpage/main.go consume Build
 // to obtain a *cobra.Command pre-wired with all visible subcommands. Hidden
-// subcommands (e.g. purge-sshd-cleanup, registered in plan 05-03) are
-// included — cobra/doc.GenManTree skips them automatically.
+// subcommands (e.g. purge-sshd-cleanup from plan 05-03 and init-db from
+// plan 05-07) are included — cobra/doc.GenManTree skips them automatically.
 //
 // Build does NOT include the runtime TUI hook (runTUI) or the SAFE-01
 // PersistentPreRunE — those are wired by cmd/sftp-jailer/main.go after
@@ -28,7 +28,8 @@ type Opts struct {
 
 	// Subcommands is the slice of subcommand factories to AddCommand onto
 	// the root. Both consumers pass the same set:
-	//   versionCmd, doctorCmd, observeRunCmd, purgeSshdCleanupCmd (added by 05-03)
+	//   versionCmd, doctorCmd, observeRunCmd, purgeSshdCleanupCmd (added by 05-03),
+	//   initDBCmd (added by 05-07, Hidden:true)
 	Subcommands []*cobra.Command
 }
 

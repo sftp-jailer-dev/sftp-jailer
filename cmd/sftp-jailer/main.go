@@ -114,6 +114,7 @@ func rootCmd() *cobra.Command {
 			doctorCmd(),
 			observeRunCmd(),          // Phase 2 plan 02-02
 			purgeSshdCleanupCmd(),    // Phase 5 plan 05-03 (Hidden:true)
+			initDBCmd(),              // Phase 5 plan 05-07 (Hidden:true) — DIST-04 SC3 gap closure
 		},
 	})
 }
