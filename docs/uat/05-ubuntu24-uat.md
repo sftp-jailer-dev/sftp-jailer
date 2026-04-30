@@ -171,7 +171,7 @@ ssh root@<vm-ip> 'sqlite3 /var/lib/sftp-jailer/observations.db "PRAGMA user_vers
 - `644 root:root`
 - `3` (matches `internal/store/store.go::ExpectedSchemaVersion`; if a future phase bumps this, update both this step and the constant in lockstep)
 
-Result: [ ] PASS  Notes: _operator fills in_
+Result: [x] PASS  Notes: 2026-04-30 ubuntu-wifi (192.168.1.187) — `exists`, `644 root:root 73728 bytes`, `PRAGMA user_version=3`. Verified via Python stdlib sqlite3 (sqlite3 CLI not installed); tables noise_counters/observation_runs/observations/sqlite_sequence/user_ips present. Captured before observer.timer first fire.
 
 ---
 

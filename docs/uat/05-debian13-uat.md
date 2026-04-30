@@ -177,7 +177,7 @@ ssh root@192.168.1.170 'sqlite3 /var/lib/sftp-jailer/observations.db "PRAGMA use
 - `644 root:root`
 - `3` (must match Ubuntu 2.4; cross-platform schema parity is a portability invariant)
 
-Result: [ ] PASS  Notes: _operator fills in; record any portability delta (e.g., Debian 13's sqlite3 binary version vs Ubuntu's, or any ownership default that differs)_
+Result: [x] PASS  Notes: 2026-04-30 debian13 (192.168.1.170) — `exists`, `644 root:root 73728 bytes`, `PRAGMA user_version=3`. Cross-platform parity with Ubuntu 2.4: byte-identical 73728 bytes; identical table set; same user_version. Verified via Python stdlib sqlite3 module (sqlite3 CLI not installed). Portability delta: GID=116 on Debian 13 vs GID=119 on Ubuntu 24.04 — both system GIDs (<1000), distro-specific allocation, no functional impact. systemd 257 (Debian 13) handled the postinst init-db invocation identically to systemd 253 (Ubuntu 24.04).
 
 ---
 
