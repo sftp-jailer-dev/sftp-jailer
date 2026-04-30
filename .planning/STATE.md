@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Packaging & Release
 status: verifying
-last_updated: "2026-04-30T22:46:24.581Z"
+last_updated: "2026-04-30T23:58:14.262Z"
 last_activity: 2026-04-30 -- Plan 05-07 (postinst-init-db) executed; 6 commits on main, all tests green
 progress:
   total_phases: 1
@@ -39,4 +39,4 @@ Resume file: --resume-file
 
 **Open carry-over from v1.1 (close opportunistically in v1.2):** BUG-04-B dual-family + v6-only edge; `PasswordAgingDays`/`PasswordStaleDays` in S-SETTINGS UI; per-user log-detail modal; detached `context.Background()` in 4 resolveAsync paths; missing `validation_md` for Phases 1, 2, 3 (Phase 4 already Nyquist-compliant).
 
-**Planned Phase:** 5 (packaging-install-purge-automated-release) - 7 plans - 2026-04-30T12:54:26.626Z
+**Planned Phase:** 6 (v1.1 Carry-over Closure - Firewall edge + TUI polish) — 4 plans — 2026-04-30T23:58:14.249Z
