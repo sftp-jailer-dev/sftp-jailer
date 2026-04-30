@@ -147,6 +147,32 @@ ssh root@<vm-ip> 'stat -c "%a %U %G %s" /var/lib/sftp-jailer/observer.cursor'
 
 Result: [x] PASS  Notes: 600 root root 0
 
+- [ ] **2.4** — observations.db initialized at install time (DIST-04 SC3, plan 05-07).
+
+The strict reading of ROADMAP Phase 5 SC3 is "After `apt install`, postinst has ... initialized `/var/lib/sftp-jailer/observations.db` at the current schema version." This step verifies that the DB exists IMMEDIATELY after `apt install`, BEFORE the systemd timer fires for the first time (the existing step 6.1 verifies the timer-fire path; this step verifies the install-time path).
+
+```bash
+# File exists immediately post-install (before any timer fire).
+ssh root@<vm-ip> 'test -f /var/lib/sftp-jailer/observations.db && echo "exists"'
+
+# Mode + ownership: 0644 root:root (sqlite-default, matches User=root in
+# packaging/systemd/sftp-jailer-observer.service so subsequent observe-run
+# writes are ownership-consistent).
+ssh root@<vm-ip> 'stat -c "%a %U:%G" /var/lib/sftp-jailer/observations.db'
+
+# Schema at the binary's ExpectedSchemaVersion (currently 3, set by
+# internal/store/store.go::ExpectedSchemaVersion; bumped when a new
+# numbered .sql lands in internal/store/migrations/).
+ssh root@<vm-ip> 'sqlite3 /var/lib/sftp-jailer/observations.db "PRAGMA user_version;"'
+```
+
+**EXPECTED:**
+- `exists`
+- `644 root:root`
+- `3` (matches `internal/store/store.go::ExpectedSchemaVersion`; if a future phase bumps this, update both this step and the constant in lockstep)
+
+Result: [ ] PASS  Notes: _operator fills in_
+
 ---
 
 ### Step 3 — Diagnostic posture

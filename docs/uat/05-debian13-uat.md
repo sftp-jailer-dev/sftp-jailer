@@ -157,6 +157,28 @@ ssh root@192.168.1.170 '
 
 Result: [x] PASS  Notes: sftp-jailer:x:116: (GID 116 — same range as Ubuntu 24.04 GID 119); enabled; active; 600 root root 0
 
+- [ ] **D.2.4** — observations.db initialized at install time (DIST-04 SC3, plan 05-07; Debian 13 portability check).
+
+Same strict reading of ROADMAP Phase 5 SC3 as Ubuntu 24.04 step 2.4. This is the Debian 13 (trixie) portability variant on the lab host at 192.168.1.170 — confirms the postinst init-db flow works against Debian 13's bundled sqlite tooling and systemd 257 environment, not just Ubuntu 24.04's systemd 253.
+
+```bash
+# File exists immediately post-install (before any timer fire).
+ssh root@192.168.1.170 'test -f /var/lib/sftp-jailer/observations.db && echo "exists"'
+
+# Mode + ownership: 0644 root:root.
+ssh root@192.168.1.170 'stat -c "%a %U:%G" /var/lib/sftp-jailer/observations.db'
+
+# Schema at the binary's ExpectedSchemaVersion (currently 3).
+ssh root@192.168.1.170 'sqlite3 /var/lib/sftp-jailer/observations.db "PRAGMA user_version;"'
+```
+
+**EXPECTED:**
+- `exists`
+- `644 root:root`
+- `3` (must match Ubuntu 2.4; cross-platform schema parity is a portability invariant)
+
+Result: [ ] PASS  Notes: _operator fills in; record any portability delta (e.g., Debian 13's sqlite3 binary version vs Ubuntu's, or any ownership default that differs)_
+
 ---
 
 ## Step 3 — Diagnostic posture
