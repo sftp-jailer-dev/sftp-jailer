@@ -1,3 +1,30 @@
+sftp-jailer (1.2.0~rc1) unstable; urgency=medium
+
+  * v1.2.0 release candidate 1: first .deb release. v1.2 milestone Phase 5
+    (Packaging, Install/Purge, Automated Release) is complete and empirically
+    verified on Ubuntu 24.04 LTS and Debian 13 (Trixie). Phase 6 (v1.1
+    carry-over closure) and Phase 7 (retroactive Nyquist validation authoring)
+    are not yet shipped.
+  * DIST-02/03: goreleaser + nfpm build CGO-free .deb for amd64 and arm64;
+    lintian --pedantic clean.
+  * DIST-04: postinst creates the sftp-jailer group, enables and starts the
+    weekly observer timer, and pre-initializes /var/lib/sftp-jailer/observations.db
+    at the current schema version (hidden init-db subcommand, plan 05-07).
+  * DIST-05/09: apt purge removes the binary, both systemd units, state dir,
+    /etc/ssh/sshd_config.d/50-sftp-jailer.conf drop-in, and the sftp-jailer
+    group; admin-edited /etc/ssh/sshd_config and unrelated drop-ins remain
+    byte-identical. SSH session preserved across the cycle.
+  * DIST-08: tag-push GitHub Actions workflow runs go test, golangci-lint,
+    govulncheck, architectural invariants, goreleaser, lintian --pedantic,
+    and uploads .deb + .tar.gz + SHA256SUMS.txt to GitHub Releases.
+  * DIST-10: empirical thesis-flow UAT passed on Ubuntu 24.04 (192.168.1.187)
+    and Debian 13 (192.168.1.170) lab hosts.
+  * v1.1 feature surface (chrooted SFTP, user/key/password CRUD, observation
+    pipeline, OPEN/STAGING/LOCKED progressive lockdown with 3-min auto-revert)
+    is unchanged and shipped end-to-end.
+
+ -- sftp-jailer-dev <noreply@sftp-jailer.com>  Fri, 01 May 2026 00:00:00 +0000
+
 sftp-jailer (1.1) unstable; urgency=medium
 
   * Phase 5 release: packaging, install/purge, automated release pipeline.
