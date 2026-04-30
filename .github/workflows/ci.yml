@@ -90,3 +90,7 @@ jobs:
           fi
       - name: Manpages fresh
         run: bash scripts/check-manpage-fresh.sh
+      - name: Maintainer scripts POSIX sh syntax
+        run: bash scripts/check-maintainer-scripts-syntax.sh
+      - name: DIST-09 brownfield — no /etc/ssh in maintainer scripts
+        run: bash scripts/check-no-etc-ssh-in-maintainer-scripts.sh
