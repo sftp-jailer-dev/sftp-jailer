@@ -160,10 +160,8 @@ type Model struct {
 	// on the model lets handleKey route Esc during phasePreflight /
 	// phaseSubmitting through to SIGTERM the in-flight subprocess.
 	// cancelling drives the View 'Cancelling...' indicator (D-07).
-	// lastPID is a best-effort breadcrumb only.
 	cancelFn   context.CancelFunc
 	cancelling bool
-	lastPID    int
 }
 
 // preflightLoadedMsg carries the result of the asynchronous preflight load
@@ -410,7 +408,11 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		// branches so an Esc-driven shutdown never lands the loaded
 		// preflight + advances to phaseReview.
 		if m.cancelling {
-			m.applyCancellationClassification(msg.err, m.lastPID)
+			// TUI-11 CR-01: pid is 0 in production (tx.Apply does not
+			// surface per-step ExecResult.PID). The gate inside
+			// applyCancellationClassification renders the subprocess-free
+			// fallback when pid <= 0.
+			m.applyCancellationClassification(msg.err, 0)
 			return m, nil
 		}
 		if msg.err != nil {
@@ -707,12 +709,17 @@ func SetTopLevelPasswordAuthenticationForTest(d sshdcfg.DropIn, disable bool) ss
 // cancelling flow can never accidentally render success.
 //
 // err is nil OR errors.Is(err, context.Canceled) OR errors.Is(err,
-// context.DeadlineExceeded) → neutral 'cancelled by Esc' state.
+// context.DeadlineExceeded) -> neutral 'cancelled by Esc' state.
 //
-// Otherwise → TUI-11 D-08 verbatim copy "Cancellation failed - subprocess
-// PID=N still alive. Run kill -9 N from another shell." with the live PID
-// injected. Substrings 'Cancellation failed', 'Run kill -9', and 'from
-// another shell' are checker-asserted to land verbatim.
+// Otherwise -> TUI-11 CR-01 (06-REVIEW.md): when pid <= 0 (production
+// path - tx.Apply does not surface ExecResult.PID), render the subprocess-
+// free fallback. kill(2) PID 0 = SIGKILL the calling process group, so
+// 'Run kill -9 0' is a literal safety hazard if an admin copy-pastes.
+// The live-PID branch (pid > 0) preserves the verbatim D-08 copy for
+// the case when ExecResult.PID is propagated (currently only via
+// FeedSubmitDoneForTestWithPID test seam; v1.3 path-A would wire
+// production). Substrings 'Cancellation failed', 'Run kill -9', and
+// 'from another shell' are checker-asserted to land verbatim on live-PID.
 func (m *Model) applyCancellationClassification(err error, pid int) {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		m.errInline = "cancelled by Esc"
@@ -721,9 +728,15 @@ func (m *Model) applyCancellationClassification(err error, pid int) {
 		m.phase = phaseError
 		return
 	}
-	m.errInline = fmt.Sprintf(
-		"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
-		pid, pid)
+	// TUI-11 CR-01 (06-REVIEW.md): gate on PID availability.
+	if pid <= 0 {
+		m.errInline = "Cancellation failed - subprocess refused SIGTERM and SIGKILL within 2s. " +
+			"Inspect `ps -ef | grep <child-binary>` from another shell to identify the live PID."
+	} else {
+		m.errInline = fmt.Sprintf(
+			"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
+			pid, pid)
+	}
 	m.errFatal = true
 	m.cancelling = false
 	m.phase = phaseError
