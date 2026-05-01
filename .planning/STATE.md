@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Packaging & Release
-status: verifying
-last_updated: "2026-04-30T23:58:14.262Z"
-last_activity: 2026-04-30 -- Plan 05-07 (postinst-init-db) executed; 6 commits on main, all tests green
+status: executing
+last_updated: "2026-05-01T01:56:16.680Z"
+last_activity: 2026-05-01 -- Phase 06 execution started
 progress:
   total_phases: 1
   completed_phases: 1
@@ -23,14 +23,14 @@ See `.planning/PROJECT.md` (updated 2026-04-29 - v1.2 Current Milestone block + 
 
 **What this is:** Interactive TUI for Linux sysadmins managing a chrooted SFTP server on Ubuntu 24.04 - one supervised flow from "fresh box" to "per-user IP-locked-down SFTP" with observation-driven intel.
 **Core value:** One TUI takes a fresh Ubuntu 24.04 box from "no SFTP" to "hardened chrooted SFTP with per-user IP lockdown" - safely, interactively, with observable traffic intel driving every decision.
-**Current focus:** Phase 05 - packaging-install-purge-automated-release (code complete, re-UAT pending)
+**Current focus:** Phase 06 — v1-1-carry-over-closure-firewall-edge-tui-polish
 
 ## Current Position
 
-Phase: 05 (packaging-install-purge-automated-release) - CODE COMPLETE, RE-UAT PENDING
-Plan: 7 of 7 complete (05-01..05-07 SUMMARY.md on disk, committed)
-Status: Phase 05 code shipped; empirical re-UAT against Ubuntu 24.04 + Debian 13 (192.168.1.170) is the final gate before VERIFICATION truth #3 moves from `partial` to `verified`.
-Last activity: 2026-04-30 -- Plan 05-07 (postinst-init-db) executed; 6 commits on main, all tests green
+Phase: 06 (v1-1-carry-over-closure-firewall-edge-tui-polish) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 06
+Last activity: 2026-05-01 -- Phase 06 execution started
 Resume file: --resume-file
 
 ## Accumulated Context

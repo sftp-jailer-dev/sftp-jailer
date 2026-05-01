@@ -90,10 +90,10 @@ CI exercises criteria 2 and 5.
 **Parallelization hints:** All four requirements are independent — schedule as parallel plans within the phase.
 
 **Plans:** 4 plans (wave 1, all parallel per D-18):
-- [ ] 06-01-PLAN.md - FW-09 close BUG-04-B (dual-family + v6-only test fixtures + UAT runbook)
-- [ ] 06-02-PLAN.md - TUI-09 expose password_aging_days/password_stale_days in S-SETTINGS
-- [ ] 06-03-PLAN.md - TUI-10 per-user log-detail modal (M-USER-LOG) on uppercase L
-- [ ] 06-04-PLAN.md - TUI-11 cancellable resolveAsync paths in 4 modals (SIGTERM + 2s SIGKILL grace)
+- [x] 06-01-PLAN.md - FW-09 close BUG-04-B (dual-family + v6-only test fixtures + UAT runbook)
+- [x] 06-02-PLAN.md - TUI-09 expose password_aging_days/password_stale_days in S-SETTINGS
+- [x] 06-03-PLAN.md - TUI-10 per-user log-detail modal (M-USER-LOG) on uppercase L
+- [x] 06-04-PLAN.md - TUI-11 cancellable resolveAsync paths in 4 modals (SIGTERM + 2s SIGKILL grace)
 
 ---
 
