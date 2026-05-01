@@ -914,3 +914,116 @@ func TestAddKey_errors_compile(t *testing.T) {
 	_ = context.Background()
 	_ = time.Second
 }
+
+// ============================================================================
+// TUI-11 (plan 06-04): cancellation tests for the addkey modal.
+//
+// D-07: Esc during phaseFetching / phaseCommitting calls cancelFn, flips
+// m.cancelling, and renders the 'Cancelling...' indicator. Modal STAYS
+// OPEN - closes only when fetchedMsg / committedMsg arrives.
+//
+// D-08: when SIGKILL fails to release within 2s after sending (committedMsg
+// arrives with a non-context error), the modal renders the verbatim
+// "Cancellation failed - subprocess PID=N still alive. Run kill -9 N from
+// another shell." copy with the live PID injected.
+//
+// Pitfall 2: handleCommitted classifies cancellation BEFORE success/fatal
+// so the cancelling flow never accidentally renders a success toast.
+// ============================================================================
+
+// Test A (D-07): Esc during phaseCommitting invokes the stored cancelFn,
+// flips m.cancelling, renders 'Cancelling' in View, and the modal stays
+// open (no nav.PopCmd).
+func TestAddKey_TUI11_esc_during_committing_invokes_cancel_and_renders_indicator(t *testing.T) {
+	t.Parallel()
+	m := addkey.New(nil, testChrootRoot, testUsername)
+
+	// Drive into phaseCommitting with a recordable cancelFn injected.
+	m.SetPhaseCommittingForTest()
+	var cancelCalls int
+	m.SetCancelFnForTest(func() { cancelCalls++ })
+
+	_, cmd := m.Update(keyPress("esc"))
+
+	require.Nil(t, cmd, "Esc during phaseCommitting must NOT pop the modal (D-07: stays open)")
+	require.Equal(t, 1, cancelCalls, "Esc must call the stored cancelFn exactly once")
+	require.True(t, m.IsCancellingForTest(),
+		"m.cancelling must flip true after Esc-during-committing")
+	require.Contains(t, m.View(), "Cancelling",
+		"D-07: View must render 'Cancelling' indicator while m.cancelling is true")
+	require.Equal(t, "committing", m.PhaseForTest(),
+		"modal stays in phaseCommitting until done-msg arrives (D-07)")
+}
+
+// Test A' (D-07): same as Test A but for phaseFetching - the resolveAsync
+// path. Pinning that the fetching path is also cancellable.
+func TestAddKey_TUI11_esc_during_fetching_invokes_cancel_and_renders_indicator(t *testing.T) {
+	t.Parallel()
+	m := addkey.New(nil, testChrootRoot, testUsername)
+	m.SetPhaseFetchingForTest()
+	var cancelCalls int
+	m.SetCancelFnForTest(func() { cancelCalls++ })
+
+	_, cmd := m.Update(keyPress("esc"))
+
+	require.Nil(t, cmd, "Esc during phaseFetching must NOT pop the modal (D-07)")
+	require.Equal(t, 1, cancelCalls)
+	require.True(t, m.IsCancellingForTest())
+	require.Contains(t, m.View(), "Cancelling",
+		"D-07: 'Cancelling' indicator landed in View")
+}
+
+// Test B (Pitfall 2): committedMsg with err==context.Canceled while
+// m.cancelling==true must render the neutral cancelled state (NOT success).
+// This pins that handleCommitted's cancellation branch fires BEFORE the
+// success/fatal classification.
+func TestAddKey_TUI11_committed_with_context_canceled_renders_neutral_cancelled(t *testing.T) {
+	t.Parallel()
+	m := addkey.New(nil, testChrootRoot, testUsername)
+	m.SetPhaseCommittingForTest()
+	m.SetCancelFnForTest(func() {})
+
+	// Simulate Esc dispatch.
+	_, _ = m.Update(keyPress("esc"))
+	require.True(t, m.IsCancellingForTest(),
+		"precondition: cancelling flag set by Esc dispatch")
+
+	// Subprocess returns with context.Canceled (the SIGTERM-then-Wait path).
+	_, _ = m.FeedCommittedMsgForTest(context.Canceled, 0)
+
+	require.Equal(t, "error", m.PhaseForTest(),
+		"cancelled flow lands in phaseError (neutral), NOT phaseDone")
+	require.Equal(t, "cancelled by Esc", m.ErrInlineForTest(),
+		"errInline is the neutral 'cancelled by Esc' string, not a fatal stack")
+	require.NotContains(t, m.View(), "added",
+		"Pitfall 2: cancellation MUST NOT trigger the success-toast 'added N key(s)' path")
+}
+
+// Test C (D-08): committedMsg with a non-context error after cancel renders
+// the verbatim hang-escalation diagnostic with the live PID injected. The
+// substrings 'Cancellation failed', 'Run kill -9 12345', and 'from another
+// shell' are checker-asserted against the source file too.
+func TestAddKey_TUI11_committed_with_non_context_err_after_cancel_renders_d08_diagnostic(t *testing.T) {
+	t.Parallel()
+	m := addkey.New(nil, testChrootRoot, testUsername)
+	m.SetPhaseCommittingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+
+	// Non-context error AFTER cancel signals SIGKILL fallback failed to
+	// release within WaitDelay - the D-08 hang escalation path.
+	hangErr := errors.New("subprocess refused SIGKILL")
+	_, _ = m.FeedCommittedMsgForTest(hangErr, 12345)
+
+	require.Equal(t, "error", m.PhaseForTest(),
+		"D-08 hang renders the diagnostic in phaseError")
+	v := m.ErrInlineForTest()
+	require.Contains(t, v, "Cancellation failed",
+		"D-08 verbatim copy: 'Cancellation failed' must appear")
+	require.Contains(t, v, "Run kill -9 12345",
+		"D-08 verbatim copy: 'Run kill -9 <PID>' with the live PID injected")
+	require.Contains(t, v, "from another shell",
+		"D-08 verbatim copy: 'from another shell' must appear")
+	require.Contains(t, v, "PID=12345",
+		"D-08 verbatim copy: 'PID=N' references the live PID")
+}

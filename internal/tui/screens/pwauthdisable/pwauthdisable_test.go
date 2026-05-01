@@ -13,6 +13,7 @@
 package pwauthdisable_test
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -414,4 +415,79 @@ func TestPwAuthDisable_OverrideText_is_canonical(t *testing.T) {
 	// Also assert the constant is referenced verbatim somewhere in the
 	// rendered confirm-prompt so admins see what to type.
 	require.True(t, strings.Contains(pwauthdisable.OverrideText, "I understand"))
+}
+
+// ============================================================================
+// TUI-11 (plan 06-04): cancellation tests for the pwauthdisable modal.
+//
+// D-07: Esc during phasePreflight / phaseSubmitting calls cancelFn, flips
+// m.cancelling, and renders 'Cancelling' in View. Modal STAYS OPEN until
+// the corresponding done-msg arrives.
+//
+// D-08: when SIGKILL fails to release within 2s after sending, the modal
+// renders the verbatim "Cancellation failed - subprocess PID=N still
+// alive. Run kill -9 N from another shell." copy with the live PID.
+//
+// Pitfall 2: Update classifies cancellation BEFORE success/fatal so the
+// cancelling flow never accidentally renders phaseDone.
+// ============================================================================
+
+func TestPwAuthDisable_TUI11_esc_during_submitting_invokes_cancel_and_renders_indicator(t *testing.T) {
+	t.Parallel()
+	m := pwauthdisable.New(nil, nil, testChrootRoot, pwauthdisable.ActionDisable)
+	m.SetPhaseSubmittingForTest()
+	var cancelCalls int
+	m.SetCancelFnForTest(func() { cancelCalls++ })
+
+	_, cmd := m.Update(keyPress("esc"))
+
+	require.Nil(t, cmd, "Esc during phaseSubmitting must NOT pop the modal (D-07: stays open)")
+	require.Equal(t, 1, cancelCalls, "Esc must call the stored cancelFn exactly once")
+	require.True(t, m.IsCancellingForTest(),
+		"m.cancelling must flip true after Esc-during-submitting")
+	require.Contains(t, m.View(), "Cancelling",
+		"D-07: View must render 'Cancelling' indicator while m.cancelling is true")
+	require.Equal(t, pwauthdisable.PhaseSubmittingForTest, m.PhaseForTest(),
+		"modal stays in phaseSubmitting until submitDoneMsg arrives (D-07)")
+}
+
+func TestPwAuthDisable_TUI11_submit_done_with_context_canceled_renders_neutral_cancelled(t *testing.T) {
+	t.Parallel()
+	m := pwauthdisable.New(nil, nil, testChrootRoot, pwauthdisable.ActionDisable)
+	m.SetPhaseSubmittingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+	require.True(t, m.IsCancellingForTest())
+
+	_, _ = m.FeedSubmitDoneForTestWithPID(context.Canceled, 0)
+
+	require.Equal(t, pwauthdisable.PhaseErrorForTest, m.PhaseForTest(),
+		"cancelled flow lands in phaseError, NOT phaseDone")
+	require.Equal(t, "cancelled by Esc", m.ErrInlineForTest(),
+		"errInline is the neutral 'cancelled by Esc' string")
+	require.NotContains(t, m.View(), "password authentication disabled",
+		"Pitfall 2: cancellation MUST NOT trigger the success-toast path")
+}
+
+func TestPwAuthDisable_TUI11_submit_done_with_non_context_err_after_cancel_renders_d08_diagnostic(t *testing.T) {
+	t.Parallel()
+	m := pwauthdisable.New(nil, nil, testChrootRoot, pwauthdisable.ActionDisable)
+	m.SetPhaseSubmittingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+
+	hangErr := errors.New("subprocess refused SIGKILL")
+	_, _ = m.FeedSubmitDoneForTestWithPID(hangErr, 31415)
+
+	require.Equal(t, pwauthdisable.PhaseErrorForTest, m.PhaseForTest(),
+		"D-08 hang renders the diagnostic in phaseError")
+	v := m.ErrInlineForTest()
+	require.Contains(t, v, "Cancellation failed",
+		"D-08 verbatim copy: 'Cancellation failed' must appear")
+	require.Contains(t, v, "Run kill -9 31415",
+		"D-08 verbatim copy: 'Run kill -9 <PID>' with live PID injected")
+	require.Contains(t, v, "from another shell",
+		"D-08 verbatim copy: 'from another shell' must appear")
+	require.Contains(t, v, "PID=31415",
+		"D-08 verbatim copy: 'PID=N' references the live PID")
 }

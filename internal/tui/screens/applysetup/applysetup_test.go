@@ -1,6 +1,7 @@
 package applysetup_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -377,4 +378,79 @@ func deliverBatchedMsgs(t *testing.T, m *applysetup.Model, cmd tea.Cmd) {
 			deliverBatchedMsgs(t, m, follow)
 		}
 	}
+}
+
+// ============================================================================
+// TUI-11 (plan 06-04): cancellation tests for the applysetup modal.
+//
+// D-07: Esc during phasePreflight / phaseRePreflight / phaseApplying calls
+// cancelFn, flips m.cancelling, and renders 'Cancelling' in View. Modal
+// STAYS OPEN until the corresponding done-msg arrives.
+//
+// D-08: when SIGKILL fails to release within 2s after sending, the modal
+// renders the verbatim "Cancellation failed - subprocess PID=N still
+// alive. Run kill -9 N from another shell." copy with the live PID.
+//
+// Pitfall 2: Update classifies cancellation BEFORE success/fatal so the
+// cancelling flow never accidentally renders phaseDone.
+// ============================================================================
+
+func TestApplySetup_TUI11_esc_during_applying_invokes_cancel_and_renders_indicator(t *testing.T) {
+	t.Parallel()
+	m, _ := newSeededModel()
+	m.SetPhaseApplyingForTest()
+	var cancelCalls int
+	m.SetCancelFnForTest(func() { cancelCalls++ })
+
+	_, cmd := m.Update(keyPress("esc"))
+
+	require.Nil(t, cmd, "Esc during phaseApplying must NOT pop the modal (D-07: stays open)")
+	require.Equal(t, 1, cancelCalls, "Esc must call the stored cancelFn exactly once")
+	require.True(t, m.IsCancellingForTest(),
+		"m.cancelling must flip true after Esc-during-applying")
+	require.Contains(t, m.View(), "Cancelling",
+		"D-07: View must render 'Cancelling' indicator while m.cancelling is true")
+	require.Equal(t, applysetup.PhaseApplyingForTest, m.PhaseForTest(),
+		"modal stays in phaseApplying until applyDoneMsg arrives (D-07)")
+}
+
+func TestApplySetup_TUI11_apply_done_with_context_canceled_renders_neutral_cancelled(t *testing.T) {
+	t.Parallel()
+	m, _ := newSeededModel()
+	m.SetPhaseApplyingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+	require.True(t, m.IsCancellingForTest())
+
+	_, _ = m.FeedApplyDoneForTestWithPID(context.Canceled, 0)
+
+	require.Equal(t, applysetup.PhaseErrorForTest, m.PhaseForTest(),
+		"cancelled flow lands in phaseError, NOT phaseDone")
+	require.Equal(t, "cancelled by Esc", m.ErrInlineForTest(),
+		"errInline is the neutral 'cancelled by Esc' string")
+	require.NotContains(t, m.View(), "canonical config applied",
+		"Pitfall 2: cancellation MUST NOT trigger the success-toast path")
+}
+
+func TestApplySetup_TUI11_apply_done_with_non_context_err_after_cancel_renders_d08_diagnostic(t *testing.T) {
+	t.Parallel()
+	m, _ := newSeededModel()
+	m.SetPhaseApplyingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+
+	hangErr := errors.New("subprocess refused SIGKILL")
+	_, _ = m.FeedApplyDoneForTestWithPID(hangErr, 99001)
+
+	require.Equal(t, applysetup.PhaseErrorForTest, m.PhaseForTest(),
+		"D-08 hang renders the diagnostic in phaseError")
+	v := m.ErrInlineForTest()
+	require.Contains(t, v, "Cancellation failed",
+		"D-08 verbatim copy: 'Cancellation failed' must appear")
+	require.Contains(t, v, "Run kill -9 99001",
+		"D-08 verbatim copy: 'Run kill -9 <PID>' with live PID injected")
+	require.Contains(t, v, "from another shell",
+		"D-08 verbatim copy: 'from another shell' must appear")
+	require.Contains(t, v, "PID=99001",
+		"D-08 verbatim copy: 'PID=N' references the live PID")
 }

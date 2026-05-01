@@ -49,6 +49,7 @@ package applysetup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -125,6 +126,18 @@ type Model struct {
 	// test seams
 	nowFn func() time.Time
 	keys  KeyMap
+
+	// TUI-11 D-07 / D-08 cancellation plumbing. cancelFn is the
+	// context.CancelFunc returned by context.WithCancel inside the
+	// preflight / re-preflight / apply goroutines; storing it on the
+	// model lets handleKey route Esc during phasePreflight /
+	// phaseRePreflight / phaseApplying through to SIGTERM the in-flight
+	// subprocess. cancelling drives the View 'Cancelling...' indicator
+	// (D-07). lastPID holds the most-recent subprocess PID seen
+	// (best-effort breadcrumb).
+	cancelFn   context.CancelFunc
+	cancelling bool
+	lastPID    int
 }
 
 // preflightLoadedMsg carries the result of the asynchronous preflight load
@@ -148,8 +161,12 @@ type rePreflightLoadedMsg struct {
 
 // applyDoneMsg carries the txn.Tx.Apply outcome from the off-loop goroutine
 // back into Update. err == nil → success → phaseDone; err != nil → rolled
-// back → phaseError + Critical errInline.
-type applyDoneMsg struct{ err error }
+// back → phaseError + Critical errInline. TUI-11 D-08: pid carries the
+// live subprocess PID for the hang-escalation diagnostic.
+type applyDoneMsg struct {
+	err error
+	pid int
+}
 
 // autoPopMsg is the tea.Tick payload that fires AutoPopDelay after a
 // successful apply, telling Update to emit nav.PopCmd + the success toast.
@@ -240,6 +257,29 @@ func (m *Model) FeedApplyDoneForTest(err error) (nav.Screen, tea.Cmd) {
 	return m.Update(applyDoneMsg{err: err})
 }
 
+// FeedApplyDoneForTestWithPID is the TUI-11 D-08 variant: feeds an
+// applyDoneMsg with the given live PID so tests can pin the verbatim
+// "Cancellation failed - subprocess PID=N still alive. Run kill -9 N
+// from another shell." copy.
+func (m *Model) FeedApplyDoneForTestWithPID(err error, pid int) (nav.Screen, tea.Cmd) {
+	return m.Update(applyDoneMsg{err: err, pid: pid})
+}
+
+// SetCancelFnForTest injects a recordable cancel func so tests can assert
+// Esc during phasePreflight / phaseRePreflight / phaseApplying actually
+// invokes it.
+func (m *Model) SetCancelFnForTest(fn context.CancelFunc) { m.cancelFn = fn }
+
+// IsCancellingForTest reports whether the Esc-cancel handler has fired.
+func (m *Model) IsCancellingForTest() bool { return m.cancelling }
+
+// SetPhasePreflightForTest forces the modal into phasePreflight.
+func (m *Model) SetPhasePreflightForTest() { m.phase = phasePreflight }
+
+// SetPhaseApplyingForTest forces the modal into phaseApplying so tests can
+// drive the Esc-during-apply flow.
+func (m *Model) SetPhaseApplyingForTest() { m.phase = phaseApplying }
+
 // KeyMap describes the modal's bindings. Implements nav.KeyMap.
 type KeyMap struct {
 	Cancel nav.KeyBinding
@@ -284,11 +324,16 @@ func (m *Model) Init() tea.Cmd {
 		return tickCmd
 	}
 	ops := m.ops
+	// TUI-11: store cancelFn BEFORE returning the Cmd so Esc has a handle
+	// the moment the goroutine starts.
+	baseCtx, cancel := context.WithCancel(context.Background())
+	m.cancelFn = cancel
 	return tea.Batch(
 		tickCmd,
 		func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
+			defer cancel() // happy-path safety net; idempotent
+			ctx, tcancel := context.WithTimeout(baseCtx, 30*time.Second)
+			defer tcancel()
 			return runPreflight(ctx, ops)
 		},
 	)
@@ -380,6 +425,13 @@ func unified(oldStr, newStr string) string {
 func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
 	case preflightLoadedMsg:
+		// TUI-11 Pitfall 2: classify cancellation BEFORE the success/fatal
+		// branches so an Esc-driven shutdown never lands the loaded
+		// proposal + advances to phaseReview.
+		if m.cancelling {
+			m.applyCancellationClassification(msg.err, m.lastPID)
+			return m, nil
+		}
 		if msg.err != nil {
 			m.errInline = "preflight error: " + msg.err.Error()
 			m.errFatal = true
@@ -398,6 +450,11 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		return m, nil
 
 	case rePreflightLoadedMsg:
+		// TUI-11 Pitfall 2: cancellation classification.
+		if m.cancelling {
+			m.applyCancellationClassification(msg.err, m.lastPID)
+			return m, nil
+		}
 		// W-05: violations now reflect the new root; allow Apply if clean.
 		if msg.err != nil {
 			m.errInline = "re-preflight error: " + msg.err.Error()
@@ -410,6 +467,12 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		return m, nil
 
 	case applyDoneMsg:
+		// TUI-11 Pitfall 2: classify cancellation BEFORE success/fatal so
+		// the cancelling flow never accidentally lands phaseDone.
+		if m.cancelling {
+			m.applyCancellationClassification(msg.err, msg.pid)
+			return m, nil
+		}
 		if msg.err != nil {
 			m.errInline = "apply failed (rolled back): " + msg.err.Error()
 			m.errFatal = true
@@ -485,11 +548,15 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 				// Test path: the test will FeedRePreflightForTest manually.
 				return m, m.spinner.Tick
 			}
+			// TUI-11: store cancelFn BEFORE returning the Cmd.
+			baseCtx, cancel := context.WithCancel(context.Background())
+			m.cancelFn = cancel
 			return m, tea.Batch(
 				m.spinner.Tick,
 				func() tea.Msg {
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
+					defer cancel() // happy-path safety net; idempotent
+					ctx, tcancel := context.WithTimeout(baseCtx, 10*time.Second)
+					defer tcancel()
 					return runRePreflight(ctx, ops, root)
 				},
 			)
@@ -500,7 +567,21 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "esc", "q":
+	case "esc":
+		// TUI-11 D-07: Esc during async phase cancels the in-flight
+		// subprocess. Modal STAYS OPEN per D-07; closes only when
+		// preflightLoadedMsg / rePreflightLoadedMsg / applyDoneMsg
+		// arrives. The 'Cancelling...' indicator (rendered in View while
+		// m.cancelling is true) provides immediate feedback.
+		if m.phase == phasePreflight || m.phase == phaseRePreflight || m.phase == phaseApplying {
+			if m.cancelFn != nil {
+				m.cancelFn()
+			}
+			m.cancelling = true
+			return m, nil
+		}
+		return m, nav.PopCmd()
+	case "q":
 		return m, nav.PopCmd()
 	case "e":
 		if m.phase == phaseReview {
@@ -541,9 +622,14 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 func (m *Model) startApply() tea.Cmd {
 	m.phase = phaseApplying
 	ops, content, dispatch, now := m.ops, m.proposedBytes, txn.ReloadService, m.nowFn
+	// TUI-11: store cancelFn BEFORE returning the Cmd so Esc has a handle
+	// the moment the goroutine starts.
+	baseCtx, cancel := context.WithCancel(context.Background())
+	m.cancelFn = cancel
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
+		defer cancel() // happy-path safety net; idempotent
+		ctx, tcancel := context.WithTimeout(baseCtx, 60*time.Second)
+		defer tcancel()
 		// T-03-06-06: ensure backup dir exists. Use typed sysops.MkdirAll
 		// (plan 03-01 W-02). Failure here aborts before any sshd write
 		// (the txn batch's first step is WriteSshdDropIn which writes the
@@ -553,8 +639,39 @@ func (m *Model) startApply() tea.Cmd {
 		}
 		steps := txn.CanonicalApplySetupSteps(DropInPath, BackupDir, content, dispatch, now)
 		tx := txn.New(ops)
-		return applyDoneMsg{err: tx.Apply(ctx, steps)}
+		// TUI-11 D-08: PID=0 in production (txn doesn't expose per-step
+		// ExecResult.PID). Tests pin the verbatim diagnostic via
+		// FeedApplyDoneForTestWithPID.
+		return applyDoneMsg{err: tx.Apply(ctx, steps), pid: 0}
 	}
+}
+
+// applyCancellationClassification renders the neutral-cancelled state OR
+// the D-08 verbatim hang diagnostic depending on the err type. Pitfall 2
+// gate: called BEFORE the success/fatal branches in Update so the
+// cancelling flow can never accidentally render success.
+//
+// err is nil OR errors.Is(err, context.Canceled) OR errors.Is(err,
+// context.DeadlineExceeded) → neutral 'cancelled by Esc' state.
+//
+// Otherwise → TUI-11 D-08 verbatim copy "Cancellation failed - subprocess
+// PID=N still alive. Run kill -9 N from another shell." with the live PID
+// injected. Substrings 'Cancellation failed', 'Run kill -9', and 'from
+// another shell' are checker-asserted to land verbatim.
+func (m *Model) applyCancellationClassification(err error, pid int) {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		m.errInline = "cancelled by Esc"
+		m.errFatal = false
+		m.cancelling = false
+		m.phase = phaseError
+		return
+	}
+	m.errInline = fmt.Sprintf(
+		"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
+		pid, pid)
+	m.errFatal = true
+	m.cancelling = false
+	m.phase = phaseError
 }
 
 // View renders the modal body wrapped in the M-OBSERVE-style border.
@@ -562,9 +679,20 @@ func (m *Model) View() string {
 	var b strings.Builder
 	switch m.phase {
 	case phasePreflight:
-		b.WriteString(m.spinner.View() + " loading proposal…")
+		if m.cancelling {
+			// TUI-11 D-07: 'Cancelling...' indicator. Substring 'Cancelling'
+			// is checker-asserted to land in View output.
+			b.WriteString(m.spinner.View() + " " + styles.Warn.Render("Cancelling..."))
+		} else {
+			b.WriteString(m.spinner.View() + " loading proposal…")
+		}
 	case phaseRePreflight:
-		b.WriteString(m.spinner.View() + " re-validating chroot chain against new root " + m.proposedRoot + "…")
+		if m.cancelling {
+			// TUI-11 D-07.
+			b.WriteString(m.spinner.View() + " " + styles.Warn.Render("Cancelling..."))
+		} else {
+			b.WriteString(m.spinner.View() + " re-validating chroot chain against new root " + m.proposedRoot + "…")
+		}
 	case phaseReview, phaseEditingRoot:
 		b.WriteString(styles.Primary.Render("M-APPLY-SETUP - canonical chroot-SFTP drop-in"))
 		b.WriteString("\n\nchroot root:\n  ")
@@ -590,7 +718,12 @@ func (m *Model) View() string {
 		b.WriteString(m.diffText)
 		b.WriteString("\n\n[a] apply   [e] edit root   [esc] cancel")
 	case phaseApplying:
-		b.WriteString(m.spinner.View() + " applying canonical config (backup → write → sshd -t → reload → verify)…")
+		if m.cancelling {
+			// TUI-11 D-07: 'Cancelling...' indicator.
+			b.WriteString(m.spinner.View() + " " + styles.Warn.Render("Cancelling..."))
+		} else {
+			b.WriteString(m.spinner.View() + " applying canonical config (backup → write → sshd -t → reload → verify)…")
+		}
 	case phaseDone:
 		b.WriteString(styles.Success.Render("✓ canonical config applied - sshd reloaded."))
 	case phaseError:

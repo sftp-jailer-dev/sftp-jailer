@@ -193,11 +193,48 @@ func (r *Real) Exec(ctx context.Context, name string, args ...string) (ExecResul
 	// would steal bytes from Bubble Tea's input reader in later phases.
 	cmd.Stdin = nil
 
+	// TUI-11 D-06: SIGTERM-first cancellation policy. The default Cmd.Cancel
+	// closure on a CommandContext sends SIGKILL on ctx cancel; we override
+	// to SIGTERM and let WaitDelay drive the SIGKILL fallback after a 2s
+	// grace period (Cancel/WaitDelay semantics stable since Go 1.20).
+	//
+	// Pitfall 1: when the subprocess self-exits between cmd.Start and the
+	// Cancel closure firing, Process.Signal returns os.ErrProcessDone. The
+	// closure must map that to nil so Wait does not surface a spurious
+	// cancellation error - the ctx error already takes precedence below.
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		serr := cmd.Process.Signal(syscall.SIGTERM)
+		if errors.Is(serr, os.ErrProcessDone) {
+			return nil
+		}
+		return serr
+	}
+	cmd.WaitDelay = 2 * time.Second
+
+	// TUI-11 D-08: switch from CombinedOutput to Start + Wait so that
+	// cmd.Process.Pid is captured BEFORE Wait returns. The four mutation
+	// modals thread the PID onto their done-msg type and render it on
+	// hang escalation when SIGKILL fails to release within WaitDelay.
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+
 	start := time.Now()
-	out, err := cmd.CombinedOutput()
+	if startErr := cmd.Start(); startErr != nil {
+		// Start failed (typically ctx already cancelled, or ENOENT slipped
+		// past the allowlist) - no PID was assigned.
+		return ExecResult{Duration: time.Since(start)}, startErr
+	}
+	pid := cmd.Process.Pid
+	err := cmd.Wait()
+	out := buf.Bytes()
 	res := ExecResult{
 		Stdout:   out,
 		Duration: time.Since(start),
+		PID:      pid,
 	}
 
 	// Context errors take precedence - surface them so callers can retry or abort.
