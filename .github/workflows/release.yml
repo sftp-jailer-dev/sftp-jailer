@@ -102,7 +102,7 @@ jobs:
       #    `release --clean` command. GITHUB_TOKEN is the auto-provisioned
       #    secret with `contents: write` (per the permissions block above).
       - name: goreleaser release
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: v2.15.4
