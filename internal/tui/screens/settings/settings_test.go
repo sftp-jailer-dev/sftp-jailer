@@ -671,6 +671,181 @@ func TestSettings_lockdownWindow_save_validates_first_rejects_zero(t *testing.T)
 	}
 }
 
+// --- Phase 6 TUI-09: password_aging_days / password_stale_days rows ------
+
+// TestSettings_password_aging_days_cursor_visible - the new row must render
+// with the field label and the seeded current value (180 default).
+// Mirrors TestSettings_view_renders_lockdownWindow_row in shape.
+func TestSettings_password_aging_days_cursor_visible(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	out := m.View()
+	require.Contains(t, out, "password_aging_days",
+		"View must include the password_aging_days row label")
+	require.Contains(t, out, "180",
+		"View must render the PasswordAgingDays default (180)")
+	require.Contains(t, out, "password_stale_days",
+		"View must include the password_stale_days row label")
+	require.Contains(t, out, "365",
+		"View must render the PasswordStaleDays default (365)")
+}
+
+// TestSettings_password_aging_days_save_via_config - SetCursor to the
+// new aging row, enter edit mode, type "200", save. AtomicWriteFile must
+// be called exactly once and the View must show the new value plus a toast.
+func TestSettings_password_aging_days_save_via_config(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	m.SetCursorForTest(settingsscreen.PasswordAgingDaysRowIndexForTest)
+
+	_, _ = m.Update(keyPress("e"))
+	require.True(t, m.WantsRawKeys(), "edit mode must engage")
+	for _, r := range "200" {
+		_, _ = m.Update(keyPress(string(r)))
+	}
+	_, cmd := m.Update(keyPress("enter"))
+	if msg := drainCmd(cmd); msg != nil {
+		_, _ = m.Update(msg)
+	}
+
+	require.False(t, m.WantsRawKeys(), "successful save must exit edit mode")
+
+	var writeCalls int
+	for _, c := range ops.Calls {
+		if c.Method == "AtomicWriteFile" {
+			writeCalls++
+			require.Equal(t, configPath, c.Args[0])
+		}
+	}
+	require.Equal(t, 1, writeCalls,
+		"AtomicWriteFile must be called exactly once on aging save")
+
+	out := m.View()
+	require.Contains(t, out, "200",
+		"View must show the updated password_aging_days value")
+	require.Contains(t, out, "saved password_aging_days",
+		"Toast must announce the saved field by its koanf name")
+}
+
+// TestSettings_password_stale_days_save_via_config - mirror Test 2 but
+// for fieldPasswordStaleDays; type "400" so the strict ordering 180<400
+// holds against the seeded aging default.
+func TestSettings_password_stale_days_save_via_config(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	m.SetCursorForTest(settingsscreen.PasswordStaleDaysRowIndexForTest)
+
+	_, _ = m.Update(keyPress("e"))
+	require.True(t, m.WantsRawKeys(), "edit mode must engage")
+	for _, r := range "400" {
+		_, _ = m.Update(keyPress(string(r)))
+	}
+	_, cmd := m.Update(keyPress("enter"))
+	if msg := drainCmd(cmd); msg != nil {
+		_, _ = m.Update(msg)
+	}
+
+	require.False(t, m.WantsRawKeys(), "successful save must exit edit mode")
+
+	var writeCalls int
+	for _, c := range ops.Calls {
+		if c.Method == "AtomicWriteFile" {
+			writeCalls++
+		}
+	}
+	require.Equal(t, 1, writeCalls,
+		"AtomicWriteFile must be called exactly once on stale save")
+
+	out := m.View()
+	require.Contains(t, out, "400",
+		"View must show the updated password_stale_days value")
+	require.Contains(t, out, "saved password_stale_days",
+		"Toast must announce the saved field by its koanf name")
+}
+
+// TestSettings_password_aging_days_invalid_input_surfaces_error - typing
+// non-numeric input ("abc") on the aging row must surface the inline error
+// "must be a positive integer" and NOT write.
+func TestSettings_password_aging_days_invalid_input_surfaces_error(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	m.SetCursorForTest(settingsscreen.PasswordAgingDaysRowIndexForTest)
+
+	_, _ = m.Update(keyPress("e"))
+	for _, r := range "abc" {
+		_, _ = m.Update(keyPress(string(r)))
+	}
+	_, _ = m.Update(keyPress("enter"))
+
+	require.True(t, m.WantsRawKeys(), "validation failure keeps edit mode")
+	out := m.View()
+	require.Contains(t, out, "must be a positive integer",
+		"inline error must surface the strconv parse rejection")
+	for _, c := range ops.Calls {
+		require.NotEqual(t, "AtomicWriteFile", c.Method,
+			"validation failure must NOT call AtomicWriteFile")
+	}
+}
+
+// TestSettings_password_aging_days_strict_ordering_error - typing a value
+// that violates strict-ordering (aging=400 against stale=365 default) must
+// surface the existing strict-ordering message and NOT write.
+func TestSettings_password_aging_days_strict_ordering_error(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	m.SetCursorForTest(settingsscreen.PasswordAgingDaysRowIndexForTest)
+
+	_, _ = m.Update(keyPress("e"))
+	for _, r := range "400" {
+		_, _ = m.Update(keyPress(string(r)))
+	}
+	_, _ = m.Update(keyPress("enter"))
+
+	require.True(t, m.WantsRawKeys(), "validation failure keeps edit mode")
+	out := m.View()
+	require.Contains(t, out, "strictly greater than password_aging_days",
+		"inline error must surface the strict-ordering rule")
+	for _, c := range ops.Calls {
+		require.NotEqual(t, "AtomicWriteFile", c.Method,
+			"validation failure must NOT call AtomicWriteFile")
+	}
+}
+
+// TestSettings_password_stale_days_max_3650_error - typing a value above
+// the [1, 3650] cap must surface the new D-12 cap error and NOT write.
+func TestSettings_password_stale_days_max_3650_error(t *testing.T) {
+	t.Parallel()
+	ops := sysops.NewFake()
+	m := settingsscreen.New(ops, configPath, nil, "")
+	m.LoadSettingsForTest(config.Defaults())
+	m.SetCursorForTest(settingsscreen.PasswordStaleDaysRowIndexForTest)
+
+	_, _ = m.Update(keyPress("e"))
+	for _, r := range "5000" {
+		_, _ = m.Update(keyPress(string(r)))
+	}
+	_, _ = m.Update(keyPress("enter"))
+
+	require.True(t, m.WantsRawKeys(), "validation failure keeps edit mode")
+	out := m.View()
+	require.Contains(t, out, "3650",
+		"inline error must surface the upper-bound cap")
+	for _, c := range ops.Calls {
+		require.NotEqual(t, "AtomicWriteFile", c.Method,
+			"validation failure must NOT call AtomicWriteFile")
+	}
+}
+
 // --- helpers ---------------------------------------------------------------
 
 func flattenHelp(b []nav.KeyBinding) []nav.KeyBinding { return b }
