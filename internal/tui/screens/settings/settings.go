@@ -83,6 +83,16 @@ const (
 	// Routes through the standard inline-edit mechanic (textinput +
 	// validate-on-Enter + atomic Save). Default 90; range [1, 3650].
 	fieldLockdownWindow
+	// fieldPasswordAgingDays is the Phase 6 / TUI-09 knob - password
+	// aging threshold in days. Routes through the standard inline-edit
+	// mechanic (textinput + validate-on-Enter + atomic Save). Range
+	// [1, 3650], strict ordering 0 < aging < stale (config.Validate).
+	fieldPasswordAgingDays
+	// fieldPasswordStaleDays is the Phase 6 / TUI-09 knob - password
+	// stale threshold in days. Routes through the standard inline-edit
+	// mechanic (textinput + validate-on-Enter + atomic Save). Range
+	// [1, 3650], strict ordering aging < stale (config.Validate).
+	fieldPasswordStaleDays
 
 	// fieldKindCount is the modulus sentinel for cursor wrap math; place
 	// new fields BEFORE this constant.
@@ -103,6 +113,10 @@ func (k fieldKind) name() string {
 		return "password_authentication"
 	case fieldLockdownWindow:
 		return "lockdown.proposal_window_days"
+	case fieldPasswordAgingDays:
+		return "password_aging_days"
+	case fieldPasswordStaleDays:
+		return "password_stale_days"
 	}
 	return "unknown"
 }
@@ -120,6 +134,10 @@ func (k fieldKind) hint() string {
 		return "(globally allow / disallow password auth - managed users without keys block disable)"
 	case fieldLockdownWindow:
 		return "days (proposal lookback; default 90)"
+	case fieldPasswordAgingDays:
+		return "(default 180; range [1, 3650]; must be < stale)"
+	case fieldPasswordStaleDays:
+		return "(default 365; range [1, 3650]; must be > aging)"
 	}
 	return ""
 }
@@ -300,6 +318,16 @@ const PasswordAuthNRowIndexForTest = int(fieldPasswordAuthN)
 // assert without depending on the enum's iota position drifting.
 const LockdownWindowRowIndexForTest = int(fieldLockdownWindow)
 
+// PasswordAgingDaysRowIndexForTest exposes the field-row index for
+// fieldPasswordAgingDays (Phase 6 / TUI-09) so tests can SetCursor +
+// assert without depending on the enum's iota position drifting.
+const PasswordAgingDaysRowIndexForTest = int(fieldPasswordAgingDays)
+
+// PasswordStaleDaysRowIndexForTest exposes the field-row index for
+// fieldPasswordStaleDays (Phase 6 / TUI-09) so tests can SetCursor +
+// assert without depending on the enum's iota position drifting.
+const PasswordStaleDaysRowIndexForTest = int(fieldPasswordStaleDays)
+
 // EditingForTest exposes the inline-edit-mode flag for assertions.
 func (m *Model) EditingForTest() bool { return m.editing }
 
@@ -455,6 +483,10 @@ func (m *Model) currentValue() int {
 		return m.settings.CompactAfterDays
 	case fieldLockdownWindow:
 		return m.settings.LockdownProposalWindowDays
+	case fieldPasswordAgingDays:
+		return m.settings.PasswordAgingDays
+	case fieldPasswordStaleDays:
+		return m.settings.PasswordStaleDays
 	}
 	return 0
 }
@@ -471,6 +503,10 @@ func (m *Model) valueFor(k fieldKind) int {
 		return m.settings.CompactAfterDays
 	case fieldLockdownWindow:
 		return m.settings.LockdownProposalWindowDays
+	case fieldPasswordAgingDays:
+		return m.settings.PasswordAgingDays
+	case fieldPasswordStaleDays:
+		return m.settings.PasswordStaleDays
 	}
 	return 0
 }
@@ -496,6 +532,10 @@ func (m *Model) attemptSave() tea.Cmd {
 		candidate.CompactAfterDays = v
 	case fieldLockdownWindow:
 		candidate.LockdownProposalWindowDays = v
+	case fieldPasswordAgingDays:
+		candidate.PasswordAgingDays = v
+	case fieldPasswordStaleDays:
+		candidate.PasswordStaleDays = v
 	}
 	if errs := config.Validate(candidate); len(errs) > 0 {
 		// First error per field is the most relevant - surfaces the
