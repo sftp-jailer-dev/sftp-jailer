@@ -556,6 +556,20 @@ func (m *Model) renderDetailPane(w int) string {
 	return RenderDetail(m.filtered[m.cursor], w)
 }
 
+// DisplayN is the cross-package alias of displayN. Plan 06-03 / TUI-10
+// reuses it from internal/tui/screens/userlog so M-USER-LOG renders rows
+// in the same fixed-width 5-col layout as S-LOGS wide-mode (single source
+// of truth for the row formatter; see logs.go::renderList line 537).
+func DisplayN(s string, n int) string { return displayN(s, n) }
+
+// ColorByTier is the cross-package alias of colorByTier. See DisplayN
+// for the Plan 06-03 / TUI-10 motivation.
+func ColorByTier(tier, line string) string { return colorByTier(tier, line) }
+
+// TierGlyph is the cross-package alias of tierGlyph. See DisplayN for
+// the Plan 06-03 / TUI-10 motivation.
+func TierGlyph(tier string) string { return tierGlyph(tier) }
+
 // displayN pads s to exactly n columns (truncating with ellipsis if
 // needed). Used for the fixed-width list columns. Empty strings render
 // as `-` followed by enough spaces.

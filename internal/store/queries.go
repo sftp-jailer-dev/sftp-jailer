@@ -200,21 +200,35 @@ type UserBreakdown struct {
 }
 
 const (
-	perUserTiersSQL       = `SELECT tier, COUNT(*) FROM observations WHERE user = ? GROUP BY tier`
+	// perUserTiersSQL counts observations per tier for a user, optionally
+	// constrained to ts_unix_ns >= sinceNs. The "(? = 0 OR ts_unix_ns >= ?)"
+	// idiom mirrors filterEventsSQL's empty-string convention - a sentinel
+	// argument disables the corresponding filter so the same prepared
+	// statement covers both the unbounded ("lifetime counts") and the
+	// windowed ("last N days") shapes (Plan 06-03 / TUI-10).
+	perUserTiersSQL       = `SELECT tier, COUNT(*) FROM observations WHERE user = ? AND (? = 0 OR ts_unix_ns >= ?) GROUP BY tier`
 	perUserFirstSeenIPSQL = `SELECT source_ip FROM observations WHERE user = ? ORDER BY ts_unix_ns ASC LIMIT 1`
 	perUserLastSuccessSQL = `SELECT MAX(ts_unix_ns) FROM observations WHERE user = ? AND tier = 'success'`
 )
 
 // PerUserBreakdown returns the LOG-06 aggregation for a single user.
 //
+// sinceNs filters the per-tier counts to observations with
+// ts_unix_ns >= sinceNs. Pass 0 to disable the filter (lifetime counts) -
+// mirrors the FilterEvents.SinceNs convention. The first-seen IP and
+// last-success scans are NOT filtered by sinceNs by design: those answer
+// "ever" questions and the M-USER-LOG modal renders the windowed tier
+// counts separately from the unbounded "first seen" / "last success"
+// header chips.
+//
 // FirstSeenIP and LastSuccessNs scans tolerate sql.ErrNoRows (the user
 // may have zero rows, or zero successful logins) - they leave the field
 // at its zero value and return no error. Only the tier-count query
 // surfaces errors, since an empty result there is a valid outcome.
-func (q *Queries) PerUserBreakdown(ctx context.Context, user string) (UserBreakdown, error) {
+func (q *Queries) PerUserBreakdown(ctx context.Context, user string, sinceNs int64) (UserBreakdown, error) {
 	var ub UserBreakdown
 
-	rows, err := q.r.QueryContext(ctx, perUserTiersSQL, user)
+	rows, err := q.r.QueryContext(ctx, perUserTiersSQL, user, sinceNs, sinceNs)
 	if err != nil {
 		return ub, fmt.Errorf("queries.PerUserBreakdown tiers: %w", err)
 	}

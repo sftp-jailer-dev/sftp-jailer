@@ -775,3 +775,123 @@ func TestSUsers_d_still_pushes_deleteuser_modal_phase3_preserved(t *testing.T) {
 	require.False(t, fwFactoryCalled,
 		"W1 keybind deviation: lowercase 'd' must NOT invoke the FW-rule factory")
 }
+
+// --- Plan 06-03 / TUI-10: M-USER-LOG keybind tests --------------------------
+
+// TestUsers_uppercase_L_pushes_user_log_modal pins D-01: pressing uppercase
+// L on a selected real row invokes the userLogFactory with the focused
+// row's username and pushes the returned screen onto the nav stack.
+func TestUsers_uppercase_L_pushes_user_log_modal(t *testing.T) {
+	defer usersscreen.SetUserLogFactory(nil) // cleanup global
+
+	var capturedUser string
+	stub := &usersStubScreen{name: "M-USER-LOG"}
+	usersscreen.SetUserLogFactory(func(username string) nav.Screen {
+		capturedUser = username
+		return stub
+	})
+
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{
+		{Username: "alice", UID: 1001, ChrootPath: "/srv/sftp-jailer/alice", HomePath: "/srv/sftp-jailer/alice"},
+	}, nil)
+
+	_, cmd := m.Update(keyPress("L"))
+	require.NotNil(t, cmd, "uppercase 'L' on a selected row with factory set must emit non-nil tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Same(t, nav.Screen(stub), nm.Screen)
+	require.Equal(t, "alice", capturedUser,
+		"userLogFactory must be invoked with the selected row's username")
+}
+
+// TestUsers_lowercase_d_still_pushes_user_detail is the W-03 regression
+// guard for Plan 06-03: adding the L keybind must NOT break the existing
+// lowercase 'd' = M-DELETE-USER contract from Phase 3 03-08a.
+func TestUsers_lowercase_d_still_pushes_user_detail(t *testing.T) {
+	defer usersscreen.SetUserLogFactory(nil)
+
+	// Even with a userLogFactory wired, lowercase 'd' must still route
+	// to M-DELETE-USER per Phase 3 03-08a.
+	var userLogCalled bool
+	usersscreen.SetUserLogFactory(func(_ string) nav.Screen {
+		userLogCalled = true
+		return &usersStubScreen{name: "should-not-push-on-d"}
+	})
+
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{
+		{Username: "alice", UID: 1001, ChrootPath: "/srv/sftp-jailer/alice", HomePath: "/srv/sftp-jailer/alice"},
+	}, nil)
+
+	_, cmd := m.Update(keyPress("d"))
+	require.NotNil(t, cmd, "W-03 regression: lowercase 'd' must STILL push M-DELETE-USER")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok)
+	require.Equal(t, nav.Push, nm.Intent)
+	_, isDU := nm.Screen.(*deleteuser.Model)
+	require.True(t, isDU,
+		"W-03 regression: lowercase 'd' on S-USERS must STILL push *deleteuser.Model; got %T",
+		nm.Screen)
+	require.False(t, userLogCalled,
+		"Plan 06-03: lowercase 'd' must NOT invoke the userLogFactory")
+}
+
+// TestUsers_uppercase_D_still_pushes_delete_fw_rules is the W-03 regression
+// guard for Plan 06-03: adding the L keybind must NOT shadow the uppercase
+// 'D' = M-DELETE-RULE-byUser contract from Plan 04-06.
+func TestUsers_uppercase_D_still_pushes_delete_fw_rules(t *testing.T) {
+	defer usersscreen.SetDeleteUserFwRulesFactory(nil)
+	defer usersscreen.SetUserLogFactory(nil)
+
+	var fwUser string
+	fwStub := &usersStubScreen{name: "M-DELETE-RULE-byUser"}
+	usersscreen.SetDeleteUserFwRulesFactory(func(username string) nav.Screen {
+		fwUser = username
+		return fwStub
+	})
+	usersscreen.SetUserLogFactory(func(_ string) nav.Screen {
+		return &usersStubScreen{name: "should-not-push-on-D"}
+	})
+
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{
+		{Username: "alice", UID: 1001, ChrootPath: "/srv/sftp-jailer/alice", HomePath: "/srv/sftp-jailer/alice"},
+	}, nil)
+
+	_, cmd := m.Update(keyPress("D"))
+	require.NotNil(t, cmd, "W-03 regression: uppercase 'D' must STILL push M-DELETE-RULE-byUser")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.Same(t, nav.Screen(fwStub), nm.Screen,
+		"W-03 regression: uppercase 'D' must dispatch via the FW-rule factory, not the userLogFactory")
+	require.Equal(t, "alice", fwUser)
+}
+
+// TestUsers_uppercase_L_with_no_factory_is_noop pins the nil-factory
+// safeguard: pressing L when no userLogFactory has been registered (e.g.
+// tests that don't wire the modal) returns no nav-push. Mirrors the
+// deleteUserFwRulesFactory==nil path in handleKey.
+func TestUsers_uppercase_L_with_no_factory_is_noop(t *testing.T) {
+	usersscreen.SetUserLogFactory(nil)
+
+	f := sysops.NewFake()
+	cfg := config.Defaults()
+	m := usersscreen.NewWithConfig(nil, &cfg, f, "/srv/sftp-jailer")
+	m.LoadRowsForTest([]users.Row{
+		{Username: "alice", UID: 1001},
+	}, nil)
+	_, cmd := m.Update(keyPress("L"))
+	require.Nil(t, cmd, "uppercase 'L' without factory must be a no-op")
+}

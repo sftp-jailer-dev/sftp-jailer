@@ -75,6 +75,26 @@ func SetDeleteUserFwRulesFactory(fn func(username string) nav.Screen) {
 	deleteUserFwRulesFactory = fn
 }
 
+// userLogFactory is the package-level seam for Plan 06-03 (TUI-10) to
+// inject the M-USER-LOG modal constructor. Mirrors the
+// deleteUserFwRulesFactory pattern. Pressing uppercase L on a selected
+// real user row invokes the factory with the username.
+//
+// W1 keybind contract (D-01):
+//   - lowercase 'd' = S-USER-DETAIL via M-DELETE-USER (Phase 3 03-08a),
+//   - uppercase 'D' = M-DELETE-RULE-byUser (Plan 04-06),
+//   - uppercase 'L' = M-USER-LOG (this plan).
+//
+// nil-factory path is a no-op (test paths that don't wire the modal).
+var userLogFactory func(username string) nav.Screen
+
+// SetUserLogFactory registers the M-USER-LOG modal constructor. Called
+// once at TUI bootstrap (cmd/sftp-jailer/main.go). Pass nil to clear
+// (test cleanup).
+func SetUserLogFactory(fn func(username string) nav.Screen) {
+	userLogFactory = fn
+}
+
 // SortAxis enumerates the columns the `s` cycle rotates through.
 //
 // Order matches UI-SPEC §S-USERS line 214:
@@ -403,6 +423,23 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		}
 		if r := m.selectedRow(); r != nil {
 			screen := deleteUserFwRulesFactory(r.Username)
+			if screen != nil {
+				return m, nav.PushCmd(screen)
+			}
+		}
+		return m, nil
+	case "L":
+		// Plan 06-03 / TUI-10 D-01: 'L' (uppercase) pushes M-USER-LOG
+		// for the selected real row. Mirrors the case "D" body
+		// verbatim - same selectedRow / nil-factory / push idioms -
+		// so the W1 keybind triple (d / D / L) reads as a uniform
+		// dispatch table. No-op when no row is selected or factory
+		// is nil.
+		if userLogFactory == nil {
+			return m, nil
+		}
+		if r := m.selectedRow(); r != nil {
+			screen := userLogFactory(r.Username)
 			if screen != nil {
 				return m, nav.PushCmd(screen)
 			}
@@ -794,6 +831,8 @@ type KeyMap struct {
 	Delete nav.KeyBinding // 'd' → push M-DELETE-USER on selected real row
 	// Plan 04-06 addition (W1 keybind deviation):
 	DeleteFwRules nav.KeyBinding // 'D' → push M-DELETE-RULE-byUser via factory
+	// Plan 06-03 / TUI-10 addition:
+	UserLog nav.KeyBinding // 'L' → push M-USER-LOG via factory
 }
 
 // DefaultKeyMap returns the canonical S-USERS bindings per UI-SPEC §S-USERS.
@@ -810,6 +849,7 @@ func DefaultKeyMap() KeyMap {
 		Keys:          nav.KeyBinding{Keys: []string{"k"}, Help: "keys (S-USER-DETAIL)"},
 		Delete:        nav.KeyBinding{Keys: []string{"d"}, Help: "delete user"},
 		DeleteFwRules: nav.KeyBinding{Keys: []string{"D"}, Help: "delete all FW rules for user"},
+		UserLog:       nav.KeyBinding{Keys: []string{"L"}, Help: "per-user log detail"},
 	}
 }
 
@@ -818,20 +858,21 @@ func DefaultKeyMap() KeyMap {
 func (k KeyMap) ShortHelp() []nav.KeyBinding {
 	return []nav.KeyBinding{
 		k.Back, k.Search, k.Detail, k.SortCycle, k.Copy,
-		k.New, k.Password, k.Keys, k.Delete, k.DeleteFwRules,
+		k.New, k.Password, k.Keys, k.Delete, k.DeleteFwRules, k.UserLog,
 	}
 }
 
-// FullHelp shows five columns: nav row (back/search/detail), action row
+// FullHelp shows six columns: nav row (back/search/detail), action row
 // (sort/reverse-sort/copy), Phase 3 mutation row (new/password), the
-// per-row mutation row from plan 03-08a (keys/delete), and the new
-// FW-rule row added by plan 04-06 (delete-fw-rules).
+// per-row mutation row from plan 03-08a (keys/delete), the FW-rule row
+// added by plan 04-06 (delete-fw-rules), and the per-user log row added
+// by plan 06-03 (user-log).
 func (k KeyMap) FullHelp() [][]nav.KeyBinding {
 	return [][]nav.KeyBinding{
 		{k.Back, k.Search, k.Detail},
 		{k.SortCycle, k.SortReverse, k.Copy},
 		{k.New, k.Password},
 		{k.Keys, k.Delete},
-		{k.DeleteFwRules},
+		{k.DeleteFwRules, k.UserLog},
 	}
 }

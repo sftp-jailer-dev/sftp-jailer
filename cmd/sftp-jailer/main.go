@@ -33,6 +33,7 @@ import (
 	settingsscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/settings"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/splash"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/userdetail"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/userlog"
 	usersscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/users"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/wire"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/users"
@@ -410,6 +411,17 @@ func runTUI(cmd *cobra.Command, args []string) error {
 		m := firewallrule.NewDeleteByUser(ops, revertWatcher, username)
 		m.SetStore(queries)
 		return m
+	})
+	// Plan 06-03 / TUI-10: S-USERS 'L' (uppercase) → M-USER-LOG for
+	// the selected user. The factory closure constructs a fresh
+	// userlog.Model per push so each navigation re-runs PerUserBreakdown
+	// + FilterEvents (the modal does not refresh in-place). Captures:
+	//   - queries  - *store.Queries handle (read pool)
+	//   - usersCfg - holds LockdownProposalWindowDays which drives
+	//     both the windowed tier strip AND the row list's SinceNs
+	//     filter (D-04 / Pitfall 5 close).
+	usersscreen.SetUserLogFactory(func(username string) nav.Screen {
+		return userlog.New(username, queries, &usersCfg)
 	})
 
 	// Construct the App with the splash as the initial screen. The splash
