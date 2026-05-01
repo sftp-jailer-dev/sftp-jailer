@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Packaging & Release
-status: executing
+status: milestone_complete
 last_updated: "2026-05-01T01:56:16.680Z"
 last_activity: 2026-05-01 - Phase 7 (NYQ-01) closed: 4 v1.1 phases now Nyquist-compliant per /gsd:audit-milestone v1.1 PASS gate.
 progress:
   total_phases: 1
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 7
   completed_plans: 7
-  percent: 100
+  percent: 200
 ---
 
 # STATE: sftp-jailer
@@ -27,10 +27,10 @@ See `.planning/PROJECT.md` (updated 2026-04-29 - v1.2 Current Milestone block + 
 
 ## Current Position
 
-Phase: 06 (v1-1-carry-over-closure-firewall-edge-tui-polish) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 06
-Last activity: 2026-05-01 -- Phase 06 execution started
+Phase: 07
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-05-01
 Resume file: --resume-file
 
 ## Accumulated Context
