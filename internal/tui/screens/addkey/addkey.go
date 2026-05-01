@@ -149,14 +149,9 @@ type Model struct {
 	// / attemptCommit; storing it on the model lets handleKey route Esc
 	// during phaseFetching / phaseCommitting through to SIGTERM the in-flight
 	// subprocess. cancelling flips true after the cancel is dispatched and
-	// drives the View 'Cancelling...' indicator (D-07). lastPID holds the
-	// most-recent ExecResult.PID seen by the goroutine so the modal can
-	// thread it onto the done-msg for the D-08 hang diagnostic. (Note: the
-	// load-bearing PID is the one captured locally in the goroutine and
-	// pasted onto the done-msg; lastPID is a best-effort breadcrumb only.)
+	// drives the View 'Cancelling...' indicator (D-07).
 	cancelFn   context.CancelFunc
 	cancelling bool
-	lastPID    int
 }
 
 // fetchedMsg carries the resolved review rows back from the goroutine
@@ -530,11 +525,13 @@ func (m *Model) handleFetched(msg fetchedMsg) (nav.Screen, tea.Cmd) {
 			m.phase = phaseError
 			return m, nil
 		}
-		// TUI-11 D-08 verbatim copy. Fetching path has no PID surface
-		// (HTTP, not subprocess) so PID=0 is the honest report.
-		m.errInline = fmt.Sprintf(
-			"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
-			0, 0)
+		// TUI-11 IN-02 (06-REVIEW.md): the fetching path resolves SSH
+		// keys via HTTP (gh:) or file-read (file:); there is no
+		// subprocess, so the D-08 subprocess wording is dishonest.
+		// Render a fetch-specific fallback that does NOT instruct the
+		// admin to run a kill command.
+		m.errInline = "Cancellation failed - in-flight HTTP / file read did not abort within 2s. " +
+			"Modal stays open until the request returns."
 		m.errFatal = true
 		m.cancelling = false
 		m.phase = phaseError
@@ -697,13 +694,26 @@ func (m *Model) handleCommitted(msg committedMsg) (nav.Screen, tea.Cmd) {
 			m.phase = phaseError
 			return m, nil
 		}
-		// TUI-11 D-08: cancellation attempted but the subprocess returned a
-		// non-context error - SIGKILL did not release within 2s after sending.
-		// Verbatim copy per CONTEXT.md D-08; substrings 'Cancellation failed',
-		// 'Run kill -9', and 'from another shell.' are checker-asserted.
-		m.errInline = fmt.Sprintf(
-			"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
-			msg.pid, msg.pid)
+		// TUI-11 CR-01 (06-REVIEW.md): when msg.pid <= 0 (production
+		// path - tx.Apply does not surface ExecResult.PID), render the
+		// subprocess-free fallback. kill(2) PID 0 = SIGKILL the calling
+		// process group, so 'Run kill -9 0' is a literal safety hazard
+		// if an admin copy-pastes from a TTY where sftp-jailer was
+		// backgrounded. The live-PID branch (msg.pid > 0) is preserved
+		// for the case when ExecResult.PID is propagated (currently
+		// only via Feed*ForTest test seams; v1.3 path-A would wire
+		// production through tx.Apply enhancement).
+		if msg.pid <= 0 {
+			m.errInline = "Cancellation failed - subprocess refused SIGTERM and SIGKILL within 2s. " +
+				"Inspect `ps -ef | grep <child-binary>` from another shell to identify the live PID."
+		} else {
+			// TUI-11 D-08 verbatim copy preserved. Substrings
+			// 'Cancellation failed', 'Run kill -9', and 'from another
+			// shell.' are checker-asserted.
+			m.errInline = fmt.Sprintf(
+				"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
+				msg.pid, msg.pid)
+		}
 		m.errFatal = true
 		m.cancelling = false
 		m.phase = phaseError
