@@ -32,6 +32,7 @@ package addkey
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -142,6 +143,20 @@ type Model struct {
 	// Error surfacing.
 	errInline string
 	errFatal  bool
+
+	// TUI-11 D-07 / D-08 cancellation plumbing. cancelFn is the
+	// context.CancelFunc returned by context.WithCancel inside resolveAsync
+	// / attemptCommit; storing it on the model lets handleKey route Esc
+	// during phaseFetching / phaseCommitting through to SIGTERM the in-flight
+	// subprocess. cancelling flips true after the cancel is dispatched and
+	// drives the View 'Cancelling...' indicator (D-07). lastPID holds the
+	// most-recent ExecResult.PID seen by the goroutine so the modal can
+	// thread it onto the done-msg for the D-08 hang diagnostic. (Note: the
+	// load-bearing PID is the one captured locally in the goroutine and
+	// pasted onto the done-msg; lastPID is a best-effort breadcrumb only.)
+	cancelFn   context.CancelFunc
+	cancelling bool
+	lastPID    int
 }
 
 // fetchedMsg carries the resolved review rows back from the goroutine
@@ -152,8 +167,13 @@ type fetchedMsg struct {
 }
 
 // committedMsg carries the txn.Apply outcome back from the goroutine
-// spawned by attemptCommit.
-type committedMsg struct{ err error }
+// spawned by attemptCommit. TUI-11 D-08: pid carries the live subprocess
+// PID captured by the goroutine so the hang-escalation diagnostic can
+// reference the actual process that was mid-flight at Esc time.
+type committedMsg struct {
+	err error
+	pid int
+}
 
 // autoPopMsg is the tea.Tick payload that pops the modal after a
 // successful commit lingers for autoPopDelay.
@@ -232,7 +252,16 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 			m.errFatal = false
 			return m, nil
 		case phaseFetching, phaseCommitting:
-			// Swallow - async work will complete and return us to a stable phase.
+			// TUI-11 D-07: Esc during async phase cancels the in-flight
+			// subprocess via the stored cancelFn. The modal STAYS OPEN -
+			// closes only when committedMsg / fetchedMsg arrives. The
+			// 'Cancelling...' indicator (rendered in View while m.cancelling
+			// is true) gives the admin immediate feedback even before the
+			// subprocess exits.
+			if m.cancelFn != nil {
+				m.cancelFn()
+			}
+			m.cancelling = true
 			return m, nil
 		}
 	}
@@ -376,9 +405,16 @@ func allTrue(n int) []bool {
 // the verbatim ssh.ParseAuthorizedKey error.
 func (m *Model) resolveAsync(parsed []keys.ParsedKey) tea.Cmd {
 	ops := m.ops
+	// TUI-11: store the cancel func on the model BEFORE returning the Cmd
+	// so handleKey can route Esc to it the moment the goroutine starts
+	// executing. The goroutine receives baseCtx via closure and chains
+	// WithTimeout to preserve the existing fetchTimeout deadline.
+	baseCtx, cancel := context.WithCancel(context.Background())
+	m.cancelFn = cancel
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		defer cancel()
+		defer cancel() // happy-path safety net; idempotent with the cancel from Esc
+		ctx, tcancel := context.WithTimeout(baseCtx, fetchTimeout)
+		defer tcancel()
 		var rows []ReviewRow
 		for _, p := range parsed {
 			switch p.Source {
@@ -483,6 +519,27 @@ func parseLineToRow(line []byte, sourceLabel string) (ReviewRow, error) {
 }
 
 func (m *Model) handleFetched(msg fetchedMsg) (nav.Screen, tea.Cmd) {
+	// TUI-11 Pitfall 2: classify cancellation BEFORE the success/error
+	// branches so an Esc-during-fetch shutdown never lands rows + advances
+	// to phaseReview.
+	if m.cancelling {
+		if msg.err == nil || errors.Is(msg.err, context.Canceled) || errors.Is(msg.err, context.DeadlineExceeded) {
+			m.errInline = "cancelled by Esc"
+			m.errFatal = false
+			m.cancelling = false
+			m.phase = phaseError
+			return m, nil
+		}
+		// TUI-11 D-08 verbatim copy. Fetching path has no PID surface
+		// (HTTP, not subprocess) so PID=0 is the honest report.
+		m.errInline = fmt.Sprintf(
+			"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
+			0, 0)
+		m.errFatal = true
+		m.cancelling = false
+		m.phase = phaseError
+		return m, nil
+	}
 	if msg.err != nil {
 		m.errInline = msg.err.Error()
 		m.errFatal = true
@@ -528,9 +585,15 @@ func (m *Model) attemptCommit() tea.Cmd {
 	}
 	ops, user, root := m.ops, m.username, m.chrootRoot
 	m.phase = phaseCommitting
+	// TUI-11: store cancelFn BEFORE returning the Cmd so Esc has a handle
+	// the moment the goroutine starts. The inner WithTimeout chains under
+	// the cancellable parent; either Esc or timeout cancels the chain.
+	baseCtx, cancel := context.WithCancel(context.Background())
+	m.cancelFn = cancel
 	return tea.Batch(m.spinner.Tick, func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), commitTimeout)
-		defer cancel()
+		defer cancel() // happy-path safety net; idempotent
+		ctx, tcancel := context.WithTimeout(baseCtx, commitTimeout)
+		defer tcancel()
 		// Read prior content (if any) for append.
 		authPath := filepath.Join(root, user, ".ssh", "authorized_keys")
 		prior, _ := ops.ReadFile(ctx, authPath) // ErrNotExist → empty prior
@@ -551,7 +614,14 @@ func (m *Model) attemptCommit() tea.Cmd {
 			txn.NewVerifyAuthKeysStep(user, root, buildVerifier()),
 		}
 		err := tx.Apply(ctx, steps)
-		return committedMsg{err: err}
+		// TUI-11 D-08: thread a subprocess PID onto the done-msg for the
+		// hang-escalation diagnostic. The addkey txn batch invokes
+		// sysops.SshdTWithContext (not sysops.Exec) inside the verifier
+		// closure, so ExecResult.PID is not exposed on this path - the
+		// diagnostic falls back to PID=0 in production. Tests pin a
+		// non-zero PID via FeedCommittedMsgForTest to assert the D-08
+		// verbatim copy renders with the live PID injected.
+		return committedMsg{err: err, pid: 0}
 	})
 }
 
@@ -616,6 +686,29 @@ func adaptViolations(in []chrootcheck.Violation) []txn.VerifyViolation {
 }
 
 func (m *Model) handleCommitted(msg committedMsg) (nav.Screen, tea.Cmd) {
+	// TUI-11 Pitfall 2: classify cancellation BEFORE the success/fatal
+	// branches so an Esc-driven shutdown never triggers a success toast.
+	if m.cancelling {
+		if msg.err == nil || errors.Is(msg.err, context.Canceled) || errors.Is(msg.err, context.DeadlineExceeded) {
+			// Neutral cancelled-state - not success, not fatal.
+			m.errInline = "cancelled by Esc"
+			m.errFatal = false
+			m.cancelling = false
+			m.phase = phaseError
+			return m, nil
+		}
+		// TUI-11 D-08: cancellation attempted but the subprocess returned a
+		// non-context error - SIGKILL did not release within 2s after sending.
+		// Verbatim copy per CONTEXT.md D-08; substrings 'Cancellation failed',
+		// 'Run kill -9', and 'from another shell.' are checker-asserted.
+		m.errInline = fmt.Sprintf(
+			"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
+			msg.pid, msg.pid)
+		m.errFatal = true
+		m.cancelling = false
+		m.phase = phaseError
+		return m, nil
+	}
 	if msg.err != nil {
 		m.errInline = msg.err.Error()
 		m.errFatal = true
@@ -670,7 +763,13 @@ func (m *Model) View() string {
 	case phaseFetching:
 		b.WriteString(m.spinner.View())
 		b.WriteString(" ")
-		b.WriteString(styles.Dim.Render("fetching keys…   [esc] cancel"))
+		if m.cancelling {
+			// TUI-11 D-07: 'Cancelling...' indicator. Substring 'Cancelling'
+			// is checker-asserted to land in View output verbatim.
+			b.WriteString(styles.Warn.Render("Cancelling..."))
+		} else {
+			b.WriteString(styles.Dim.Render("fetching keys…   [esc] cancel"))
+		}
 	case phaseReview:
 		b.WriteString(m.renderReviewTable())
 		b.WriteString("\n")
@@ -685,7 +784,12 @@ func (m *Model) View() string {
 	case phaseCommitting:
 		b.WriteString(m.spinner.View())
 		b.WriteString(" ")
-		b.WriteString(styles.Dim.Render("writing authorized_keys + verifying…"))
+		if m.cancelling {
+			// TUI-11 D-07: 'Cancelling...' indicator (D-07 verbatim landing).
+			b.WriteString(styles.Warn.Render("Cancelling..."))
+		} else {
+			b.WriteString(styles.Dim.Render("writing authorized_keys + verifying…   [esc] cancel"))
+		}
 	case phaseDone:
 		b.WriteString(styles.Success.Render(fmt.Sprintf(
 			"✓ added %d key(s); auto-closing…", countSelected(m.reviewSel))))
@@ -869,3 +973,35 @@ func (m *Model) ReviewSelForTest() []bool {
 
 // ReviewCursorForTest exposes the cursor index for assertions.
 func (m *Model) ReviewCursorForTest() int { return m.reviewCur }
+
+// SetCancelFnForTest injects a recordable cancel func so tests can assert
+// Esc during phaseFetching / phaseCommitting actually invokes it. Mirrors
+// observerunscreen.SetCancelFnForTest.
+func (m *Model) SetCancelFnForTest(fn context.CancelFunc) { m.cancelFn = fn }
+
+// IsCancellingForTest reports whether the Esc-cancel handler has fired and
+// the modal is awaiting subprocess exit. Pin for the D-07 'modal stays open'
+// assertion.
+func (m *Model) IsCancellingForTest() bool { return m.cancelling }
+
+// SetPhaseFetchingForTest forces the modal into phaseFetching so tests can
+// drive the Esc-during-fetch flow without spinning up the gh: HTTP path.
+func (m *Model) SetPhaseFetchingForTest() { m.phase = phaseFetching }
+
+// SetPhaseCommittingForTest forces the modal into phaseCommitting so tests
+// can drive the Esc-during-commit flow without spinning up a real txn batch.
+func (m *Model) SetPhaseCommittingForTest() { m.phase = phaseCommitting }
+
+// FeedCommittedMsgForTest delivers a synthesized committedMsg to Update so
+// tests can pin handleCommitted's cancellation classification (Pitfall 2)
+// and the D-08 hang diagnostic (verbatim copy with the live PID injected).
+func (m *Model) FeedCommittedMsgForTest(err error, pid int) (nav.Screen, tea.Cmd) {
+	return m.Update(committedMsg{err: err, pid: pid})
+}
+
+// FeedFetchedMsgForTest delivers a synthesized fetchedMsg to Update so
+// tests can pin handleFetched's cancellation classification on the
+// Esc-during-fetch flow.
+func (m *Model) FeedFetchedMsgForTest(err error) (nav.Screen, tea.Cmd) {
+	return m.Update(fetchedMsg{err: err})
+}
