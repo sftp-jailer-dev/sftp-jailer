@@ -147,12 +147,9 @@ type Model struct {
 	// / startSubmit; storing it on the model lets handleKey route Esc
 	// during phaseLoading / phaseSubmitting through to SIGTERM the in-flight
 	// subprocess. cancelling drives the View 'Cancelling...' indicator
-	// (D-07). lastPID is the most-recent subprocess PID seen (best-effort
-	// breadcrumb) - the load-bearing PID is the one threaded onto the
-	// done-msg by the goroutine.
+	// (D-07).
 	cancelFn   context.CancelFunc
 	cancelling bool
-	lastPID    int
 }
 
 // New constructs the modal for username at home under chrootRoot. ops
@@ -388,10 +385,19 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 				m.phase = phaseError
 				return m, nil
 			}
-			// TUI-11 D-08 verbatim copy with live PID.
-			m.errInline = fmt.Sprintf(
-				"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
-				msg.pid, msg.pid)
+			// TUI-11 CR-01 (06-REVIEW.md): when msg.pid <= 0 (production
+			// path - tx.Apply does not surface ExecResult.PID), render the
+			// subprocess-free fallback. kill(2) PID 0 = SIGKILL the calling
+			// process group; do NOT instruct the admin to run that.
+			if msg.pid <= 0 {
+				m.errInline = "Cancellation failed - subprocess refused SIGTERM and SIGKILL within 2s. " +
+					"Inspect `ps -ef | grep <child-binary>` from another shell to identify the live PID."
+			} else {
+				// TUI-11 D-08 verbatim copy preserved for the live-PID path.
+				m.errInline = fmt.Sprintf(
+					"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
+					msg.pid, msg.pid)
+			}
 			m.cancelling = false
 			m.phase = phaseError
 			return m, nil
@@ -417,10 +423,16 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 				m.phase = phaseError
 				return m, nil
 			}
-			// TUI-11 D-08 verbatim hang diagnostic with live PID.
-			m.errInline = fmt.Sprintf(
-				"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
-				msg.pid, msg.pid)
+			// TUI-11 CR-01 (06-REVIEW.md): same PID=0 fallback gate as
+			// metaLoadedMsg branch above.
+			if msg.pid <= 0 {
+				m.errInline = "Cancellation failed - subprocess refused SIGTERM and SIGKILL within 2s. " +
+					"Inspect `ps -ef | grep <child-binary>` from another shell to identify the live PID."
+			} else {
+				m.errInline = fmt.Sprintf(
+					"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
+					msg.pid, msg.pid)
+			}
 			m.cancelling = false
 			m.phase = phaseError
 			return m, nil
