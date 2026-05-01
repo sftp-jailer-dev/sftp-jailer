@@ -164,11 +164,17 @@ func Validate(s Settings) []error {
 	} else if s.DetailRetentionDays >= 1 && s.CompactAfterDays > s.DetailRetentionDays {
 		errs = append(errs, fmt.Errorf("compact_after_days must be ≤ detail_retention_days (got compact=%d, detail=%d)", s.CompactAfterDays, s.DetailRetentionDays))
 	}
-	// Password-age thresholds (02-11): strict ordering 0 < aging < stale.
-	// The S-USERS pwd-age column buckets are derived from this pair, so any
-	// non-strict ordering would collapse a bucket and confuse the legend.
-	if s.PasswordAgingDays < 1 {
-		errs = append(errs, fmt.Errorf("password_aging_days must be a positive integer (got %d)", s.PasswordAgingDays))
+	// Password-age thresholds (02-11 / TUI-09 D-12): strict ordering
+	// 0 < aging < stale plus a [1, 3650] cap on each (10-year ceiling
+	// mirrors detail_retention_days / lockdown.proposal_window_days,
+	// bounds T-06-02-03 "absurd-input" DoS). The S-USERS pwd-age column
+	// buckets are derived from this pair, so any non-strict ordering
+	// would collapse a bucket and confuse the legend.
+	if s.PasswordAgingDays < 1 || s.PasswordAgingDays > 3650 {
+		errs = append(errs, fmt.Errorf("password_aging_days must be a positive integer between 1 and 3650 (got %d)", s.PasswordAgingDays))
+	}
+	if s.PasswordStaleDays < 1 || s.PasswordStaleDays > 3650 {
+		errs = append(errs, fmt.Errorf("password_stale_days must be a positive integer between 1 and 3650 (got %d)", s.PasswordStaleDays))
 	}
 	if s.PasswordStaleDays <= s.PasswordAgingDays {
 		errs = append(errs, fmt.Errorf("password_stale_days must be strictly greater than password_aging_days (got stale=%d, aging=%d)", s.PasswordStaleDays, s.PasswordAgingDays))
