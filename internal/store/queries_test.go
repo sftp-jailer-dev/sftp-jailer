@@ -211,7 +211,11 @@ func TestQueries_PerUserBreakdown(t *testing.T) {
 	// bob: noise only, distractor.
 	insertObservation(t, s.W, runID, base+7, "noise", "bob", "203.0.113.1", "auth_pwd_fail")
 
-	ub, err := q.PerUserBreakdown(context.Background(), "alice")
+	// Plan 06-03 / TUI-10: PerUserBreakdown gained a sinceNs filter. The
+	// pre-extension shape (lifetime counts) is preserved by passing 0 -
+	// this regression guard ensures the new third arg doesn't drift the
+	// existing semantics.
+	ub, err := q.PerUserBreakdown(context.Background(), "alice", 0)
 	require.NoError(t, err)
 	tiers := map[string]int64{}
 	for _, tb := range ub.Tiers {
