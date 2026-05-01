@@ -226,6 +226,69 @@ func TestQueries_PerUserBreakdown(t *testing.T) {
 	require.Equal(t, base+3, ub.LastSuccessNs)
 }
 
+// TestPerUserBreakdown_with_since_ns_filters pins the Plan 06-03 / TUI-10
+// signature extension: PerUserBreakdown gains a sinceNs int64 argument that
+// filters tier counts to observations with ts_unix_ns >= sinceNs. Mirrors
+// the FilterEvents.SinceNs convention.
+//
+// Setup: insert observations spanning ~200 days. Query with a 90-day cutoff.
+// Assert: tier counts reflect ONLY events within the last 90 days.
+func TestPerUserBreakdown_with_since_ns_filters(t *testing.T) {
+	s, q := newSeededDB(t)
+	now := time.Now()
+	runID := insertRun(t, s.W, "success", now.UnixNano())
+
+	// Recent (within 90 days): 2 success, 1 noise.
+	insertObservation(t, s.W, runID, now.Add(-1*24*time.Hour).UnixNano(), "success", "alice", "10.0.0.1", "auth_pwd_ok")
+	insertObservation(t, s.W, runID, now.Add(-30*24*time.Hour).UnixNano(), "success", "alice", "10.0.0.2", "auth_pwd_ok")
+	insertObservation(t, s.W, runID, now.Add(-60*24*time.Hour).UnixNano(), "noise", "alice", "10.0.0.3", "auth_pwd_fail")
+
+	// Older than 90 days: 5 noise (must be filtered out).
+	for i := int64(0); i < 5; i++ {
+		insertObservation(t, s.W, runID, now.Add(-150*24*time.Hour).UnixNano()-i, "noise", "alice", "10.0.0.99", "auth_pwd_fail")
+	}
+
+	cutoff := now.Add(-90 * 24 * time.Hour).UnixNano()
+	ub, err := q.PerUserBreakdown(context.Background(), "alice", cutoff)
+	require.NoError(t, err)
+
+	tiers := map[string]int64{}
+	for _, tb := range ub.Tiers {
+		tiers[tb.Tier] = tb.Count
+	}
+	require.Equal(t, int64(2), tiers["success"], "expect 2 recent success rows; got %v", tiers)
+	require.Equal(t, int64(1), tiers["noise"], "expect 1 recent noise row (the 60-day-old one); got %v", tiers)
+	require.Zero(t, tiers["targeted"], "no targeted rows seeded; got %v", tiers)
+}
+
+// TestPerUserBreakdown_since_ns_zero_disables_filter pins the regression
+// guard: passing sinceNs=0 returns full lifetime counts (mirroring the
+// FilterEvents convention "(? = 0 OR ts_unix_ns >= ?)"). Pre-existing
+// callers that pass 0 must observe behaviour identical to the prior
+// 2-arg signature.
+func TestPerUserBreakdown_since_ns_zero_disables_filter(t *testing.T) {
+	s, q := newSeededDB(t)
+	now := time.Now()
+	runID := insertRun(t, s.W, "success", now.UnixNano())
+
+	// Spread observations across ~200 days.
+	insertObservation(t, s.W, runID, now.Add(-1*24*time.Hour).UnixNano(), "success", "alice", "10.0.0.1", "auth_pwd_ok")
+	insertObservation(t, s.W, runID, now.Add(-30*24*time.Hour).UnixNano(), "success", "alice", "10.0.0.2", "auth_pwd_ok")
+	insertObservation(t, s.W, runID, now.Add(-60*24*time.Hour).UnixNano(), "noise", "alice", "10.0.0.3", "auth_pwd_fail")
+	for i := int64(0); i < 5; i++ {
+		insertObservation(t, s.W, runID, now.Add(-150*24*time.Hour).UnixNano()-i, "noise", "alice", "10.0.0.99", "auth_pwd_fail")
+	}
+
+	ub, err := q.PerUserBreakdown(context.Background(), "alice", 0)
+	require.NoError(t, err)
+	tiers := map[string]int64{}
+	for _, tb := range ub.Tiers {
+		tiers[tb.Tier] = tb.Count
+	}
+	require.Equal(t, int64(2), tiers["success"], "sinceNs=0 returns lifetime success count; got %v", tiers)
+	require.Equal(t, int64(6), tiers["noise"], "sinceNs=0 returns lifetime noise count (1 recent + 5 old); got %v", tiers)
+}
+
 // ------ LastLoginPerUser ------
 
 func TestQueries_LastLoginPerUser(t *testing.T) {
