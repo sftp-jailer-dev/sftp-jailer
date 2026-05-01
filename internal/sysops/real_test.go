@@ -42,27 +42,26 @@ func TestExec_cancel_sends_SIGTERM_then_SIGKILL_after_2s(t *testing.T) {
 // TUI-11 Pitfall 1: when the subprocess self-exits between cmd.Start and the
 // Cancel closure firing, cmd.Process.Signal returns os.ErrProcessDone. The
 // Cancel closure must map that to nil so Wait does not surface a spurious
-// cancellation error. /bin/true exits immediately; cancelling shortly after
-// must NOT yield a non-context error.
+// cancellation error. A near-zero-duration /bin/sleep exits before cancel
+// fires in most cases, exercising the ErrProcessDone race; the cancel-beats-
+// exit path is also valid - either way no spurious unrelated error must surface.
 func TestExec_clean_exit_after_cancel_returns_canceled_not_failed(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	r, ok := NewReal().(*Real)
 	require.True(t, ok)
 
-	// Cancel almost immediately - the race we want to exercise is "subprocess
-	// either already self-exited (ErrProcessDone path) OR cancel beats it".
-	// In either case the test asserts no panic and no spurious unrelated
-	// error; nil OR context.Canceled OR context.DeadlineExceeded is fine.
+	// Sleep 0.01s exits quickly; cancel after 5ms races with that exit.
 	go func() {
 		time.Sleep(5 * time.Millisecond)
 		cancel()
 	}()
 
-	_, err := r.Exec(ctx, "/bin/true")
+	_, err := r.Exec(ctx, "/bin/sleep", "0.01")
 
-	// Acceptable outcomes: nil (true exited cleanly before cancel) OR a
-	// context error (cancel beat the natural exit).
+	// Acceptable outcomes: nil (sleep exited cleanly before cancel) OR a
+	// context error (cancel beat the natural exit). Anything else means
+	// Pitfall 1 leaked: a non-context error surfaced from the cancel race.
 	if err != nil {
 		require.True(t,
 			errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded),
@@ -87,7 +86,7 @@ func TestExec_returns_pid_after_start(t *testing.T) {
 }
 
 // TUI-11 regression guard: normal Exec still works AND populates PID on
-// every successful invocation. /bin/true exits 0 with no output.
+// every successful invocation. /bin/echo is portable across Linux and Darwin.
 func TestExec_normal_exec_still_populates_pid(t *testing.T) {
 	r, ok := NewReal().(*Real)
 	require.True(t, ok)
@@ -95,7 +94,7 @@ func TestExec_normal_exec_still_populates_pid(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	res, err := r.Exec(ctx, "/bin/true")
+	res, err := r.Exec(ctx, "/bin/echo", "hello")
 	require.NoError(t, err)
 	require.Equal(t, 0, res.ExitCode)
 	require.Greater(t, res.PID, 0,
