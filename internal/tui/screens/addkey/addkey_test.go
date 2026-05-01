@@ -1027,3 +1027,85 @@ func TestAddKey_TUI11_committed_with_non_context_err_after_cancel_renders_d08_di
 	require.Contains(t, v, "PID=12345",
 		"D-08 verbatim copy: 'PID=N' references the live PID")
 }
+
+// TestAddkey_handleCommitted_PID0Fallback_does_not_render_kill_minus_9_zero
+// (06-05 CR-01): when msg.pid <= 0 (the production path - tx.Apply does not
+// surface ExecResult.PID), the hang diagnostic must NOT render 'Run kill -9 0'
+// because kill(2) PID 0 = SIGKILL the calling process group. The subprocess-
+// free fallback must be shown instead.
+func TestAddkey_handleCommitted_PID0Fallback_does_not_render_kill_minus_9_zero(t *testing.T) {
+	t.Parallel()
+	m := addkey.New(nil, testChrootRoot, testUsername)
+	m.SetPhaseCommittingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+
+	hangErr := errors.New("simulated SIGKILL hang")
+	_, _ = m.FeedCommittedMsgForTest(hangErr, 0)
+
+	require.Equal(t, "error", m.PhaseForTest(),
+		"PID=0 fallback lands in phaseError")
+	v := m.ErrInlineForTest()
+	require.Contains(t, v, "refused SIGTERM and SIGKILL within 2s",
+		"CR-01: subprocess-free fallback must contain the canonical refusal copy")
+	require.Contains(t, v, "ps -ef | grep",
+		"CR-01: fallback must contain the actionable ps-grep hint")
+	require.NotContains(t, v, "Run kill -9",
+		"CR-01 safety: 'Run kill -9' must NOT appear on the PID=0 path")
+	require.NotContains(t, v, "PID=0",
+		"CR-01: 'PID=0' (the misleading kernel-scheduler wording) must NOT appear")
+	require.True(t, m.ErrFatalForTest(),
+		"PID=0 fallback is a fatal error")
+}
+
+// TestAddkey_handleCommitted_LivePID_still_renders_kill_minus_9_pid (06-05
+// regression guard): when msg.pid > 0, the verbatim D-08 copy with the live
+// PID must still appear. This pins that the new CR-01 gate did NOT break the
+// existing live-PID test-seam path.
+func TestAddkey_handleCommitted_LivePID_still_renders_kill_minus_9_pid(t *testing.T) {
+	t.Parallel()
+	m := addkey.New(nil, testChrootRoot, testUsername)
+	m.SetPhaseCommittingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+
+	hangErr := errors.New("simulated SIGKILL hang")
+	_, _ = m.FeedCommittedMsgForTest(hangErr, 12345)
+
+	v := m.ErrInlineForTest()
+	require.Contains(t, v, "Run kill -9 12345",
+		"live-PID path: verbatim D-08 copy with live PID must still appear")
+	require.Contains(t, v, "PID=12345",
+		"live-PID path: 'PID=N' with the live PID must still appear")
+}
+
+// TestAddkey_handleFetched_HTTPHang_does_not_reference_subprocess_or_kill
+// (06-05 IN-02): the HTTP/file-fetch cancellation hang path has no subprocess;
+// the fallback must NOT say 'subprocess' or 'Run kill -9'. Instead it renders
+// the fetch-specific copy: 'in-flight HTTP / file read did not abort within 2s'.
+func TestAddkey_handleFetched_HTTPHang_does_not_reference_subprocess_or_kill(t *testing.T) {
+	t.Parallel()
+	m := addkey.New(nil, testChrootRoot, testUsername)
+	m.SetPhaseFetchingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+
+	hangErr := errors.New("HTTP hang")
+	_, _ = m.FeedFetchedMsgForTest(hangErr)
+
+	require.Equal(t, "error", m.PhaseForTest(),
+		"IN-02 fetch fallback lands in phaseError")
+	v := m.ErrInlineForTest()
+	require.Contains(t, v, "in-flight HTTP / file read",
+		"IN-02: fetch-specific fallback must describe the hanging resource")
+	require.Contains(t, v, "Modal stays open",
+		"IN-02: fallback must explain the modal stays open until the request returns")
+	require.NotContains(t, v, "subprocess",
+		"IN-02: 'subprocess' must NOT appear on the HTTP/file-fetch path (no subprocess exists)")
+	require.NotContains(t, v, "Run kill -9",
+		"IN-02: 'Run kill -9' must NOT appear - there is no subprocess to kill")
+	require.NotContains(t, v, "PID=",
+		"IN-02: 'PID=' must NOT appear on the HTTP/file-fetch path")
+	require.True(t, m.ErrFatalForTest(),
+		"IN-02 fetch fallback is a fatal error")
+}

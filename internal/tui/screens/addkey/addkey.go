@@ -958,6 +958,9 @@ func (m *Model) PhaseForTest() string {
 // ErrInlineForTest exposes the inline-error string for assertions.
 func (m *Model) ErrInlineForTest() string { return m.errInline }
 
+// ErrFatalForTest exposes the errFatal flag for assertions.
+func (m *Model) ErrFatalForTest() bool { return m.errFatal }
+
 // ReviewLenForTest exposes len(m.review) for assertions.
 func (m *Model) ReviewLenForTest() int { return len(m.review) }
 
