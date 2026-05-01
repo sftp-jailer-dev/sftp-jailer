@@ -170,3 +170,10 @@ Checks:
 - `nyquist.overall: compliant` in audit YAML - PASSES
 - No em-dash in Phase 7 ROADMAP block - PASSES
 - No em-dash in 07-04-SUMMARY.md - PASSES
+
+## Commits
+
+| Hash | Description |
+|------|-------------|
+| f5c04b9 | chore(07-04): add 04-VALIDATION.md to worktree (untracked format anchor) [Rule 3 auto-fix] |
+| 0e862ea | docs(phase-7): close NYQ-01 - v1.1 audit-milestone PASS gate + ROADMAP D-03 update [atomic per CONTEXT D-05] |
