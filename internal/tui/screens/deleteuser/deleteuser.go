@@ -32,6 +32,7 @@ package deleteuser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -97,14 +98,21 @@ const (
 )
 
 // metaLoadedMsg carries the async meta-load result back to Update.
+// TUI-11 D-08: pid carries the live subprocess PID seen by the meta-load
+// goroutine when the modal hits the hang-escalation diagnostic path.
 type metaLoadedMsg struct {
 	size      int64
 	keysCount int
 	err       error
+	pid       int
 }
 
-// submitDoneMsg carries the txn-batch outcome.
-type submitDoneMsg struct{ err error }
+// submitDoneMsg carries the txn-batch outcome. TUI-11 D-08: pid carries
+// the live subprocess PID for the hang-escalation diagnostic.
+type submitDoneMsg struct {
+	err error
+	pid int
+}
 
 // autoPopMsg is the tea.Tick payload that pops after a successful submit.
 type autoPopMsg struct{}
@@ -133,6 +141,18 @@ type Model struct {
 	// Production binds time.Now; tests inject a frozen clock so the
 	// archive path is deterministic.
 	nowFn func() time.Time
+
+	// TUI-11 D-07 / D-08 cancellation plumbing. cancelFn is the
+	// context.CancelFunc returned by context.WithCancel inside startMetaLoad
+	// / startSubmit; storing it on the model lets handleKey route Esc
+	// during phaseLoading / phaseSubmitting through to SIGTERM the in-flight
+	// subprocess. cancelling drives the View 'Cancelling...' indicator
+	// (D-07). lastPID is the most-recent subprocess PID seen (best-effort
+	// breadcrumb) - the load-bearing PID is the one threaded onto the
+	// done-msg by the goroutine.
+	cancelFn   context.CancelFunc
+	cancelling bool
+	lastPID    int
 }
 
 // New constructs the modal for username at home under chrootRoot. ops
@@ -175,6 +195,35 @@ func (m *Model) SetNowFnForTest(fn func() time.Time) { m.nowFn = fn }
 func (m *Model) FeedSubmitDoneForTest(err error) (nav.Screen, tea.Cmd) {
 	return m.Update(submitDoneMsg{err: err})
 }
+
+// FeedSubmitDoneForTestWithPID is the TUI-11 D-08 variant: feeds a
+// submitDoneMsg with the given live PID so tests can pin the verbatim
+// "Cancellation failed - subprocess PID=N still alive. Run kill -9 N
+// from another shell." copy.
+func (m *Model) FeedSubmitDoneForTestWithPID(err error, pid int) (nav.Screen, tea.Cmd) {
+	return m.Update(submitDoneMsg{err: err, pid: pid})
+}
+
+// FeedMetaLoadedForTestWithPID is the TUI-11 D-08 variant for the
+// startMetaLoad goroutine path.
+func (m *Model) FeedMetaLoadedForTestWithPID(err error, pid int) (nav.Screen, tea.Cmd) {
+	return m.Update(metaLoadedMsg{err: err, pid: pid})
+}
+
+// SetCancelFnForTest injects a recordable cancel func so tests can assert
+// Esc during phaseLoading / phaseSubmitting actually invokes it.
+func (m *Model) SetCancelFnForTest(fn context.CancelFunc) { m.cancelFn = fn }
+
+// IsCancellingForTest reports whether the Esc-cancel handler has fired.
+func (m *Model) IsCancellingForTest() bool { return m.cancelling }
+
+// SetPhaseLoadingForTest forces the modal into phaseLoading so tests can
+// drive the Esc-during-meta-load flow.
+func (m *Model) SetPhaseLoadingForTest() { m.phase = phaseLoading }
+
+// SetPhaseSubmittingForTest forces the modal into phaseSubmitting so tests
+// can drive the Esc-during-submit flow.
+func (m *Model) SetPhaseSubmittingForTest() { m.phase = phaseSubmitting }
 
 // ModeForTest exposes the mode field for assertions.
 func (m *Model) ModeForTest() Mode { return m.mode }
@@ -225,9 +274,15 @@ func (m *Model) Init() tea.Cmd {
 // counts the authorized_keys file. Returns metaLoadedMsg.
 func (m *Model) startMetaLoad() tea.Cmd {
 	ops, home, root, user := m.ops, m.home, m.chrootRoot, m.username
+	// TUI-11: store cancelFn BEFORE returning the Cmd so Esc has a handle
+	// the moment the goroutine starts. Inner WithTimeout chains under the
+	// cancellable parent.
+	baseCtx, cancel := context.WithCancel(context.Background())
+	m.cancelFn = cancel
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+		defer cancel() // happy-path safety net; idempotent
+		ctx, tcancel := context.WithTimeout(baseCtx, 30*time.Second)
+		defer tcancel()
 		size, err := walkSize(ctx, ops, home)
 		if err != nil {
 			return metaLoadedMsg{err: err}
@@ -323,6 +378,24 @@ func countAuthorizedKeys(ctx context.Context, ops sysops.SystemOps, chrootRoot, 
 func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
 	case metaLoadedMsg:
+		// TUI-11 Pitfall 2: classify cancellation BEFORE the err/success
+		// branches so an Esc-driven shutdown never accidentally lands the
+		// loaded meta + advances to phaseReview.
+		if m.cancelling {
+			if msg.err == nil || errors.Is(msg.err, context.Canceled) || errors.Is(msg.err, context.DeadlineExceeded) {
+				m.errInline = "cancelled by Esc"
+				m.cancelling = false
+				m.phase = phaseError
+				return m, nil
+			}
+			// TUI-11 D-08 verbatim copy with live PID.
+			m.errInline = fmt.Sprintf(
+				"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
+				msg.pid, msg.pid)
+			m.cancelling = false
+			m.phase = phaseError
+			return m, nil
+		}
 		if msg.err != nil {
 			m.errInline = "could not load metadata: " + msg.err.Error()
 			m.phase = phaseError
@@ -334,6 +407,24 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		return m, nil
 
 	case submitDoneMsg:
+		// TUI-11 Pitfall 2: classify cancellation BEFORE success/fatal so
+		// the cancelling flow never accidentally renders a "deleted user"
+		// success toast.
+		if m.cancelling {
+			if msg.err == nil || errors.Is(msg.err, context.Canceled) || errors.Is(msg.err, context.DeadlineExceeded) {
+				m.errInline = "cancelled by Esc"
+				m.cancelling = false
+				m.phase = phaseError
+				return m, nil
+			}
+			// TUI-11 D-08 verbatim hang diagnostic with live PID.
+			m.errInline = fmt.Sprintf(
+				"Cancellation failed - subprocess PID=%d still alive. Run kill -9 %d from another shell.",
+				msg.pid, msg.pid)
+			m.cancelling = false
+			m.phase = phaseError
+			return m, nil
+		}
 		if msg.err != nil {
 			m.errInline = "delete failed: " + msg.err.Error()
 			m.phase = phaseError
@@ -377,9 +468,26 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		return m.handleConfirmKey(msg)
 	case phaseError:
 		return m.handleErrorKey(msg)
-	case phaseLoading, phaseSubmitting, phaseDone:
-		// Esc still backs out from done / loading / submitting so admins
-		// can leave fast.
+	case phaseLoading, phaseSubmitting:
+		// TUI-11 D-07: Esc during async phase cancels the in-flight
+		// subprocess. Modal STAYS OPEN per D-07; closes only when the
+		// done-msg arrives. The 'Cancelling...' indicator (rendered in
+		// View while m.cancelling is true) gives admin immediate feedback
+		// even before the subprocess exits.
+		if msg.String() == "esc" {
+			if m.cancelFn != nil {
+				m.cancelFn()
+			}
+			m.cancelling = true
+			return m, nil
+		}
+		// 'q' still pops the modal (legacy quick-exit, no async cancel).
+		if msg.String() == "q" {
+			return m, nav.PopCmd()
+		}
+		return m, nil
+	case phaseDone:
+		// Esc still backs out from done so admins can leave fast.
 		if msg.String() == "esc" || msg.String() == "q" {
 			return m, nav.PopCmd()
 		}
@@ -458,16 +566,23 @@ func (m *Model) startSubmit() tea.Cmd {
 	}
 	steps := m.composeSteps()
 	ops := m.ops
+	// TUI-11: store cancelFn BEFORE returning the Cmd so Esc has a handle
+	// the moment the goroutine starts. Inner WithTimeout chains under the
+	// cancellable parent.
+	baseCtx, cancel := context.WithCancel(context.Background())
+	m.cancelFn = cancel
 	return tea.Batch(
 		func() tea.Msg { return m.spinner.Tick() },
 		func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-			defer cancel()
+			defer cancel() // happy-path safety net; idempotent
+			ctx, tcancel := context.WithTimeout(baseCtx, 60*time.Second)
+			defer tcancel()
 			tx := txn.New(ops)
-			if err := tx.Apply(ctx, steps); err != nil {
-				return submitDoneMsg{err: err}
-			}
-			return submitDoneMsg{err: nil}
+			err := tx.Apply(ctx, steps)
+			// TUI-11 D-08: PID=0 in production (txn doesn't expose
+			// per-step ExecResult.PID). Tests pin the diagnostic via
+			// FeedSubmitDoneForTestWithPID.
+			return submitDoneMsg{err: err, pid: 0}
 		},
 	)
 }
@@ -518,13 +633,24 @@ func (m *Model) View() string {
 	var b strings.Builder
 	switch m.phase {
 	case phaseLoading:
-		b.WriteString(m.spinner.View() + " loading user metadata…")
+		if m.cancelling {
+			// TUI-11 D-07: 'Cancelling...' indicator. Substring 'Cancelling'
+			// is checker-asserted to land in View output.
+			b.WriteString(m.spinner.View() + " " + styles.Warn.Render("Cancelling..."))
+		} else {
+			b.WriteString(m.spinner.View() + " loading user metadata…")
+		}
 	case phaseReview:
 		m.renderReview(&b)
 	case phaseConfirmingPermanent:
 		m.renderConfirm(&b)
 	case phaseSubmitting:
-		b.WriteString(m.spinner.View() + " " + m.submittingLabel())
+		if m.cancelling {
+			// TUI-11 D-07: 'Cancelling...' indicator.
+			b.WriteString(m.spinner.View() + " " + styles.Warn.Render("Cancelling..."))
+		} else {
+			b.WriteString(m.spinner.View() + " " + m.submittingLabel())
+		}
 	case phaseDone:
 		b.WriteString(styles.Success.Render("✓ deleted user " + m.username))
 	case phaseError:

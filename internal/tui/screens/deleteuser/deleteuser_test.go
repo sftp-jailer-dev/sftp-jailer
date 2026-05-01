@@ -452,3 +452,88 @@ func TestDeleteUser_strings_builder_compiles(t *testing.T) {
 	b.WriteString("ok")
 	require.Equal(t, "ok", b.String())
 }
+
+// ============================================================================
+// TUI-11 (plan 06-04): cancellation tests for the deleteuser modal.
+//
+// D-07: Esc during phaseLoading / phaseSubmitting calls cancelFn, flips
+// m.cancelling, and renders 'Cancelling' in View. Modal STAYS OPEN until
+// the metaLoadedMsg / submitDoneMsg arrives.
+//
+// D-08: when SIGKILL fails to release within 2s after sending, the modal
+// renders the verbatim "Cancellation failed - subprocess PID=N still
+// alive. Run kill -9 N from another shell." copy with the live PID
+// injected.
+//
+// Pitfall 2: Update classifies cancellation BEFORE success/fatal so the
+// cancelling flow never accidentally renders a success toast.
+// ============================================================================
+
+// Test A (D-07): Esc during phaseSubmitting invokes the stored cancelFn,
+// flips m.cancelling, renders 'Cancelling' in View, and the modal stays
+// open (no nav.PopCmd).
+func TestDeleteUser_TUI11_esc_during_submitting_invokes_cancel_and_renders_indicator(t *testing.T) {
+	t.Parallel()
+	m := deleteuser.New(nil, testChrootRoot, testUsername, testHome)
+
+	m.SetPhaseSubmittingForTest()
+	var cancelCalls int
+	m.SetCancelFnForTest(func() { cancelCalls++ })
+
+	_, cmd := m.Update(keyPress("esc"))
+
+	require.Nil(t, cmd, "Esc during phaseSubmitting must NOT pop the modal (D-07: stays open)")
+	require.Equal(t, 1, cancelCalls, "Esc must call the stored cancelFn exactly once")
+	require.True(t, m.IsCancellingForTest(),
+		"m.cancelling must flip true after Esc-during-submitting")
+	require.Contains(t, m.View(), "Cancelling",
+		"D-07: View must render 'Cancelling' indicator while m.cancelling is true")
+	require.Equal(t, deleteuser.PhaseSubmittingForTest, m.PhaseForTest(),
+		"modal stays in phaseSubmitting until submitDoneMsg arrives (D-07)")
+}
+
+// Test B (Pitfall 2): submitDoneMsg with err==context.Canceled while
+// m.cancelling==true must render the neutral cancelled state, NOT trigger
+// the success toast.
+func TestDeleteUser_TUI11_submit_done_with_context_canceled_renders_neutral_cancelled(t *testing.T) {
+	t.Parallel()
+	m := deleteuser.New(nil, testChrootRoot, testUsername, testHome)
+	m.SetPhaseSubmittingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+	require.True(t, m.IsCancellingForTest())
+
+	_, _ = m.FeedSubmitDoneForTestWithPID(context.Canceled, 0)
+
+	require.Equal(t, deleteuser.PhaseErrorForTest, m.PhaseForTest(),
+		"cancelled flow lands in phaseError, NOT phaseDone")
+	require.Equal(t, "cancelled by Esc", m.ErrInlineForTest(),
+		"errInline is the neutral 'cancelled by Esc' string")
+	require.NotContains(t, m.View(), "deleted user",
+		"Pitfall 2: cancellation MUST NOT trigger the 'deleted user' success toast")
+}
+
+// Test C (D-08): submitDoneMsg with a non-context error after cancel
+// renders the verbatim hang-escalation diagnostic with the live PID.
+func TestDeleteUser_TUI11_submit_done_with_non_context_err_after_cancel_renders_d08_diagnostic(t *testing.T) {
+	t.Parallel()
+	m := deleteuser.New(nil, testChrootRoot, testUsername, testHome)
+	m.SetPhaseSubmittingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+
+	hangErr := errors.New("subprocess refused SIGKILL")
+	_, _ = m.FeedSubmitDoneForTestWithPID(hangErr, 54321)
+
+	require.Equal(t, deleteuser.PhaseErrorForTest, m.PhaseForTest(),
+		"D-08 hang renders the diagnostic in phaseError")
+	v := m.ErrInlineForTest()
+	require.Contains(t, v, "Cancellation failed",
+		"D-08 verbatim copy: 'Cancellation failed' must appear")
+	require.Contains(t, v, "Run kill -9 54321",
+		"D-08 verbatim copy: 'Run kill -9 <PID>' with live PID injected")
+	require.Contains(t, v, "from another shell",
+		"D-08 verbatim copy: 'from another shell' must appear")
+	require.Contains(t, v, "PID=54321",
+		"D-08 verbatim copy: 'PID=N' references the live PID")
+}
