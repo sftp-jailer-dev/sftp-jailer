@@ -246,6 +246,95 @@ func TestConfig_PasswordAging_defaults_and_validate(t *testing.T) {
 	})
 }
 
+// TestConfig_PasswordAging_max_3650 (06-02 / TUI-09 / D-12): Validate must
+// enforce the documented [1, 3650] upper bound on PasswordAgingDays AND
+// PasswordStaleDays in addition to the existing strict-ordering rule
+// (`0 < aging < stale`). The cap mirrors detail_retention_days /
+// LockdownProposalWindowDays - bounds T-06-02-03 "absurd-input" DoS.
+//
+// Cases:
+//   - PasswordAgingDays=3651 (just over cap) → error mentioning the field + 3650.
+//   - PasswordStaleDays=3651 (just over cap) → error mentioning the field + 3650.
+//   - aging=1, stale=3650 (boundary) → no aging/stale error.
+//   - aging=0 (zero check, regression guard) → error.
+//   - aging=stale=3650 (equal, strict-ordering regression guard) → error.
+func TestConfig_PasswordAging_max_3650(t *testing.T) {
+	t.Run("aging_above_cap_fails", func(t *testing.T) {
+		s := config.Defaults()
+		s.PasswordAgingDays = 3651
+		s.PasswordStaleDays = 3700 // keep stale > aging so the failure isolates aging-bound
+		errs := config.Validate(s)
+		require.NotEmpty(t, errs, "PasswordAgingDays=3651 must fail")
+		var matched bool
+		for _, e := range errs {
+			msg := e.Error()
+			if strings.Contains(msg, "password_aging_days") && strings.Contains(msg, "3650") {
+				matched = true
+				break
+			}
+		}
+		require.True(t, matched,
+			"expected error mentioning 'password_aging_days' AND '3650'; got: %v", errs)
+	})
+
+	t.Run("stale_above_cap_fails", func(t *testing.T) {
+		s := config.Defaults()
+		s.PasswordAgingDays = 180
+		s.PasswordStaleDays = 3651
+		errs := config.Validate(s)
+		require.NotEmpty(t, errs, "PasswordStaleDays=3651 must fail")
+		var matched bool
+		for _, e := range errs {
+			msg := e.Error()
+			if strings.Contains(msg, "password_stale_days") && strings.Contains(msg, "3650") {
+				matched = true
+				break
+			}
+		}
+		require.True(t, matched,
+			"expected error mentioning 'password_stale_days' AND '3650'; got: %v", errs)
+	})
+
+	t.Run("boundary_aging_1_stale_3650_passes", func(t *testing.T) {
+		s := config.Defaults()
+		s.PasswordAgingDays = 1
+		s.PasswordStaleDays = 3650
+		errs := config.Validate(s)
+		// No error mentioning password_aging_days or password_stale_days.
+		for _, e := range errs {
+			msg := e.Error()
+			require.NotContains(t, msg, "password_aging_days",
+				"aging=1 (in range) must NOT trigger an aging error: %s", msg)
+			require.NotContains(t, msg, "password_stale_days",
+				"stale=3650 (in range, strict > aging) must NOT trigger a stale error: %s", msg)
+		}
+	})
+
+	t.Run("zero_aging_still_fails_regression", func(t *testing.T) {
+		s := config.Defaults()
+		s.PasswordAgingDays = 0
+		errs := config.Validate(s)
+		require.NotEmpty(t, errs, "PasswordAgingDays=0 must continue to fail")
+	})
+
+	t.Run("equal_aging_stale_still_fails_strict_ordering_regression", func(t *testing.T) {
+		s := config.Defaults()
+		s.PasswordAgingDays = 3650
+		s.PasswordStaleDays = 3650 // equal - strict-ordering must still fail
+		errs := config.Validate(s)
+		require.NotEmpty(t, errs, "stale==aging must fail strict-ordering")
+		var matched bool
+		for _, e := range errs {
+			if strings.Contains(e.Error(), "strictly greater than password_aging_days") {
+				matched = true
+				break
+			}
+		}
+		require.True(t, matched,
+			"strict-ordering message must remain verbatim 'strictly greater than password_aging_days'; got: %v", errs)
+	})
+}
+
 // TestConfig_LockdownProposalWindowDays_default_90: D-L0204-01 sets the
 // proposal-window default to 90 days (independent of detail_retention_days).
 // Defaults() MUST populate the field, and a Validate-clean Defaults() MUST
