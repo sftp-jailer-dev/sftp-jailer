@@ -41,11 +41,19 @@ type FileInfo struct {
 // ExitCode is NOT a Go error - the caller interprets. Go errors are reserved
 // for things like context cancellation or exec failures (ENOENT, permission
 // denied).
+//
+// TUI-11 D-08: PID carries the live subprocess PID captured after
+// cmd.Start so the four mutation modals (addkey, deleteuser, applysetup,
+// pwauthdisable) can render the hang-escalation diagnostic ("Cancellation
+// failed - subprocess PID=N still alive. Run kill -9 N from another shell.")
+// when SIGKILL fails to release within 2s after sending. Populated on every
+// successful Start regardless of whether Wait subsequently fails.
 type ExecResult struct {
 	Stdout   []byte
 	Stderr   []byte
 	ExitCode int
 	Duration time.Duration
+	PID      int
 }
 
 // JournalctlStreamOpts parameterizes a one-shot streaming `journalctl` invocation.
