@@ -8,6 +8,7 @@ package firewall
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -152,4 +153,40 @@ func TestResolveRuleIDByCommentSource_enumerate_failure_propagates(t *testing.T)
 	f.ExecError = errors.New("ufw exec crashed")
 	_, err := ResolveRuleIDByCommentSource(context.Background(), f, "alice", "1.2.3.4/32")
 	require.Error(t, err)
+}
+
+// TestAddRule_v6_source_uses_correct_ufw_syntax_and_decodes_comment
+// pins FW-09: AddRule with an IPv6 source CIDR exercises ufwcomment.Encode
+// (which is protocol-agnostic) and the ufw 0.36.2 auto-routing of the
+// family from the source CIDR. No caller-side family flag is needed.
+//
+// Threat T-06-01 mitigation: argv carries the v6 CIDR verbatim (not a
+// v4-mangled form) and the comment grammar is family-agnostic. Independent
+// assertions on UfwInsert argv (source) AND comment break asymmetrically
+// if either contract regresses.
+func TestAddRule_v6_source_uses_correct_ufw_syntax_and_decodes_comment(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	// Pre-script ufw status numbered: post-insert state with alice's
+	// v6 rule at id=1. Loaded from a testdata fixture so the same
+	// stdout shape is shared with TestEnumerate_v6_source_rule_decodes_user_round_trip.
+	v6SourceFixture, err := os.ReadFile("testdata/ufw-status-numbered-v6-source.txt") //nolint:gosec // G304: hardcoded fixture filename
+	require.NoError(t, err)
+	f.ExecResponses["ufw status numbered"] = sysops.ExecResult{
+		ExitCode: 0,
+		Stdout:   v6SourceFixture,
+	}
+
+	id, err := AddRule(context.Background(), f, "alice", "2001:db8::/32", "22")
+	require.NoError(t, err)
+	require.Equal(t, 1, id, "alice's v6 rule must be assigned id=1 from the post-insert enumerate")
+
+	insertCall := findCall(f, "UfwInsert")
+	require.NotNil(t, insertCall, "UfwInsert must have been called")
+	require.True(t, argHas(insertCall, "pos=1"),
+		"UfwInsert called at position 1 per D-FW-02 (family-agnostic)")
+	require.True(t, argHas(insertCall, "src=2001:db8::/32"),
+		"UfwInsert must carry the v6 CIDR verbatim - ufw 0.36.2 auto-routes the family from the source")
+	require.True(t, argHas(insertCall, "comment=sftpj:v=1:user=alice"),
+		"ufwcomment.Encode is protocol-agnostic - same comment grammar on v6 rules")
 }
