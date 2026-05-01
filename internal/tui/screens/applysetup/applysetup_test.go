@@ -454,3 +454,47 @@ func TestApplySetup_TUI11_apply_done_with_non_context_err_after_cancel_renders_d
 	require.Contains(t, v, "PID=99001",
 		"D-08 verbatim copy: 'PID=N' references the live PID")
 }
+
+// TestApplysetup_applyDoneMsg_PID0Fallback_does_not_render_kill_minus_9_zero
+// (06-05 CR-01): when pid <= 0 (production path), the hang diagnostic must
+// NOT render 'Run kill -9 0'. The subprocess-free fallback must appear.
+func TestApplysetup_applyDoneMsg_PID0Fallback_does_not_render_kill_minus_9_zero(t *testing.T) {
+	t.Parallel()
+	m := applysetup.New(nil, "")
+	m.SetPhaseApplyingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+	require.True(t, m.IsCancellingForTest(), "precondition: cancelling flag set")
+
+	hangErr := errors.New("simulated SIGKILL hang")
+	_, _ = m.FeedApplyDoneForTestWithPID(hangErr, 0)
+
+	v := m.ErrInlineForTest()
+	require.Contains(t, v, "refused SIGTERM and SIGKILL within 2s",
+		"CR-01: subprocess-free fallback must contain the canonical refusal copy")
+	require.Contains(t, v, "ps -ef | grep",
+		"CR-01: fallback must contain the actionable ps-grep hint")
+	require.NotContains(t, v, "Run kill -9",
+		"CR-01 safety: 'Run kill -9' must NOT appear on the PID=0 path")
+	require.NotContains(t, v, "PID=0",
+		"CR-01: 'PID=0' must NOT appear (kernel-scheduler hazard wording)")
+}
+
+// TestApplysetup_applyDoneMsg_LivePID_still_renders_kill_minus_9_pid (06-05
+// regression guard): when pid > 0, the verbatim D-08 copy must still appear.
+func TestApplysetup_applyDoneMsg_LivePID_still_renders_kill_minus_9_pid(t *testing.T) {
+	t.Parallel()
+	m := applysetup.New(nil, "")
+	m.SetPhaseApplyingForTest()
+	m.SetCancelFnForTest(func() {})
+	_, _ = m.Update(keyPress("esc"))
+
+	hangErr := errors.New("simulated SIGKILL hang")
+	_, _ = m.FeedApplyDoneForTestWithPID(hangErr, 31415)
+
+	v := m.ErrInlineForTest()
+	require.Contains(t, v, "Run kill -9 31415",
+		"live-PID path: verbatim D-08 copy with live PID must still appear")
+	require.Contains(t, v, "PID=31415",
+		"live-PID path: 'PID=N' with the live PID must still appear")
+}
