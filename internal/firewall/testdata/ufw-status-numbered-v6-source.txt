@@ -1,0 +1,5 @@
+Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp (v6)                ALLOW IN    2001:db8::/32              # sftpj:v=1:user=alice

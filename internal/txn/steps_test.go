@@ -1304,6 +1304,33 @@ func ufwStatusFixtureCatchallShifted() []byte {
 `)
 }
 
+// ufwStatusFixtureV6OnlyHost models a v6-only Ubuntu 24.04 host
+// (e.g. an IPv6-only cloud VM with IPV6=yes and no v4 catch-all).
+// Used by FW-09 to confirm NewUfwDeleteCatchAllByEnumerateStep
+// terminates after exactly 1 delete on a v6-only state. Mirrors the
+// testdata file at internal/firewall/testdata/ufw-status-numbered-v6-only.txt
+// verbatim - if you change one, change the other.
+func ufwStatusFixtureV6OnlyHost() []byte {
+	return []byte(`Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp (v6)                ALLOW IN    Anywhere (v6)
+[ 2] 22/tcp (v6)                ALLOW IN    2001:db8::1                # sftpj:v=1:user=alice
+`)
+}
+
+// ufwStatusFixtureV6OnlyAfterDelete: post-delete state - only the
+// sftpj rule remains, renumbered to id=1 by ufw's compaction.
+func ufwStatusFixtureV6OnlyAfterDelete() []byte {
+	return []byte(`Status: active
+
+     To                         Action      From
+     --                         ------      ----
+[ 1] 22/tcp (v6)                ALLOW IN    2001:db8::1                # sftpj:v=1:user=alice
+`)
+}
+
 // TestUfwDeleteCatchAllByEnumerate_dual_family_deletes_BOTH_v4_and_v6
 // pins BUG-04-C (P0): production buildPendingMutations breaks after the
 // first catch-all match (`break` at lockdown.go:509). On a default Ubuntu
@@ -1335,6 +1362,45 @@ func TestUfwDeleteCatchAllByEnumerate_dual_family_deletes_BOTH_v4_and_v6(t *test
 	require.Equal(t, 2, deleteCount,
 		"BUG-04-C: dual-family hosts have v4+v6 catch-alls; step must delete BOTH "+
 			"(production's buildPendingMutations break-after-first only deleted v4)")
+}
+
+// TestUfwDeleteCatchAllByEnumerate_v6_only_host_deletes_just_v6
+// pins the v6-only-host edge case for BUG-04-B closure (FW-09).
+// Status: active with one v6 catch-all and one sftpj rule.
+// Expectation: exactly 1 UfwDelete call (targeting the v6 catch-all);
+// loop terminates because no catch-all remains in the post-delete state.
+//
+// Failure mode this test pins: if the predicate ever drifts to v4-only
+// (regressing BUG-04-B), the test fails because zero deletes occur on a
+// v6-only host and the v6 catch-all leaks past lockdown.
+func TestUfwDeleteCatchAllByEnumerate_v6_only_host_deletes_just_v6(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+	// Stateful Enumerate: first call returns the v6-only initial state
+	// (one v6 catch-all + one sftpj rule); second call returns the
+	// post-delete state (catch-all gone, sftpj renumbered to id=1).
+	f.ExecResponseQueue["ufw status numbered"] = []sysops.ExecResult{
+		{ExitCode: 0, Stdout: ufwStatusFixtureV6OnlyHost()},
+		{ExitCode: 0, Stdout: ufwStatusFixtureV6OnlyAfterDelete()},
+	}
+
+	step := NewUfwDeleteCatchAllByEnumerateStep("22")
+	require.NoError(t, step.Apply(context.Background(), f))
+
+	// Count UfwDelete calls and capture targeted IDs.
+	deleteCount := 0
+	for _, c := range f.Calls {
+		if c.Method == "UfwDelete" {
+			deleteCount++
+		}
+	}
+	require.Equal(t, 1, deleteCount,
+		"v6-only host has exactly 1 catch-all (v6); step must delete it and stop")
+	// The single delete must target id=1 (the v6 catch-all in the FIRST
+	// enumerate fixture). Family-agnostic predicate proves itself by
+	// matching the v6 row.
+	require.True(t, containsCall(f.Calls, "UfwDelete", "id=1"),
+		"the deleted id must be the v6 catch-all (id=1) from the first enumerate")
 }
 
 // TestUfwDeleteCatchAllByEnumerate_position_shift_uses_FRESH_id

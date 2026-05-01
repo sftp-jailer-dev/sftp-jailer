@@ -167,3 +167,30 @@ func TestEnumerate_ufw_not_installed(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ufw")
 }
+
+// TestEnumerate_v6_source_rule_decodes_user_round_trip pins FW-09:
+// a v6-source rule with sftpj:v=1:user=alice comment must decode all
+// four fields independently (Source, Proto, User, ParseErr).
+//
+// Independent assertions catch grammar / Proto / source breakage
+// asymmetrically (Pitfall 3): if the comment grammar misparses, only
+// User fails; if v6 detection drifts, only Proto fails; if stripV6Suffix
+// over-strips, only Source fails. Each assertion is a single named
+// failure mode.
+func TestEnumerate_v6_source_rule_decodes_user_round_trip(t *testing.T) {
+	f := sysops.NewFake()
+	scriptUfw(t, f, "ufw-status-numbered-v6-source.txt")
+
+	rules, err := firewall.Enumerate(context.Background(), f)
+	require.NoError(t, err)
+	require.Len(t, rules, 1, "fixture has exactly one rule")
+	r := rules[0]
+	require.Equal(t, "2001:db8::/32", r.Source,
+		"Source must preserve the v6 CIDR (after stripV6Suffix on the To column)")
+	require.Equal(t, "v6", r.Proto,
+		"Enumerate must set Proto=v6 from the (v6) marker on the To/From columns")
+	require.Equal(t, "alice", r.User,
+		"ufwcomment.Decode must round-trip sftpj:v=1:user=alice -> User=alice (protocol-agnostic)")
+	require.NoError(t, r.ParseErr,
+		"comment grammar must parse cleanly on v6 rules - no ParseErr")
+}
