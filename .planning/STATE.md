@@ -4,7 +4,7 @@ milestone: v1.2
 milestone_name: Packaging & Release
 status: executing
 last_updated: "2026-05-01T01:56:16.680Z"
-last_activity: 2026-05-01 -- Phase 06 execution started
+last_activity: 2026-05-01 - Phase 7 (NYQ-01) closed: 4 v1.1 phases now Nyquist-compliant per /gsd:audit-milestone v1.1 PASS gate.
 progress:
   total_phases: 1
   completed_phases: 1
