@@ -12,8 +12,8 @@ Pre-release verification steps. Run before each version tag (v1.0.0, v1.1.0, etc
 
 - [ ] Go module integrity: `go mod verify`
 - [ ] Tests pass (race detector): `go test -race -count=1 ./...`
-- [ ] golangci-lint clean: `golangci-lint run ./...`
-- [ ] No known vulnerabilities: `govulncheck ./...`
+- [x] golangci-lint clean: `golangci-lint run ./...`
+- [x] No known vulnerabilities: `govulncheck ./...`
 - [ ] All 5 architecture-invariant scripts pass:
   - `bash scripts/check-no-exec-outside-sysops.sh`
   - `bash scripts/check-single-tea-program.sh`
@@ -32,7 +32,7 @@ Pre-release verification steps. Run before each version tag (v1.0.0, v1.1.0, etc
   ```
 - [ ] `dist/sftp-jailer_*_amd64.deb` produced
 - [ ] `dist/sftp-jailer_*_arm64.deb` produced
-- [ ] lintian clean on both archs:
+- [x] lintian clean on both archs:
   ```bash
   for deb in dist/*.deb; do
     echo "==> $deb"
