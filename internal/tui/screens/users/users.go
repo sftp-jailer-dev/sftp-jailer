@@ -684,10 +684,21 @@ func (m *Model) View() string {
 			"\n\n" + styles.Dim.Render("(esc to return)")
 	}
 	if len(m.rows) == 0 && len(m.infos) == 0 {
-		// Empty-state copy per UI-SPEC line 354-355.
-		return "No SFTP users found.\n\n" + styles.Dim.Render(
-			"(no group matching sftp* and no ChrootDirectory configured -\n"+
-				"see diagnostic screen for details, or apply the SFTP jail configuration in Phase 3.)")
+		// v1.2.2 empty-state copy: by construction this branch is reachable
+		// ONLY when the canonical drop-in IS configured (hasMatchSftp +
+		// hasChrootDir both true in users.Enumerate, otherwise infos is
+		// non-empty and we skip to the table-render path below). So we
+		// drop the misleading "see diagnostic screen ... apply ... in
+		// Phase 3" pointer - it's both dead-end (no actionable next step)
+		// and references developer terminology operators don't recognise.
+		//
+		// The 'n' key (KeyMap.New) already pushes M-NEW-USER - we surface
+		// that as `[n] Add a user` so the path forward is one keystroke
+		// away. Rationale for `[n]` rather than `[a]`: 'n' for "new" is
+		// the existing binding; adding `[a]` as an alias is a wider
+		// blast-radius change deferred to a follow-up if operators
+		// request it.
+		return "No SFTP users yet.\n\n" + styles.Dim.Render("[n] Add a user")
 	}
 
 	var b strings.Builder

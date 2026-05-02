@@ -217,11 +217,26 @@ func TestUsersScreen_copy_no_op_when_no_rows(t *testing.T) {
 	}
 }
 
-// TestUsersScreen_empty_state - UI-SPEC line 354: "No SFTP users found."
+// TestUsersScreen_empty_state - v1.2.2: empty-state copy drops the
+// "Phase 3" developer jargon and the dead-end "see diagnostic screen"
+// pointer; surfaces the `[n] Add a user` action prominently. The
+// rows=0 + infos=0 branch is by construction reachable only when the
+// canonical drop-in IS configured, so the old "apply ... in Phase 3"
+// copy was always misleading.
 func TestUsersScreen_empty_state(t *testing.T) {
 	m := usersscreen.New(nil)
 	m.LoadRowsForTest(nil, nil)
-	require.Contains(t, m.View(), "No SFTP users found.")
+	v := m.View()
+	require.Contains(t, v, "No SFTP users yet.")
+	require.Contains(t, v, "[n] Add a user")
+	require.NotContains(t, v, "Phase 3",
+		"developer jargon must not appear in operator-facing copy")
+	require.NotContains(t, v, "no group matching sftp",
+		"the dropped parenthetical must not regress")
+	require.NotContains(t, v, "see diagnostic screen",
+		"the dead-end pointer must not regress")
+	require.NotContains(t, v, "canonical config",
+		"v1.2.1 rename must remain in force")
 }
 
 // TestUsersScreen_esc_pops - UI-SPEC §S-USERS: esc/q pops back to home.
