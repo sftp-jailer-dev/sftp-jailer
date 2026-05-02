@@ -61,5 +61,5 @@ sftp-jailer: unknown-field Architecture-Variant
 # script must target the installed binary, not whatever is in PATH.
 # This is the canonical Debian pattern for postinst scripts that invoke
 # the package's own binary to perform install-time initialization.
-sftp-jailer: command-with-path-in-maintainer-script /usr/bin/sftp-jailer (in test syntax) [postinst:64]
+sftp-jailer: command-with-path-in-maintainer-script /usr/bin/sftp-jailer (in test syntax) [postinst:63]
 sftp-jailer: command-with-path-in-maintainer-script /usr/bin/sftp-jailer (plain script) [postinst:64]
