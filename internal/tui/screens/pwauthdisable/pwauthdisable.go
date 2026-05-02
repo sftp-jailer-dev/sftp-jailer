@@ -789,14 +789,14 @@ func (m *Model) renderReview(b *strings.Builder) {
 	switch m.action {
 	case ActionEnable:
 		b.WriteString("Re-enable PasswordAuthentication globally? Removes the directive from\n")
-		b.WriteString("the canonical drop-in (OpenSSH defaults to yes when absent).\n\n")
+		b.WriteString("the SFTP jail configuration drop-in (OpenSSH defaults to yes when absent).\n\n")
 		b.WriteString("[enter] proceed   [esc] cancel")
 		return
 	case ActionDisable:
 		if len(m.keylessUsers) == 0 {
 			b.WriteString("All sftp-group users have working SSH keys (StrictModes prerequisites OK).\n")
 			b.WriteString("Disable PasswordAuthentication globally? Adds `PasswordAuthentication no`\n")
-			b.WriteString("at the top of the canonical drop-in.\n\n")
+			b.WriteString("at the top of the SFTP jail configuration drop-in.\n\n")
 			b.WriteString("[enter] proceed   [esc] cancel")
 			return
 		}

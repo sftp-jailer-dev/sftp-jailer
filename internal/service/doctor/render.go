@@ -35,7 +35,7 @@ func RenderText(rep model.DoctorReport) string {
 	// the CLI text rendering shows the prompt for parity (a future `doctor
 	// --apply` flag could consume this signal directly).
 	if NeedsCanonicalApply(rep) {
-		sb.WriteString("\n[A] Apply canonical config - addresses missing drop-in, broken chain, or external sftp-server\n")
+		sb.WriteString("\n[A] Apply SFTP jail configuration - addresses missing drop-in, broken chain, or external sftp-server\n")
 	}
 
 	return sb.String()

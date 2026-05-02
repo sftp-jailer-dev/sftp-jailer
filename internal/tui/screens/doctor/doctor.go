@@ -161,7 +161,7 @@ func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		Back:  nav.KeyBinding{Keys: []string{"esc", "q"}, Help: "back"},
 		Copy:  nav.KeyBinding{Keys: []string{"c"}, Help: "copy report"},
-		Apply: nav.KeyBinding{Keys: []string{"a"}, Help: "apply canonical config"},
+		Apply: nav.KeyBinding{Keys: []string{"a"}, Help: "apply SFTP jail configuration"},
 	}
 }
 

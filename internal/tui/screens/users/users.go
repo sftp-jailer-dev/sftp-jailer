@@ -525,7 +525,7 @@ func (m *Model) moveCursorUp() {
 // Phase 3 plan 03-07 D-06 + D-14:
 //   - infoCursor >= 0 (Enter on an INFO row): branch on InfoRow.Kind.
 //     orphan        → push newuser.NewFromOrphan (D-14, B-03)
-//     missing-match → toast "open doctor and press [A] to apply canonical config"
+//     missing-match → toast "open doctor and press [A] to apply the SFTP jail configuration"
 //     missing-chroot → same toast (same fix path)
 //   - infoCursor == -1 (Enter on a real row): no-op for now
 //     (S-USER-DETAIL lands in plan 03-08a).
@@ -541,7 +541,7 @@ func (m *Model) handleEnter() (nav.Screen, tea.Cmd) {
 		case users.InfoMissingMatch, users.InfoMissingChroot:
 			var flashCmd tea.Cmd
 			m.toast, flashCmd = m.toast.Flash(
-				"open doctor (d) and press [A] to apply canonical config")
+				"open doctor (d) and press [A] to apply the SFTP jail configuration")
 			return m, flashCmd
 		}
 	}
@@ -687,7 +687,7 @@ func (m *Model) View() string {
 		// Empty-state copy per UI-SPEC line 354-355.
 		return "No SFTP users found.\n\n" + styles.Dim.Render(
 			"(no group matching sftp* and no ChrootDirectory configured -\n"+
-				"see diagnostic screen for details, or apply canonical config in Phase 3.)")
+				"see diagnostic screen for details, or apply the SFTP jail configuration in Phase 3.)")
 	}
 
 	var b strings.Builder

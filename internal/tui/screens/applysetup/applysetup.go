@@ -303,7 +303,7 @@ func (k KeyMap) FullHelp() [][]nav.KeyBinding {
 }
 
 // Title implements nav.Screen.
-func (m *Model) Title() string { return "apply canonical config" }
+func (m *Model) Title() string { return "apply SFTP jail configuration" }
 
 // KeyMap implements nav.Screen.
 func (m *Model) KeyMap() nav.KeyMap { return m.keys }
@@ -487,7 +487,7 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 
 	case autoPopMsg:
 		var flashCmd tea.Cmd
-		m.toast, flashCmd = m.toast.Flash("canonical config applied")
+		m.toast, flashCmd = m.toast.Flash("SFTP jail configuration applied")
 		return m, tea.Batch(nav.PopCmd(), flashCmd)
 
 	case spinner.TickMsg:
@@ -736,10 +736,10 @@ func (m *Model) View() string {
 			// TUI-11 D-07: 'Cancelling...' indicator.
 			b.WriteString(m.spinner.View() + " " + styles.Warn.Render("Cancelling..."))
 		} else {
-			b.WriteString(m.spinner.View() + " applying canonical config (backup → write → sshd -t → reload → verify)…")
+			b.WriteString(m.spinner.View() + " applying SFTP jail configuration (backup → write → sshd -t → reload → verify)…")
 		}
 	case phaseDone:
-		b.WriteString(styles.Success.Render("✓ canonical config applied - sshd reloaded."))
+		b.WriteString(styles.Success.Render("✓ SFTP jail configuration applied - sshd reloaded."))
 	case phaseError:
 		b.WriteString(styles.Critical.Render(m.errInline))
 		b.WriteString("\n\n[esc] back to doctor")

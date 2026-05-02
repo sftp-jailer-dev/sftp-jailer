@@ -152,7 +152,7 @@ func TestRenderText_includes_apply_action_when_needs_canonical_apply(t *testing.
 		Subsystem: model.SubsystemReport{IsInternal: true},
 	}
 	got := doctor.RenderText(r)
-	require.Contains(t, got, "[A] Apply canonical config")
+	require.Contains(t, got, "[A] Apply SFTP jail configuration")
 	require.Contains(t, got, "missing drop-in, broken chain, or external sftp-server")
 }
 
@@ -172,7 +172,7 @@ func TestRenderText_omits_apply_action_when_clean(t *testing.T) {
 		Subsystem: model.SubsystemReport{IsInternal: true},
 	}
 	got := doctor.RenderText(r)
-	require.NotContains(t, got, "[A] Apply canonical config")
+	require.NotContains(t, got, "[A] Apply SFTP jail configuration")
 }
 
 // Round-trip the structured report through JSON - confirms every field used

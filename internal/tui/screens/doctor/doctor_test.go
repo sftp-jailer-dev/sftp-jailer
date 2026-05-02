@@ -134,7 +134,7 @@ func TestDoctorScreen_a_action_pushes_applysetup_when_NeedsCanonicalApply(t *tes
 	require.True(t, ok, "expected nav.Msg, got %T", msg)
 	require.Equal(t, nav.Push, nm.Intent)
 	require.NotNil(t, nm.Screen, "pushed screen must be non-nil")
-	require.Equal(t, "apply canonical config", nm.Screen.Title(),
+	require.Equal(t, "apply SFTP jail configuration", nm.Screen.Title(),
 		"pushed screen title must be M-APPLY-SETUP's Title()")
 }
 

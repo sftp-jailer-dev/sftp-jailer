@@ -314,7 +314,7 @@ func TestApplySetup_edit_root_re_runs_chrootcheck_against_new_root(t *testing.T)
 func TestApplySetup_implements_nav_Screen(t *testing.T) {
 	m, _ := newSeededModel()
 	var s nav.Screen = m
-	require.Equal(t, "apply canonical config", s.Title())
+	require.Equal(t, "apply SFTP jail configuration", s.Title())
 	require.False(t, s.WantsRawKeys(), "WantsRawKeys is false in phasePreflight")
 	require.NotNil(t, s.KeyMap())
 	require.NotEmpty(t, s.KeyMap().ShortHelp())
@@ -428,7 +428,7 @@ func TestApplySetup_TUI11_apply_done_with_context_canceled_renders_neutral_cance
 		"cancelled flow lands in phaseError, NOT phaseDone")
 	require.Equal(t, "cancelled by Esc", m.ErrInlineForTest(),
 		"errInline is the neutral 'cancelled by Esc' string")
-	require.NotContains(t, m.View(), "canonical config applied",
+	require.NotContains(t, m.View(), "SFTP jail configuration applied",
 		"Pitfall 2: cancellation MUST NOT trigger the success-toast path")
 }
 
