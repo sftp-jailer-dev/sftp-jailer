@@ -12,7 +12,13 @@
 // process-state side effects when invoked from `go generate`).
 package rootcmd
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/version"
+)
 
 // Opts captures hooks the production binary must inject. cmd/gen-manpage
 // passes a zero-value Opts (no hooks needed for man-page generation).
@@ -48,6 +54,14 @@ See https://sftp-jailer.com for documentation.`,
 		RunE:              o.RunTUI,
 		PersistentPreRunE: o.PersistentPreRunE,
 	}
+	// --version flag (v1.2.1): cobra auto-wires --version when root.Version
+	// is non-empty. Compose the same `sftp-jailer {Version} - {ProjectURL}\n`
+	// line the version subcommand prints so both surfaces produce
+	// byte-identical output. cmd/sftp-jailer/main.go assigns the ldflag
+	// values into version.Version and version.ProjectURL BEFORE calling
+	// rootCmd().Execute(), so the values read here are already final.
+	root.Version = version.Version
+	root.SetVersionTemplate(fmt.Sprintf("sftp-jailer %s - %s\n", version.Version, version.ProjectURL))
 	for _, sub := range o.Subcommands {
 		root.AddCommand(sub)
 	}
