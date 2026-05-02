@@ -353,6 +353,63 @@ func TestDetectSubsystem_missing(t *testing.T) {
 	require.True(t, r.Subsystem.Missing)
 }
 
+// TestDetectSubsystem_external_with_jailed_force_internal_override is the
+// v1.2.1 false-positive fix (operator-reported 2026-05-02 on debian13):
+// when the base sshd_config has `Subsystem sftp /usr/lib/openssh/sftp-server`
+// (the OpenSSH default) AND the canonical drop-in installs a
+// `Match Group sftp-jailer + ForceCommand internal-sftp` override,
+// jailed users never invoke the external binary. Doctor must NOT
+// report [FAIL] in that case.
+func TestDetectSubsystem_external_with_jailed_force_internal_override(t *testing.T) {
+	const dropIn = `# /etc/ssh/sshd_config.d/50-sftp-jailer.conf (canonical)
+Match Group sftp-jailer
+    ChrootDirectory /srv/sftp-jailer/%u
+    ForceCommand internal-sftp -f AUTHPRIV -l INFO
+    AllowTcpForwarding no
+    X11Forwarding no
+`
+	f := sysops.NewFake()
+	f.GlobResults["/etc/ssh/sshd_config.d/*.conf"] = []string{"/etc/ssh/sshd_config.d/50-sftp-jailer.conf"}
+	f.Files["/etc/ssh/sshd_config.d/50-sftp-jailer.conf"] = []byte(dropIn)
+	f.SshdConfig = map[string][]string{
+		"subsystem": {"sftp /usr/lib/openssh/sftp-server"},
+	}
+
+	s := doctor.New(f)
+	r, err := s.Run(context.Background())
+	require.NoError(t, err)
+
+	// Base detection still flags the external target.
+	require.Equal(t, "/usr/lib/openssh/sftp-server", r.Subsystem.Target)
+	require.True(t, r.Subsystem.Warning, "base Subsystem still reports the external binary")
+	require.False(t, r.Subsystem.IsInternal)
+
+	// But the override resolves the practical concern.
+	require.True(t, r.Subsystem.JailedOverrideForceInternal,
+		"Match Group sftp-jailer + ForceCommand internal-sftp must be detected")
+
+	// The drop-in IS present (so SshdDropIns.ContainsChrootMatch=true).
+	require.True(t, r.SshdDropIns.ContainsChrootMatch,
+		"fixture drop-in has Match Group sftp-jailer; the existing detector picks it up")
+}
+
+// TestDetectSubsystem_external_without_override_still_fails preserves
+// the v1.2.0 behavior: on a fresh box (no drop-in yet) the bare
+// external Subsystem must still trip [FAIL].
+func TestDetectSubsystem_external_without_override_still_fails(t *testing.T) {
+	f := sysops.NewFake()
+	// No drop-ins glob result → no override
+	f.SshdConfig = map[string][]string{
+		"subsystem": {"sftp /usr/lib/openssh/sftp-server"},
+	}
+	s := doctor.New(f)
+	r, err := s.Run(context.Background())
+	require.NoError(t, err)
+	require.True(t, r.Subsystem.Warning)
+	require.False(t, r.Subsystem.JailedOverrideForceInternal,
+		"no drop-in present → no override → field stays false")
+}
+
 // ---- Service.Run integration --------------------------------------------
 
 // A fake scripted for every detector's happy path returns a fully-populated

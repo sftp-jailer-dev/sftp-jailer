@@ -65,9 +65,13 @@ func (s *Service) ChrootRoot() string { return s.chrootRoot }
 //     sftp-jailer Match Group → SETUP-02 / D-07 gap).
 //   - ChrootChain has any non-Missing link that fails the root:root +
 //     no-group-write + no-symlink invariant (SETUP-04 / pitfall A6 gap).
-//   - Subsystem.Warning is set (external sftp-server detected → pitfall A2 /
-//     SETUP-06 advisory; the modal shows the advisory note even though
-//     auto-fix is deferred per RESEARCH OQ-5).
+//   - Subsystem.Warning is set AND no jailed-Match ForceCommand override
+//     is present (external sftp-server detected → pitfall A2 / SETUP-06
+//     advisory; the modal shows the advisory note even though auto-fix
+//     is deferred per RESEARCH OQ-5). The override check prevents a
+//     false-positive [A] prompt on boxes where the canonical drop-in is
+//     correctly installed but `sshd -T` still reports the base Subsystem
+//     (v1.2.1 fix).
 //
 // False otherwise - including when ChrootChain is entirely Missing (no
 // chroot root exists yet to walk; first-launch flow takes the SETUP-02
@@ -84,7 +88,7 @@ func NeedsCanonicalApply(rep model.DoctorReport) bool {
 			return true
 		}
 	}
-	return rep.Subsystem.Warning
+	return rep.Subsystem.Warning && !rep.Subsystem.JailedOverrideForceInternal
 }
 
 // Run executes all six detectors sequentially and returns the aggregated
@@ -99,7 +103,68 @@ func (s *Service) Run(ctx context.Context) (model.DoctorReport, error) {
 	rep.AppArmor, _ = s.detectAppArmor(ctx)
 	rep.NftConsumers, _ = s.detectNftConsumers(ctx)
 	rep.Subsystem, _ = s.detectSubsystem(ctx)
+
+	// v1.2.1 fix: when the base Subsystem points at an external sftp-server
+	// binary, also check whether the canonical drop-in installs a
+	// `Match Group sftp-jailer + ForceCommand internal-sftp` override.
+	// If yes, jailed users never invoke the external binary and the
+	// [FAIL] row in render.go is downgraded to [OK]. Non-jailed users
+	// still use the base directive, which is the documented OpenSSH
+	// default and not in scope for this tool's chroot story.
+	if rep.Subsystem.Warning {
+		rep.Subsystem.JailedOverrideForceInternal = s.detectJailedForceCommandOverride(ctx)
+	}
+
 	return rep, nil
+}
+
+// detectJailedForceCommandOverride scans /etc/ssh/sshd_config.d/*.conf for
+// a `Match Group sftp-jailer` block whose body contains a `ForceCommand
+// internal-sftp ...` directive. Returns true on first match. Used by Run
+// to refine the SubsystemReport after detectSubsystem reports the base
+// directive (which `sshd -T` returns regardless of Match-block overrides
+// when invoked without -C user=...,group=...).
+//
+// Why a separate scan instead of reusing detectSshdDropIns: that detector
+// only records HasMatchGroup, not the body directives. We need the
+// ForceCommand value to verify the override is actually present and
+// points at internal-sftp (not an admin-overridden custom command).
+func (s *Service) detectJailedForceCommandOverride(ctx context.Context) bool {
+	paths, err := s.ops.Glob(ctx, "/etc/ssh/sshd_config.d/*.conf")
+	if err != nil {
+		return false
+	}
+	for _, p := range paths {
+		b, err := s.ops.ReadFile(ctx, p)
+		if err != nil {
+			continue
+		}
+		parsed, _ := sshdcfg.ParseDropIn(b)
+		for _, m := range parsed.Matches {
+			// Match Condition format: "Group sftp-jailer" (after the
+			// "Match " prefix is stripped by the parser).
+			fields := strings.Fields(m.Condition)
+			if len(fields) < 2 {
+				continue
+			}
+			if !strings.EqualFold(fields[0], "Group") || fields[1] != "sftp-jailer" {
+				continue
+			}
+			// Found the Match block; look for ForceCommand internal-sftp ...
+			for _, dir := range m.Body {
+				if dir.Keyword != "forcecommand" {
+					continue
+				}
+				value := strings.TrimSpace(dir.Value)
+				if strings.HasPrefix(value, "internal-sftp") {
+					// Either bare `internal-sftp` or
+					// `internal-sftp -f AUTHPRIV -l INFO` etc.
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // detectSshdDropIns enumerates /etc/ssh/sshd_config.d/*.conf and parses each

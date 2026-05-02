@@ -80,6 +80,41 @@ func TestRenderText_subsystem_external_fails(t *testing.T) {
 	require.Contains(t, got, "pitfall A2")
 }
 
+// TestRenderText_subsystem_external_with_override renders an [OK] row
+// and suppresses the [A] action prompt when the canonical drop-in's
+// ForceCommand internal-sftp override is in place even though the base
+// Subsystem still points at the external sftp-server (v1.2.1 fix).
+func TestRenderText_subsystem_external_with_override(t *testing.T) {
+	r := model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{
+			Files:               []model.SshdDropInFile{{Path: "/etc/ssh/sshd_config.d/50-sftp-jailer.conf", HasMatchGroup: true}},
+			ContainsChrootMatch: true,
+		},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+				{Path: "/srv", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+				{Path: "/srv/sftp-jailer", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+			},
+		},
+		UfwIPv6:      model.UfwIPv6Report{Value: "yes"},
+		AppArmor:     model.AppArmorReport{Available: true, SshdLoaded: true, SshdMode: "complain"},
+		NftConsumers: model.NftConsumersReport{Available: true},
+		Subsystem: model.SubsystemReport{
+			Target:                      "/usr/lib/openssh/sftp-server",
+			Warning:                     true,
+			JailedOverrideForceInternal: true,
+		},
+	}
+	got := doctor.RenderText(r)
+	require.Contains(t, got, "[OK]   subsystem sftp: /usr/lib/openssh/sftp-server for non-jailed users; jailed users use ForceCommand internal-sftp via drop-in")
+	require.NotContains(t, got, "[FAIL] subsystem sftp")
+	// [A] suppressed - all detectors are effectively green.
+	require.NotContains(t, got, "[A] Apply SFTP jail configuration",
+		"with healthy chain + drop-in + override, the [A] prompt should be suppressed")
+}
+
 // Missing chroot root is a WARN with the missing path named.
 func TestRenderText_chroot_missing(t *testing.T) {
 	r := model.DoctorReport{ChrootChain: model.ChrootChainReport{

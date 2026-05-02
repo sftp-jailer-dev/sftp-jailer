@@ -129,11 +129,25 @@ func renderNftConsumers(r model.NftConsumersReport) string {
 }
 
 func renderSubsystem(r model.SubsystemReport) string {
+	// Decision (v1.2.1): rather than dynamically rewriting the [A] rationale
+	// based on which subset of issues is present, suppress the [A] prompt
+	// entirely when the override resolves the only failing detector.
+	// Simpler, fewer string-formatting branches, and operators see [A] only
+	// when an action would actually help. The suppression is wired through
+	// NeedsCanonicalApply (it gates on JailedOverrideForceInternal too); the
+	// renderer just emits [OK] with explanatory text here.
 	switch {
 	case r.Error != "":
 		return fmt.Sprintf("[INFO] subsystem sftp: sshd -T unavailable (%s)\n", r.Error)
 	case r.Missing:
 		return "[WARN] subsystem sftp: not set in sshd effective config\n"
+	case r.Warning && r.JailedOverrideForceInternal:
+		// v1.2.1 fix: base Subsystem points outside the chroot, but the
+		// canonical drop-in's Match Group sftp-jailer + ForceCommand
+		// internal-sftp override means jailed users never invoke the
+		// external binary. Render [OK] with the explanatory note so
+		// operators understand what the doctor saw.
+		return fmt.Sprintf("[OK]   subsystem sftp: %s for non-jailed users; jailed users use ForceCommand internal-sftp via drop-in\n", r.Target)
 	case r.Warning:
 		return fmt.Sprintf("[FAIL] subsystem sftp: %s - external binary won't exist inside chroot (pitfall A2)\n", r.Target)
 	default:

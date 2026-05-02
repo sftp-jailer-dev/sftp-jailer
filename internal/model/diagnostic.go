@@ -81,4 +81,15 @@ type SubsystemReport struct {
 	Warning    bool
 	Missing    bool
 	Error      string
+
+	// JailedOverrideForceInternal is true when the canonical drop-in
+	// (/etc/ssh/sshd_config.d/50-sftp-jailer.conf) has a `Match Group
+	// sftp-jailer` block whose body contains `ForceCommand internal-sftp`.
+	// When true, jailed users never invoke the external sftp-server
+	// binary even if the base Subsystem directive points at it - the
+	// doctor renderer downgrades the [FAIL] to [OK] and the
+	// NeedsCanonicalApply prescription drops the "external sftp-server"
+	// clause. Set by Service.Run AFTER detectSubsystem returns; tests
+	// populating SubsystemReport directly may set this field manually.
+	JailedOverrideForceInternal bool
 }
