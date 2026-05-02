@@ -35,10 +35,10 @@ before:
     # Pre-compress man page - lintian requires gzip'd man pages in .deb packages
     # (lintian tag: uncompressed-manual-page). The .gz output is committed to
     # packaging/debian/ and referenced by the nfpm contents list below.
-    - bash -c "gzip -9 -k -f docs/man/sftp-jailer.1 -c > packaging/debian/sftp-jailer.1.gz"
+    - bash -c "gzip -n -9 -k -f docs/man/sftp-jailer.1 -c > packaging/debian/sftp-jailer.1.gz"
     # Pre-compress Debian changelog - lintian requires changelog.Debian.gz
     # (lintian tag: no-changelog). Source changelog is packaging/debian/changelog.
-    - bash -c "gzip -9 -k -f packaging/debian/changelog -c > packaging/debian/changelog.Debian.gz"
+    - bash -c "gzip -n -9 -k -f packaging/debian/changelog -c > packaging/debian/changelog.Debian.gz"
 
 archives:
   - id: sftp-jailer-tar
@@ -76,14 +76,14 @@ nfpms:
     recommends:
       - passwd
     contents:
-      # systemd unit files (lintian-clean canonical install path /lib/systemd/system/)
+      # systemd unit files (UsrMerge canonical install path /usr/lib/systemd/system/ — Debian Policy / lintian aliased-location compliance)
       - src: packaging/systemd/sftp-jailer-observer.service
-        dst: /lib/systemd/system/sftp-jailer-observer.service
+        dst: /usr/lib/systemd/system/sftp-jailer-observer.service
         type: file
         file_info:
           mode: 0644
       - src: packaging/systemd/sftp-jailer-observer.timer
-        dst: /lib/systemd/system/sftp-jailer-observer.timer
+        dst: /usr/lib/systemd/system/sftp-jailer-observer.timer
         type: file
         file_info:
           mode: 0644
@@ -126,7 +126,7 @@ nfpms:
       preremove: packaging/debian/prerm
       postremove: packaging/debian/postrm
     deb:
-      compression: zstd
+      compression: xz
       # No conffiles declared - sshd drop-in is NOT a dpkg conffile per
       # CONTEXT.md D-LC-02; runtime canonical writer owns it.
 
