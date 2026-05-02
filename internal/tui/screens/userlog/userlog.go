@@ -317,8 +317,8 @@ func (m *Model) View() string {
 	// Empty state - if both loads completed AND nothing to render, show
 	// the verbatim D-05 copy.
 	if m.isEmpty() {
-		b.WriteString(fmt.Sprintf("No login attempts for %s in the last %d days.",
-			m.username, m.windowDays))
+		fmt.Fprintf(&b, "No login attempts for %s in the last %d days.",
+			m.username, m.windowDays)
 		b.WriteString("\n")
 		return wrapModal(b.String())
 	}

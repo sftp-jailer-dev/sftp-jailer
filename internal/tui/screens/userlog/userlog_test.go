@@ -191,10 +191,8 @@ func TestUserLog_c_copies_focused_row_via_OSC52(t *testing.T) {
 				break
 			}
 		}
-	} else {
-		if strings.Contains(fmt.Sprintf("%v", msg), "10.0.0.1") {
-			found = true
-		}
+	} else if strings.Contains(fmt.Sprintf("%v", msg), "10.0.0.1") {
+		found = true
 	}
 	require.True(t, found, "the OSC 52 payload must include the focused row's source IP; got %v", msg)
 }
