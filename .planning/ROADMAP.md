@@ -29,8 +29,8 @@ Phase working dirs archived to `.planning/milestones/v1.1/phases/`.
 ### 📋 v1.2 Packaging & Release (Planned)
 
 - [ ] **Phase 5**: Packaging, Install/Purge & Automated Release (DIST-02/03/04/05/08/09/10 — 7 reqs)
-- [ ] **Phase 6**: v1.1 Carry-over Closure — Firewall edge + TUI polish (FW-09, TUI-09/10/11 — 4 reqs)
-- [ ] **Phase 7**: Retroactive Nyquist Validation Authoring (NYQ-01 — 1 req)
+- [x] **Phase 6**: v1.1 Carry-over Closure — Firewall edge + TUI polish (FW-09, TUI-09/10/11 — 4 reqs) — completed 2026-05-01
+- [x] **Phase 7**: Retroactive Nyquist Validation Authoring (NYQ-01 — 1 req) — completed 2026-05-01
 
 ## Phase Details (Active)
 
@@ -102,7 +102,7 @@ CI exercises criteria 2 and 5.
 
 **Goal:** Author `validation_md` for v1.1 Phases 1, 2, and 3 so milestone-level audits have uniform Nyquist coverage across the project. Phase 4 already shipped with `validation_md`; this phase backfills the earlier phases.
 
-**Depends on:** Phases 5 and 6 (so the Nyquist coverage author has the latest behavioral surface to reference). No code is changed in this phase — pure documentation.
+**Depends on:** Phases 5 and 6 (so the Nyquist coverage author has the latest behavioral surface to reference). Tests may be added to backfill MISSING coverage; no production code changes.
 
 **Requirements (1):** NYQ-01.
 
@@ -111,11 +111,15 @@ CI exercises criteria 2 and 5.
 1. **`validation_md` exists and passes for Phases 1, 2, and 3.** Each phase's `validation_md` (located under the archived `.planning/milestones/v1.1/phases/<phase>/`) enumerates the requirement → test/UAT-evidence map produced retroactively from the existing phase artifacts (PLAN.md, REVIEW.md, VERIFICATION.md, SUMMARY.md). `/gsd:validate-phase 1`, `/gsd:validate-phase 2`, and `/gsd:validate-phase 3` all return PASS.
 2. **Milestone-level audit re-runs cleanly.** `/gsd:audit-milestone v1.1` re-run with the new `validation_md` files in place returns PASS with full Nyquist coverage reported (no "missing validation_md" warnings).
 
-**Empirical UAT acceptance gate:** Not applicable — this is documentation work. Validity is verified by the GSD validate-phase / audit-milestone toolchain.
+**Empirical UAT acceptance gate:** Not applicable - this is documentation work. Validity is verified by the GSD validate-phase / audit-milestone toolchain.
 
 **Parallelization hints:** Phases 1, 2, 3 `validation_md` files can be authored in parallel by separate plans.
 
-**Plans:** TBD — break down via `/gsd:discuss-phase 7` → `/gsd:plan-phase 7`.
+**Plans:** 4 plans (waves 1-2; 07-01..07-03 shipped in parallel per ROADMAP parallelization hint and CONTEXT D-04; 07-04 is the audit-rerun gate):
+- [x] 07-01-PLAN.md - Author 01-VALIDATION.md via /gsd:validate-phase 1 (NYQ-01)
+- [x] 07-02-PLAN.md - Author 02-VALIDATION.md via /gsd:validate-phase 2 (NYQ-01)
+- [x] 07-03-PLAN.md - Author 03-VALIDATION.md via /gsd:validate-phase 3 (NYQ-01)
+- [x] 07-04-PLAN.md - Run /gsd:audit-milestone v1.1 PASS gate + ROADMAP D-03 edit (NYQ-01)
 
 ---
 
@@ -128,8 +132,8 @@ CI exercises criteria 2 and 5.
 | v1.1 | 3. Canonical sshd/Chroot Config & User+Key Mutations | 10/10 | ✅ Complete | 2026-04-27 |
 | v1.1 | 4. Firewall Mutations & Progressive Lockdown Flagship | 13/13 | ✅ Complete | 2026-04-29 |
 | v1.2 | 5. Packaging, Install/Purge & Automated Release | 0/6 | 📋 Planned | — |
-| v1.2 | 6. v1.1 Carry-over Closure — Firewall edge + TUI polish | 0/4 | 📋 Planned | — |
-| v1.2 | 7. Retroactive Nyquist Validation Authoring | 0/TBD | 📋 Planned | — |
+| v1.2 | 6. v1.1 Carry-over Closure — Firewall edge + TUI polish | 5/5 | ✅ Complete | 2026-05-01 |
+| v1.2 | 7. Retroactive Nyquist Validation Authoring | 4/4 | ✅ Complete | 2026-05-01 |
 
 ## Cross-Phase Notes (v1.2)
 
