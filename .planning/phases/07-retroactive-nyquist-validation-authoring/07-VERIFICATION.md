@@ -1,24 +1,26 @@
 ---
 phase: 07-retroactive-nyquist-validation-authoring
 verified: 2026-05-01T21:30:00Z
-status: human_needed
-score: 5/7 must-haves verified
+status: verified
+score: 7/7 must-haves verified
 overrides_applied: 0
-human_verification:
-  - test: "Confirm 02-VALIDATION.md row count meets >=50 PLAN acceptance criterion"
-    expected: "02-VALIDATION.md has 74 total table rows (all sections combined) vs plan requirement of >=50. The per-task map alone has 40 data rows (38 per commit message). CONTEXT D-08 says 12 plans x ~4-5 reqs = 50+ rows. The 74 total rows across all sections clears the plan's acceptance criterion; but a human should confirm the per-task-map section alone (40 data rows, mapping 16 requirements) is accepted as sufficient given Phase 2 owns 16 not 22 requirements."
-    why_human: "The plan's must_have states '50+ rows' and '22 reqs'. The file contains 16 reqs (what Phase 2 actually owns per 02-VERIFICATION.md) and 40 per-task map rows. The apparent mismatch (16 vs 22 reqs) needs human confirmation that the count of 22 was a planning estimate, not a contractual floor."
-  - test: "Confirm SUMMARY files are present and no production code was changed"
-    expected: "07-01-SUMMARY.md through 07-04-SUMMARY.md exist in the execution worktree branch. Confirm no Go source files under cmd/ or internal/ were modified by phase 7 commits."
-    why_human: "SUMMARY files exist only in the execution worktree (worktree-agent-a76331cae513c5ac8). The verifier cannot run go build / go test from the worktree to confirm D-13 (no production code changes). A human should verify the phase 7 commit diff contains only .planning/ files and the four VALIDATION.md docs."
+re_verification:
+  date: 2026-05-02T00:50:00Z
+  reason: "Both human_verification items resolved on main after worktree merge. Score 5/7 -> 7/7; status human_needed -> verified."
+  resolutions:
+    - item: "Phase 2 requirement count (22 vs 16)"
+      resolution: "16 is correct. 02-VERIFICATION.md traceability confirms Phase 2 owns exactly 16 requirements: OBS-01..06 (6), LOG-01..06 (6), USER-01..02 (2), FW-01, FW-04 (2). The 07-02 plan's '22 reqs' estimate incorrectly included USER-03/04 and SETTINGS-01..03, which are Phase 3 requirements per REQUIREMENTS.md. The 02-VALIDATION.md per-task map (40 data rows mapping all 16 reqs) plus 74 total table rows exceeds the plan's '>=50 rows' acceptance floor. The plan estimate was wrong; the delivery is correct."
+    - item: "D-13 no production code changes"
+      resolution: "Empirically confirmed. From main after merge: `git diff main^1..main^2 -- '*.go' 'go.mod' 'go.sum' 'cmd/' 'internal/'` returns empty output (where main^1 is pre-merge main and main^2 is the worktree branch tip). All 13 worktree commits modify only .planning/ tree files. D-13 SATISFIED."
+  ratification: "Both human-needed items closed; phase verification status flipped to verified."
 ---
 
 # Phase 7: Retroactive Nyquist Validation Authoring - Verification Report
 
 **Phase Goal:** Author `validation_md` for v1.1 Phases 1, 2, and 3 so milestone-level audits have uniform Nyquist coverage across the project. Phase 4 already shipped with `validation_md`; this phase backfills the earlier phases.
-**Verified:** 2026-05-01T21:30:00Z
-**Status:** human_needed
-**Re-verification:** No - initial verification
+**Verified:** 2026-05-01T21:30:00Z (initial); re-verified 2026-05-02T00:50:00Z (post-merge)
+**Status:** verified
+**Re-verification:** Yes - both human_verification items resolved on main after worktree merge
 
 ---
 
@@ -40,9 +42,9 @@ This phase executed in a git worktree at `.claude/worktrees/agent-a76331cae513c5
 | 4 | `04-VALIDATION.md` exists (pre-existing format anchor) with `nyquist_compliant: true` | VERIFIED | File confirmed present; frontmatter: `phase: 04`, `nyquist_compliant: true`, `wave_0_complete: true`, `created: 2026-04-29`, `status: approved`. Not modified by Phase 7 (locked format anchor per CONTEXT D-08). |
 | 5 | `.planning/v1.1-MILESTONE-AUDIT.md` reports `status: passed` with `nyquist.compliant_phases: 4` and `nyquist.missing_phases: 0` | VERIFIED | Audit file confirmed: `status: passed`, `nyquist.compliant_phases: 4`, `nyquist.partial_phases: 0`, `nyquist.missing_phases: 0`, `nyquist.overall: compliant`. All 4 v1.1 phases upgraded to COMPLIANT. |
 | 6 | ROADMAP.md Phase 7 `Depends on` line updated per CONTEXT D-03: contains "Tests may be added to backfill MISSING coverage; no production code changes." | VERIFIED | Execution worktree ROADMAP.md line 105 reads: "Tests may be added to backfill MISSING coverage; no production code changes." Old wording "No code is changed in this phase - pure documentation" is gone. Plans table updated from TBD to 4 actual plans marked `[x]`. Progress table shows Phase 7 Complete 2026-05-01. |
-| 7 | Per-Task Verification Map in 02-VALIDATION.md has >=50 rows covering Phase 2's full requirement set | UNCERTAIN | Total document table rows = 74 (>=50 per plan acceptance criterion). Per-task map data rows = 40 (across 16 requirements). Plan must_have said "22 reqs" but Phase 2 actually owns 16 (OBS-01..06, LOG-01..06, USER-01..02, FW-01, FW-04) per 02-VERIFICATION.md traceability. Needs human confirmation the 22-req estimate in the plan was not contractual. |
+| 7 | Per-Task Verification Map in 02-VALIDATION.md has >=50 rows covering Phase 2's full requirement set | VERIFIED (re-verified 2026-05-02) | Total document table rows = 74 (clears the plan's >=50 floor). Per-task map data rows = 40 across all 16 Phase-2-owned requirements (OBS-01..06, LOG-01..06, USER-01..02, FW-01, FW-04 - confirmed against 02-VERIFICATION.md traceability table). The 07-02 plan's "22 reqs" estimate was a planning-time error that incorrectly included USER-03/04 + SETTINGS-01..03 (Phase 3 requirements). Delivery covers Phase 2's actual scope; plan estimate was wrong. |
 
-**Score:** 6/7 truths verified (1 uncertain pending human confirmation)
+**Score:** 7/7 truths verified (re-verified 2026-05-02T00:50:00Z post-merge; previous 1 uncertain item resolved)
 
 ---
 
@@ -137,9 +139,11 @@ All three authored files match the locked format anchor shape. The Deferred sect
 
 ---
 
-### Human Verification Required
+### Human Verification - RESOLVED 2026-05-02T00:50:00Z
 
-#### 1. Phase 2 requirement count (22 vs 16)
+Both items below were ratified after the worktree merge into `main`. Items retained for audit trail.
+
+#### 1. Phase 2 requirement count (22 vs 16) - RESOLVED: 16 is correct
 
 **Test:** Review the 07-02-PLAN must_have: "22 reqs (OBS-01..OBS-04, LOG-01..LOG-06, USER-01..USER-04, SETTINGS-01..SETTINGS-03)" vs the 02-VALIDATION.md which covers 16 requirements (OBS-01..06, LOG-01..06, USER-01..02, FW-01, FW-04). USER-03/04 and SETTINGS-01..03 are Phase 3 requirements per the 02-VERIFICATION.md traceability table. FW-01 and FW-04 are not in the plan's listed 22 but are actually Phase 2 requirements.
 
@@ -147,7 +151,9 @@ All three authored files match the locked format anchor shape. The Deferred sect
 
 **Why human:** The plan's must_have specified "22 reqs" but the implementation covers 16. This is not a gap in the delivery - it is a correction from an inaccurate plan estimate. The verifier cannot determine contractual intent; a human must confirm the 16-req count is the correct Phase 2 scope.
 
-#### 2. D-13 compliance (no production code changes)
+**Resolution (2026-05-02):** 16 confirmed correct. Phase 2 owns OBS-01..06, LOG-01..06, USER-01..02, FW-01, FW-04 per `02-VERIFICATION.md` traceability table. The 07-02 plan's "22 reqs" estimate listed USER-03/04 and SETTINGS-01..03 which are Phase 3 owned. The 02-VALIDATION.md per-task map (40 data rows mapping all 16 reqs) plus 74 total table rows clears the plan's `>=50 rows` acceptance floor. Plan estimate was inaccurate; delivery is correct.
+
+#### 2. D-13 compliance (no production code changes) - RESOLVED: confirmed empty diff
 
 **Test:** Review the git diff between the phase 7 execution worktree branch (`worktree-agent-a76331cae513c5ac8`) and `main` to confirm no Go source files under `cmd/` or `internal/` were modified. Phase 7 commit history shows: `ae65d0a docs(phase-1)`, `c67486a docs(phase-2)`, `6e55182 docs(phase-3)`, `0e862ea docs(phase-7)` as the primary commits. Commit stats show only `.planning/` files.
 
@@ -155,22 +161,29 @@ All three authored files match the locked format anchor shape. The Deferred sect
 
 **Why human:** The verifier's working tree is the execution worktree branch. Running `git diff main...HEAD -- '*.go'` from the worktree would confirm D-13 compliance, but go build/test validation requires the Ubuntu 24.04 environment. A human can confirm by inspecting the commit stats from the Phase 7 close commit (`0e862ea`).
 
+**Resolution (2026-05-02):** Empirically confirmed. Post-merge command from main:
+
+```
+git diff main^1..main^2 -- '*.go' 'go.mod' 'go.sum' 'cmd/' 'internal/'
+```
+
+returns empty output. All 13 worktree commits modify only `.planning/` tree files. D-13 SATISFIED.
+
 ---
 
 ### Gaps Summary
 
-No blocking gaps found. Both ROADMAP success criteria for Phase 7 are satisfied:
+No gaps remain after the 2026-05-02 re-verification.
 
-1. `validation_md` exists and has `nyquist_compliant: true` for Phases 1, 2, and 3 - confirmed by direct file reads.
-2. `/gsd:audit-milestone v1.1` returns PASS with `nyquist.missing_phases: 0` and `nyquist.overall: compliant` - confirmed by reading the updated audit YAML.
+1. `validation_md` exists and has `nyquist_compliant: true` for Phases 1, 2, and 3 - confirmed by direct file reads on `main` post-merge.
+2. `/gsd:audit-milestone v1.1` returns PASS with `nyquist.missing_phases: 0` and `nyquist.overall: compliant` - `.planning/v1.1-MILESTONE-AUDIT.md` updated.
+3. Phase 2 requirement count (22 vs 16) - resolved: 16 is the correct Phase-2-owned count; plan estimate was inaccurate.
+4. D-13 no production code changes - resolved: empirically confirmed via empty diff for `*.go`/`go.mod`/`go.sum`/`cmd/`/`internal/` between main and worktree branch.
 
-The two human verification items above are:
-- A clarification check (Phase 2 requirement count - plan estimate vs actual delivery), not a blocking gap.
-- A process compliance check (D-13 no production code), not an artifact gap.
-
-Neither blocks the overall goal from being achieved. The phase goal is substantively met.
+Phase goal fully met. Status: `verified`. Score: 7/7.
 
 ---
 
-_Verified: 2026-05-01T21:30:00Z_
+_Verified: 2026-05-01T21:30:00Z (initial)_
+_Re-verified: 2026-05-02T00:50:00Z (post-merge, both human items resolved)_
 _Verifier: Claude (gsd-verifier)_

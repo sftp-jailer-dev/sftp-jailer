@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Packaging & Release
 status: milestone_complete
-last_updated: "2026-05-01T01:56:16.680Z"
-last_activity: 2026-05-01 - Phase 7 (NYQ-01) closed: 4 v1.1 phases now Nyquist-compliant per /gsd:audit-milestone v1.1 PASS gate.
+last_updated: "2026-05-02T00:50:00Z"
+last_activity: 2026-05-02 - Phase 7 worktree merged into main; both 07-VERIFICATION.md human-needed items resolved (status verified, score 7/7); milestone v1.2 ready for RELEASE-CHECKLIST pre-flight.
 progress:
-  total_phases: 1
-  completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
-  percent: 200
+  total_phases: 3
+  completed_phases: 3
+  total_plans: 16
+  completed_plans: 16
+  percent: 100
 ---
 
 # STATE: sftp-jailer
@@ -23,15 +23,14 @@ See `.planning/PROJECT.md` (updated 2026-04-29 - v1.2 Current Milestone block + 
 
 **What this is:** Interactive TUI for Linux sysadmins managing a chrooted SFTP server on Ubuntu 24.04 - one supervised flow from "fresh box" to "per-user IP-locked-down SFTP" with observation-driven intel.
 **Core value:** One TUI takes a fresh Ubuntu 24.04 box from "no SFTP" to "hardened chrooted SFTP with per-user IP lockdown" - safely, interactively, with observable traffic intel driving every decision.
-**Current focus:** Phase 06 — v1-1-carry-over-closure-firewall-edge-tui-polish
+**Current focus:** Milestone v1.2 complete — pending RELEASE-CHECKLIST pre-flight + v1.2.0 tag-push
 
 ## Current Position
 
-Phase: 07
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-01
-Resume file: --resume-file
+Milestone: v1.2 (Packaging & Release) — all 3 phases complete (Phase 5, 6, 7)
+Status: Milestone complete; ready for RELEASE-CHECKLIST pre-flight
+Last activity: 2026-05-02 - Phase 7 worktree merged; verification flipped to verified 7/7
+Next gate: docs/uat is signed; `goreleaser release --snapshot --clean` + `lintian --pedantic` on main HEAD before tag push
 
 ## Accumulated Context
 
