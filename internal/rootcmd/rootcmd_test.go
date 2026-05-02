@@ -35,8 +35,8 @@ func Test_VersionFlag_and_Subcommand_byte_identical(t *testing.T) {
 		return &cobra.Command{
 			Use: "version",
 			RunE: func(cmd *cobra.Command, args []string) error {
-				fmt.Fprintf(cmd.OutOrStdout(), "sftp-jailer %s - %s\n", version.Version, version.ProjectURL)
-				return nil
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "sftp-jailer %s - %s\n", version.Version, version.ProjectURL)
+				return err
 			},
 		}
 	}
