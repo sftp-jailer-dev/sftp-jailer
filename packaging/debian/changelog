@@ -8,8 +8,8 @@ sftp-jailer (1.2.0~rc1) unstable; urgency=medium
   * DIST-02/03: goreleaser + nfpm build CGO-free .deb for amd64 and arm64;
     lintian --pedantic clean.
   * DIST-04: postinst creates the sftp-jailer group, enables and starts the
-    weekly observer timer, and pre-initializes /var/lib/sftp-jailer/observations.db
-    at the current schema version (hidden init-db subcommand, plan 05-07).
+    weekly observer timer, and pre-initializes the observations DB at the
+    current schema version (init-db hidden subcommand, plan 05-07).
   * DIST-05/09: apt purge removes the binary, both systemd units, state dir,
     /etc/ssh/sshd_config.d/50-sftp-jailer.conf drop-in, and the sftp-jailer
     group; admin-edited /etc/ssh/sshd_config and unrelated drop-ins remain
