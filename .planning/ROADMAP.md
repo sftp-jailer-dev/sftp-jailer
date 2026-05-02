@@ -89,11 +89,12 @@ CI exercises criteria 2 and 5.
 
 **Parallelization hints:** All four requirements are independent — schedule as parallel plans within the phase.
 
-**Plans:** 4 plans (wave 1, all parallel per D-18):
+**Plans:** 5 plans (wave 1; 06-01..06-04 shipped in parallel per D-18; 06-05 is gap-closure for TUI-11 CR-01):
 - [x] 06-01-PLAN.md - FW-09 close BUG-04-B (dual-family + v6-only test fixtures + UAT runbook)
 - [x] 06-02-PLAN.md - TUI-09 expose password_aging_days/password_stale_days in S-SETTINGS
 - [x] 06-03-PLAN.md - TUI-10 per-user log-detail modal (M-USER-LOG) on uppercase L
 - [x] 06-04-PLAN.md - TUI-11 cancellable resolveAsync paths in 4 modals (SIGTERM + 2s SIGKILL grace)
+- [x] 06-05-PLAN.md - TUI-11 gap closure: CR-01 (PID=0 fallback) + IN-02 (HTTP/file fetch hang copy) + WR-01 (dead lastPID cleanup)
 
 ---
 
