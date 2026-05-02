@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/model"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sshdcfg"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
@@ -104,6 +105,13 @@ func (s *Service) Run(ctx context.Context) (model.DoctorReport, error) {
 	rep.NftConsumers, _ = s.detectNftConsumers(ctx)
 	rep.Subsystem, _ = s.detectSubsystem(ctx)
 
+	// v1.2.2: ufw active/inactive signal. Reuses firewall.Enumerate's
+	// existing `ufw status numbered` exec + ErrUFWInactive sentinel so
+	// there is a single source of truth for the parse. The IPV6
+	// sub-signal (rep.UfwIPv6) remains independent; the renderer
+	// composes both via renderUfwRow.
+	rep.Ufw, _ = s.detectUfwStatus(ctx)
+
 	// v1.2.1 fix: when the base Subsystem points at an external sftp-server
 	// binary, also check whether the canonical drop-in installs a
 	// `Match Group sftp-jailer + ForceCommand internal-sftp` override.
@@ -116,6 +124,33 @@ func (s *Service) Run(ctx context.Context) (model.DoctorReport, error) {
 	}
 
 	return rep, nil
+}
+
+// detectUfwStatus calls firewall.Enumerate to get the active/inactive
+// signal. The rules slice is intentionally discarded - this detector
+// only consumes the active/inactive bit (the per-rule IP-allowlist
+// enrichment is the S-USERS / S-FIREWALL responsibility, not the
+// doctor screen's). Reusing firewall.Enumerate keeps a single source
+// of truth for the `ufw status numbered` parse and the ErrUFWInactive
+// sentinel rather than duplicating the parser here.
+//
+// Why a separate detector rather than folding it into detectUfwIPv6:
+// the IPV6 setting reads /etc/default/ufw, which is present even when
+// ufw is disabled (it's a static config file). The active/inactive
+// signal requires a live `ufw status` query. Two detectors, two
+// independently-degradable signals, composed in renderUfwRow.
+func (s *Service) detectUfwStatus(ctx context.Context) (model.UfwReport, error) {
+	_, err := firewall.Enumerate(ctx, s.ops)
+	switch {
+	case err == nil:
+		return model.UfwReport{Available: true, Inactive: false}, nil
+	case errors.Is(err, firewall.ErrUFWInactive):
+		return model.UfwReport{Available: true, Inactive: true}, nil
+	default:
+		// Exec failure (ufw not installed / not allowlisted) or non-zero
+		// exit. Degrade to [INFO] - mirrors AppArmor/nft conventions.
+		return model.UfwReport{Available: false, Error: err.Error()}, nil
+	}
 }
 
 // detectJailedForceCommandOverride scans /etc/ssh/sshd_config.d/*.conf for

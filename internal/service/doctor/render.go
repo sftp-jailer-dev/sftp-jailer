@@ -24,7 +24,7 @@ func RenderText(rep model.DoctorReport) string {
 
 	sb.WriteString(renderSshdDropIns(rep.SshdDropIns))
 	sb.WriteString(renderChrootChain(rep.ChrootChain))
-	sb.WriteString(renderUfwIPv6(rep.UfwIPv6))
+	sb.WriteString(renderUfwRow(rep.Ufw, rep.UfwIPv6))
 	sb.WriteString(renderAppArmor(rep.AppArmor))
 	sb.WriteString(renderNftConsumers(rep.NftConsumers))
 	sb.WriteString(renderSubsystem(rep.Subsystem))
@@ -85,6 +85,39 @@ func renderChrootChain(r model.ChrootChainReport) string {
 		return fmt.Sprintf("[OK]   chroot chain %s: root:root + no-group-write all the way down\n", r.Root)
 	}
 	return fmt.Sprintf("[WARN] chroot chain %s: %s\n", r.Root, firstBad)
+}
+
+// renderUfwRow composes the ufw active/inactive signal with the IPV6
+// sub-signal. When ufw is inactive, the IPV6 setting is moot - render
+// only the [FAIL] row + [A] action label so operators see one clear
+// prescription. When ufw is active, fall through to the existing
+// renderUfwIPv6 logic (preserves the v1.2.1 FW-06 row byte-for-byte).
+//
+// v1.2.2 decision (operator-locked): the `[A] Enable ufw` is a LABEL
+// only. The actual `ufw --force enable` mutation belongs in v1.3
+// where it can land alongside other ufw mutations under proper
+// SAFE-04 timer coverage. Surfacing the label here without the
+// handler is the documented v1.2.2 scope - it tells operators what
+// the fix is without us shipping an unsupervised mutation path.
+func renderUfwRow(r model.UfwReport, ipv6 model.UfwIPv6Report) string {
+	switch {
+	case !r.Available:
+		if r.Error != "" {
+			return fmt.Sprintf("[INFO] ufw: status unavailable (%s)\n", r.Error)
+		}
+		return "[INFO] ufw: status unavailable (binary may not be installed)\n"
+	case r.Inactive:
+		// [FAIL] + [A] label pair. The IPV6 row is suppressed because
+		// the setting is moot when ufw is down (no rules of any kind
+		// are enforced). When the operator runs `ufw enable` the row
+		// collapses back to the existing renderUfwIPv6 output.
+		return "[FAIL] ufw: inactive (no firewall enforcement; lockdown will fail)\n" +
+			"[A] Enable ufw - run `ufw enable` (apply flow lands in v1.3)\n"
+	default:
+		// Active: delegate to the existing renderer. Byte-for-byte
+		// identical output to the v1.2.1 path.
+		return renderUfwIPv6(ipv6)
+	}
 }
 
 func renderUfwIPv6(r model.UfwIPv6Report) string {

@@ -197,6 +197,94 @@ IPV6="no"
 	require.True(t, r.UfwIPv6.Warning)
 }
 
+// ---- detectUfwStatus (v1.2.2) -------------------------------------------
+
+// TestDetectUfwStatus_inactive: `ufw status numbered` reporting
+// `Status: inactive` must surface as rep.Ufw.Inactive=true regardless
+// of /etc/default/ufw IPV6 setting. Operator screenshots on debian13
+// showed doctor reporting [OK] ufw IPV6=yes while S-FIREWALL errored
+// with "firewall: ufw status reports inactive" - this test guards
+// that v1.2.0/v1.2.1 false-negative.
+func TestDetectUfwStatus_inactive(t *testing.T) {
+	f := sysops.NewFake()
+	f.ExecResponses["ufw status numbered"] = sysops.ExecResult{
+		Stdout: []byte("Status: inactive\n"), ExitCode: 0,
+	}
+	// IPV6=yes file exists - asserts that Inactive trumps the IPV6 OK.
+	f.Files["/etc/default/ufw"] = []byte("IPV6=yes\n")
+
+	s := doctor.New(f)
+	r, err := s.Run(context.Background())
+	require.NoError(t, err)
+	require.True(t, r.Ufw.Available)
+	require.True(t, r.Ufw.Inactive, "Status: inactive must set Inactive=true")
+	// IPV6 detector still ran independently - the suppression is
+	// a render-layer concern, not a model-layer one.
+	require.Equal(t, "yes", r.UfwIPv6.Value)
+}
+
+// TestDetectUfwStatus_active_no_regression: active ufw + IPV6=yes
+// preserves the v1.2.1 [OK] happy path - rep.Ufw.Inactive=false and
+// rep.UfwIPv6 is unchanged.
+func TestDetectUfwStatus_active_no_regression(t *testing.T) {
+	// Active output: a plausible single-rule numbered response.
+	const activeOut = `Status: active
+
+To                         Action      From
+--                         ------      ----
+[ 1] 22/tcp                 ALLOW IN    Anywhere
+`
+	f := sysops.NewFake()
+	f.ExecResponses["ufw status numbered"] = sysops.ExecResult{
+		Stdout: []byte(activeOut), ExitCode: 0,
+	}
+	f.Files["/etc/default/ufw"] = []byte("IPV6=yes\n")
+
+	s := doctor.New(f)
+	r, err := s.Run(context.Background())
+	require.NoError(t, err)
+	require.True(t, r.Ufw.Available)
+	require.False(t, r.Ufw.Inactive)
+	require.Equal(t, "yes", r.UfwIPv6.Value)
+	require.False(t, r.UfwIPv6.Warning)
+}
+
+// TestDetectUfwStatus_active_ipv6_no_warns: active ufw + IPV6=no
+// preserves the v1.2.1 FW-06 hard-block warning unchanged.
+func TestDetectUfwStatus_active_ipv6_no_warns(t *testing.T) {
+	const activeOut = `Status: active
+
+To                         Action      From
+--                         ------      ----
+`
+	f := sysops.NewFake()
+	f.ExecResponses["ufw status numbered"] = sysops.ExecResult{
+		Stdout: []byte(activeOut), ExitCode: 0,
+	}
+	f.Files["/etc/default/ufw"] = []byte("IPV6=no\n")
+
+	s := doctor.New(f)
+	r, err := s.Run(context.Background())
+	require.NoError(t, err)
+	require.False(t, r.Ufw.Inactive)
+	require.Equal(t, "no", r.UfwIPv6.Value)
+	require.True(t, r.UfwIPv6.Warning, "FW-06 hard-block preserved")
+}
+
+// TestDetectUfwStatus_exec_error: ufw binary missing degrades to
+// Available=false (no Inactive false-positive). Mirrors the
+// detectAppArmor / detectNftConsumers degradation convention.
+func TestDetectUfwStatus_exec_error(t *testing.T) {
+	f := sysops.NewFake()
+	f.ExecError = errors.New("ufw not installed")
+	s := doctor.New(f)
+	r, err := s.Run(context.Background())
+	require.NoError(t, err, "exec error must NOT propagate to overall Run")
+	require.False(t, r.Ufw.Available)
+	require.False(t, r.Ufw.Inactive)
+	require.NotEmpty(t, r.Ufw.Error)
+}
+
 // ---- detectAppArmor ------------------------------------------------------
 
 // Enforce mode → Available=true, SshdLoaded=true, Warning=true (pitfall A5).
@@ -434,6 +522,11 @@ func TestService_Run_all_detectors(t *testing.T) {
 	f.FileStats["/srv/sftp-jailer"] = good
 	f.ExecResponses["aa-status --json"] = sysops.ExecResult{Stdout: aa, ExitCode: 0}
 	f.ExecResponses["nft -j list ruleset"] = sysops.ExecResult{Stdout: nftClean, ExitCode: 0}
+	// v1.2.2: detectUfwStatus shells `ufw status numbered` via firewall.Enumerate.
+	// Script an active-but-empty response so the integration happy path stays green.
+	f.ExecResponses["ufw status numbered"] = sysops.ExecResult{
+		Stdout: []byte("Status: active\n\n"), ExitCode: 0,
+	}
 	f.SshdConfig = map[string][]string{
 		"subsystem": {"sftp internal-sftp -f AUTHPRIV -l INFO"},
 	}
@@ -448,6 +541,8 @@ func TestService_Run_all_detectors(t *testing.T) {
 	require.True(t, r.AppArmor.Available)
 	require.True(t, r.NftConsumers.Available)
 	require.True(t, r.Subsystem.IsInternal)
+	require.True(t, r.Ufw.Available, "v1.2.2: scripted ufw status should mark Available")
+	require.False(t, r.Ufw.Inactive, "v1.2.2: scripted active output should not flag Inactive")
 }
 
 // Partial failure: aa-status errors → overall Run still returns nil error.

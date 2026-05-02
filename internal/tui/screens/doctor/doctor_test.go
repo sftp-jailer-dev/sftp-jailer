@@ -37,6 +37,7 @@ func TestDoctorScreen_view_after_report(t *testing.T) {
 	s := doctorscreen.New(svc)
 	s.LoadReportForTest(model.DoctorReport{
 		UfwIPv6:   model.UfwIPv6Report{Value: "no", Warning: true},
+		Ufw:       model.UfwReport{Available: true, Inactive: false}, // v1.2.2: keep IPV6 row visible
 		AppArmor:  model.AppArmorReport{Available: true, SshdLoaded: true, SshdMode: "enforce", Warning: true},
 		Subsystem: model.SubsystemReport{Target: "/usr/lib/openssh/sftp-server", Warning: true},
 	})

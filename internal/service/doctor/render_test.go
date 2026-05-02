@@ -27,6 +27,7 @@ func TestRenderText_all_ok(t *testing.T) {
 			},
 		},
 		UfwIPv6:      model.UfwIPv6Report{Value: "yes"},
+		Ufw:          model.UfwReport{Available: true, Inactive: false},
 		AppArmor:     model.AppArmorReport{Available: true, SshdLoaded: true, SshdMode: "complain"},
 		NftConsumers: model.NftConsumersReport{Available: true},
 		Subsystem:    model.SubsystemReport{Target: "internal-sftp -f AUTHPRIV -l INFO", IsInternal: true},
@@ -54,10 +55,57 @@ func TestRenderText_apparmor_enforce_warns(t *testing.T) {
 
 // Pitfall C4 retirement: ufw IPV6=no renders [WARN] with the Launchpad bug ref.
 func TestRenderText_ufw_ipv6_no_warns(t *testing.T) {
-	r := model.DoctorReport{UfwIPv6: model.UfwIPv6Report{Value: "no", Warning: true}}
+	r := model.DoctorReport{
+		UfwIPv6: model.UfwIPv6Report{Value: "no", Warning: true},
+		Ufw:     model.UfwReport{Available: true, Inactive: false}, // v1.2.2: active path fires renderUfwIPv6
+	}
 	got := doctor.RenderText(r)
 	require.Contains(t, got, "[WARN] ufw IPV6=no")
 	require.Contains(t, got, "Launchpad #251355")
+}
+
+// TestRenderText_ufw_inactive_renders_fail_and_action: when ufw is
+// inactive, doctor must emit [FAIL] ufw: inactive AND the [A] Enable
+// ufw action label, AND must SUPPRESS the IPV6 sub-row (which is
+// moot when ufw is down). v1.2.2 false-negative fix.
+func TestRenderText_ufw_inactive_renders_fail_and_action(t *testing.T) {
+	r := model.DoctorReport{
+		Ufw:     model.UfwReport{Available: true, Inactive: true},
+		UfwIPv6: model.UfwIPv6Report{Value: "yes"}, // would be [OK] alone
+	}
+	got := doctor.RenderText(r)
+	require.Contains(t, got, "[FAIL] ufw: inactive (no firewall enforcement; lockdown will fail)")
+	require.Contains(t, got, "[A] Enable ufw - run `ufw enable` (apply flow lands in v1.3)")
+	// IPV6 row SUPPRESSED when ufw is down - the setting is moot.
+	require.NotContains(t, got, "[OK]   ufw IPV6=yes",
+		"IPV6 row must be suppressed when ufw is inactive")
+	require.NotContains(t, got, "ufw IPV6=",
+		"no IPV6= literal at all when ufw is inactive")
+}
+
+// TestRenderText_ufw_active_preserves_ipv6_row: when ufw is active,
+// the existing v1.2.1 IPV6 row renders unchanged byte-for-byte.
+func TestRenderText_ufw_active_preserves_ipv6_row(t *testing.T) {
+	r := model.DoctorReport{
+		Ufw:     model.UfwReport{Available: true, Inactive: false},
+		UfwIPv6: model.UfwIPv6Report{Value: "yes"},
+	}
+	got := doctor.RenderText(r)
+	require.Contains(t, got, "[OK]   ufw IPV6=yes")
+	require.NotContains(t, got, "[FAIL] ufw: inactive")
+	require.NotContains(t, got, "[A] Enable ufw")
+}
+
+// TestRenderText_ufw_unavailable_renders_info: ufw binary not installed
+// degrades to [INFO] (mirrors AppArmor/nft INFO convention).
+func TestRenderText_ufw_unavailable_renders_info(t *testing.T) {
+	r := model.DoctorReport{
+		Ufw:     model.UfwReport{Available: false, Error: "ufw not installed"},
+		UfwIPv6: model.UfwIPv6Report{Missing: true},
+	}
+	got := doctor.RenderText(r)
+	require.Contains(t, got, "[INFO] ufw: status unavailable")
+	require.NotContains(t, got, "[FAIL] ufw: inactive")
 }
 
 // Pitfall C5 retirement: Docker + Tailscale show as a combined [WARN].
@@ -99,6 +147,7 @@ func TestRenderText_subsystem_external_with_override(t *testing.T) {
 			},
 		},
 		UfwIPv6:      model.UfwIPv6Report{Value: "yes"},
+		Ufw:          model.UfwReport{Available: true, Inactive: false},
 		AppArmor:     model.AppArmorReport{Available: true, SshdLoaded: true, SshdMode: "complain"},
 		NftConsumers: model.NftConsumersReport{Available: true},
 		Subsystem: model.SubsystemReport{

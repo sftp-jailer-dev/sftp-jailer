@@ -14,6 +14,7 @@ type DoctorReport struct {
 	AppArmor     AppArmorReport
 	NftConsumers NftConsumersReport
 	Subsystem    SubsystemReport
+	Ufw          UfwReport // v1.2.2 - active/inactive signal (separate from UfwIPv6).
 }
 
 // SshdDropInReport describes the contents of /etc/ssh/sshd_config.d/.
@@ -55,6 +56,29 @@ type UfwIPv6Report struct {
 	Value   string // "yes" | "no" | "unset"
 	Warning bool
 	Missing bool
+}
+
+// UfwReport reflects the higher-level state of ufw on the box: whether
+// the binary is reachable AND whether the firewall is currently active.
+// Populated by Service.detectUfwStatus via firewall.Enumerate (which
+// already shells `ufw status numbered` via sysops.Exec and surfaces
+// ErrUFWInactive on `Status: inactive`).
+//
+// Composition with UfwIPv6Report: when Inactive is true, the IPV6
+// sub-signal is moot (no rules at all, so IPV6 leak is unobservable);
+// the renderer suppresses the IPV6 row in that case. When Available is
+// false (binary missing), Inactive defaults to false and the row
+// degrades to [INFO] ufw: status unavailable.
+//
+// v1.2.2: detect + render only. The [A] Enable ufw action label is
+// surfaced in the renderer but the apply-flow wiring (`ufw --force
+// enable` mutation through internal/txn) is deferred to v1.3 where it
+// can land alongside other ufw mutations under proper SAFE-04 timer
+// coverage.
+type UfwReport struct {
+	Available bool   // false when `ufw status` exec failed (binary missing); renders as [INFO]
+	Inactive  bool   // true when `ufw status` returns ErrUFWInactive
+	Error     string // populated on non-Inactive non-nil exec/parse errors (rendered in [INFO])
 }
 
 // AppArmorReport describes whether sshd is confined by an AppArmor profile
