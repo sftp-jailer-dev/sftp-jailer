@@ -488,7 +488,14 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 	case autoPopMsg:
 		var flashCmd tea.Cmd
 		m.toast, flashCmd = m.toast.Flash("SFTP jail configuration applied")
-		return m, tea.Batch(nav.PopCmd(), flashCmd)
+		// Emit DoctorRefreshMsg alongside the pop so the underlying
+		// doctor screen re-runs its diagnostic and the operator sees
+		// the post-apply state without restarting.
+		return m, tea.Batch(
+			nav.PopCmd(),
+			flashCmd,
+			func() tea.Msg { return nav.DoctorRefreshMsg{} },
+		)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd

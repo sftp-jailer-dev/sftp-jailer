@@ -327,6 +327,29 @@ func TestDoctor_no_marker_when_no_active_gap(t *testing.T) {
 	require.NotContains(t, view, "> [A]", "no active > marker should be rendered when no gap")
 }
 
+// TestDoctor_DoctorRefreshMsg_resets_loading_and_returns_init_cmd
+// pins the gap-F refresh contract: when ufwenable (or any mutation
+// modal) emits nav.DoctorRefreshMsg as part of its pop, the doctor
+// screen flips back into loading state and returns a non-nil tea.Cmd
+// that re-runs the diagnostic. Without this, the operator sees the
+// pre-mutation state until they restart sftp-jailer.
+func TestDoctor_DoctorRefreshMsg_resets_loading_and_returns_init_cmd(t *testing.T) {
+	t.Parallel()
+
+	svc := doctor.New(sysops.NewFake())
+	s := doctorscreen.New(svc)
+	s.LoadReportForTest(repNoGaps())
+	require.False(t, s.LoadingForTest(),
+		"precondition: LoadReportForTest landed the screen in non-loading state")
+
+	_, cmd := s.Update(nav.DoctorRefreshMsg{})
+
+	require.True(t, s.LoadingForTest(),
+		"DoctorRefreshMsg must flip screen back into loading state so stale body is hidden")
+	require.NotNil(t, cmd,
+		"DoctorRefreshMsg must return a non-nil tea.Cmd that re-runs the async diagnostic")
+}
+
 // TestDoctor_footer_always_shows_esc_back: the doctor screen must
 // ALWAYS surface [esc] back so the operator never sees a dead-end.
 // Regression guard for the all-OK case where the prior implementation

@@ -193,7 +193,14 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		return m, tea.Tick(autoPopDelay, func(time.Time) tea.Msg { return autoPopMsg{} })
 
 	case autoPopMsg:
-		return m, nav.PopCmd()
+		// Pop AND signal the underlying doctor screen to re-run its
+		// diagnostic (gap F): without the refresh, doctor still shows
+		// the pre-enable [FAIL] ufw inactive row and the operator has
+		// to restart sftp-jailer to confirm the apply worked.
+		return m, tea.Batch(
+			nav.PopCmd(),
+			func() tea.Msg { return nav.DoctorRefreshMsg{} },
+		)
 
 	case tea.KeyPressMsg:
 		return m.handleKey(v)

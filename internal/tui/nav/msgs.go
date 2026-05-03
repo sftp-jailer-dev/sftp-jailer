@@ -21,6 +21,13 @@ package nav
 // from internal/tui/nav so neither package needs to import the other.
 type StatusRefreshMsg struct{}
 
+// DoctorRefreshMsg signals the doctor screen to re-run its diagnostic
+// after a mutation modal pops back. Emitted by ufwenable (FW-11) and
+// applysetup (SETUP-07) on successful apply so the operator sees the
+// new state without restarting the app. Doctor.Update consumes this
+// message and re-issues the async loadReport command.
+type DoctorRefreshMsg struct{}
+
 // ObserveRunCompleteToast carries the completion summary back to S-LOGS,
 // which renders it as a transient toast (UI-SPEC line 305:
 // "observe-run done - N events, M counters, K dropped").

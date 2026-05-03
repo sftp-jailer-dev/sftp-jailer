@@ -69,6 +69,18 @@ func (e *stringError) Error() string { return e.s }
 // Update handles the async reportLoadedMsg and keypress navigation.
 func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 	switch msg := msg.(type) {
+	case nav.DoctorRefreshMsg:
+		// A mutation modal (ufwenable, applysetup, ...) just popped
+		// back. Reset to loading state and re-run the async diagnostic
+		// so the operator sees the post-mutation state without
+		// restarting the app. errText/report are not cleared on
+		// purpose - if the new run also fails the new error overwrites
+		// the old; if it succeeds, m.report is replaced. m.loading=true
+		// hides the stale body until then.
+		m.loading = true
+		m.errText = ""
+		return m, m.Init()
+
 	case reportLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
@@ -231,3 +243,8 @@ func (m *Model) LoadReportForTest(r model.DoctorReport) {
 	m.loading = false
 	m.report = &r
 }
+
+// LoadingForTest exposes the loading flag so tests can assert that
+// DoctorRefreshMsg flips the screen back into its loading state
+// before the async re-load completes.
+func (m *Model) LoadingForTest() bool { return m.loading }
