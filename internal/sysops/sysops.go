@@ -378,6 +378,23 @@ type SystemOps interface {
 	// RESEARCH §scripts/smoke-ufw.sh. (D-FW-04)
 	UfwReload(ctx context.Context) error
 
+	// EnableUFW wraps `ufw --force enable`. FW-11 / D-08 confirm-only
+	// path: invoked directly by the ufwenable modal's apply Cmd, NOT
+	// through a txn batch (P3-A SAFE-04 boundary; the compensator
+	// `ufw disable` would leave a strictly-worse state). The --force
+	// flag suppresses the interactive "Command may disrupt existing ssh
+	// connections" prompt - safe here because the pre-flight allow-rule
+	// check + remote-SSH session detection happen before the modal
+	// confirms YES.
+	EnableUFW(ctx context.Context) error
+
+	// ShowUFWAdded wraps `ufw show added` and returns raw stdout. Works
+	// whether ufw is active or inactive - this is the canonical way to
+	// enumerate pending+active rules without parsing /etc/ufw/user.rules
+	// directly. Consumed by FW-11 pre-flight via internal/firewall.
+	// ParseUFWShowAdded.
+	ShowUFWAdded(ctx context.Context) ([]byte, error)
+
 	// HasPublicIPv6 parses `ip -6 addr show scope global` and returns
 	// true if any non-link-local non-loopback IPv6 is bound. Used by
 	// FW-06 hard-block (D-FW-03 step 2).

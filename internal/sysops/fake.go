@@ -209,6 +209,15 @@ type Fake struct {
 	// UfwReloadError, if non-nil, is returned from UfwReload after recording.
 	UfwReloadError error
 
+	// EnableUFWError, if non-nil, is returned from EnableUFW after recording.
+	EnableUFWError error
+
+	// ShowUFWAddedOutput is returned from ShowUFWAdded as stdout (default empty).
+	ShowUFWAddedOutput []byte
+
+	// ShowUFWAddedError, if non-nil, is returned from ShowUFWAdded after recording.
+	ShowUFWAddedError error
+
 	// HasPublicIPv6Result is returned as the bool result from HasPublicIPv6.
 	// Default false. Pair with HasPublicIPv6Error for failure paths.
 	HasPublicIPv6Result bool
@@ -738,6 +747,18 @@ func (f *Fake) UfwDelete(_ context.Context, ruleID int) error {
 func (f *Fake) UfwReload(_ context.Context) error {
 	f.record("UfwReload")
 	return f.UfwReloadError
+}
+
+// EnableUFW implements [SystemOps.EnableUFW] (Fake).
+func (f *Fake) EnableUFW(_ context.Context) error {
+	f.record("EnableUFW")
+	return f.EnableUFWError
+}
+
+// ShowUFWAdded implements [SystemOps.ShowUFWAdded] (Fake).
+func (f *Fake) ShowUFWAdded(_ context.Context) ([]byte, error) {
+	f.record("ShowUFWAdded")
+	return f.ShowUFWAddedOutput, f.ShowUFWAddedError
 }
 
 // HasPublicIPv6 implements [SystemOps.HasPublicIPv6] (Fake). Returns the

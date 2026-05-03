@@ -9,6 +9,59 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestEnableUFW_argv asserts that EnableUFW records the call via Fake with
+// the correct method name (argv validated by Fake.record). Real.EnableUFW
+// argv is validated by the binary-missing and exit-code tests; full E2E
+// requires a ufw binary which is Linux-only and root-only.
+func TestEnableUFW_argv(t *testing.T) {
+	f := NewFake()
+	err := f.EnableUFW(context.Background())
+	require.NoError(t, err)
+	require.Len(t, f.Calls, 1)
+	require.Equal(t, "EnableUFW", f.Calls[0].Method)
+}
+
+func TestEnableUFW_no_binary_returns_friendly_error(t *testing.T) {
+	r := &Real{} // binUfw empty
+	err := r.EnableUFW(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ufw not installed")
+}
+
+func TestEnableUFW_fake_error_knob(t *testing.T) {
+	f := NewFake()
+	f.EnableUFWError = errors.New("synthetic enable error")
+	err := f.EnableUFW(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "synthetic enable error")
+}
+
+// TestShowUFWAdded_argv asserts that ShowUFWAdded records the call via Fake.
+func TestShowUFWAdded_argv(t *testing.T) {
+	f := NewFake()
+	f.ShowUFWAddedOutput = []byte("ufw allow 22/tcp\n")
+	out, err := f.ShowUFWAdded(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []byte("ufw allow 22/tcp\n"), out)
+	require.Len(t, f.Calls, 1)
+	require.Equal(t, "ShowUFWAdded", f.Calls[0].Method)
+}
+
+func TestShowUFWAdded_no_binary_returns_friendly_error(t *testing.T) {
+	r := &Real{} // binUfw empty
+	_, err := r.ShowUFWAdded(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ufw not installed")
+}
+
+func TestShowUFWAdded_fake_error_knob(t *testing.T) {
+	f := NewFake()
+	f.ShowUFWAddedError = errors.New("synthetic show error")
+	_, err := f.ShowUFWAdded(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "synthetic show error")
+}
+
 // TUI-11 D-06: ctx cancellation must deliver SIGTERM (NOT SIGKILL) and let
 // cmd.WaitDelay = 2s drive the SIGKILL fallback. Spawning /bin/sleep 30 and
 // cancelling parent ctx after 100ms must return well before the sleep would

@@ -711,6 +711,52 @@ func (r *Real) UfwReload(ctx context.Context) error {
 	return nil
 }
 
+// EnableUFW implements [SystemOps.EnableUFW]. Runs `ufw --force enable`.
+// The --force flag suppresses the "Command may disrupt existing ssh
+// connections. Proceed (y|n)?" prompt that ufw emits when stdin is not
+// a TTY. Without --force the subprocess would block until ctx timeout.
+//
+// FW-11 calls this directly from the ufwenable modal's apply Cmd;
+// intentionally NOT wrapped in a txn batch (P3-A boundary - the
+// compensator `ufw disable` would leave a strictly-worse state per
+// STATE.md "v1.3 architectural commitments locked at roadmap time").
+func (r *Real) EnableUFW(ctx context.Context) error {
+	if r.binUfw == "" {
+		return fmt.Errorf("sysops: ufw not installed")
+	}
+	res, err := r.Exec(ctx, "ufw", "--force", "enable")
+	if err != nil {
+		return fmt.Errorf("sysops.EnableUFW: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return fmt.Errorf("sysops.EnableUFW: exit %d: %s",
+			res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return nil
+}
+
+// ShowUFWAdded implements [SystemOps.ShowUFWAdded]. Runs `ufw show added`
+// and returns the raw stdout. Works regardless of whether ufw is active or
+// inactive - this is the canonical way to enumerate pending+active rules
+// without parsing /etc/ufw/user.rules directly. Used by FW-11 pre-flight
+// to verify an SSH allow rule exists before invoking `ufw --force enable`.
+// Output format is one rule per line, each line being the verbatim
+// `ufw allow ...` / `ufw deny ...` form that originally added the rule.
+func (r *Real) ShowUFWAdded(ctx context.Context) ([]byte, error) {
+	if r.binUfw == "" {
+		return nil, fmt.Errorf("sysops: ufw not installed")
+	}
+	res, err := r.Exec(ctx, "ufw", "show", "added")
+	if err != nil {
+		return nil, fmt.Errorf("sysops.ShowUFWAdded: %w", err)
+	}
+	if res.ExitCode != 0 {
+		return nil, fmt.Errorf("sysops.ShowUFWAdded: exit %d: %s",
+			res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+	}
+	return res.Stdout, nil
+}
+
 // HasPublicIPv6 implements [SystemOps.HasPublicIPv6] - parses
 // `ip -6 addr show scope global` and returns true when at least one
 // non-link-local non-loopback IPv6 address is bound (D-FW-03 step 2).
