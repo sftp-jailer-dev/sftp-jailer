@@ -230,11 +230,23 @@ func (m *Model) handleKey(v tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 			return m, nav.PopCmd()
 		case "r":
 			if !m.sshAllowPresent {
-				// [r] chain: push addrule with port 22/tcp prefilled and
-				// AutoRevert=false (D-13). Compensator `ufw delete N + ufw reload`
-				// would fire mid-ufw-enable flow and could cut SSH session.
+				// [r] chain: push addrule with port 22/tcp prefilled,
+				// AutoRevert=false (D-13), and lockedUser="root".
+				//
+				// Compensator `ufw delete N + ufw reload` would fire
+				// mid-ufw-enable flow and could cut SSH session, hence
+				// AutoRevert=false.
+				//
+				// lockedUser fallback to "root": the SSH-bootstrap rule is
+				// not tied to any sftp-jailer user. ufwcomment.Encode("")
+				// rejects with ErrInvalidUser; "root" matches the
+				// [a-z_][a-z0-9_-]{0,31} grammar and the bootstrap rule
+				// gets attributed to root in the FW-08 user-IP mirror,
+				// which matches its operational ownership (system rule,
+				// not per-user). Same fallback applies to any future
+				// firewall-rule entry point where no human user is in scope.
 				screen := firewallrule.NewWithOptions(
-					m.ops, nil, "22", "",
+					m.ops, nil, "22", "root",
 					firewallrule.Options{AutoRevert: false, PrefillCIDR: "0.0.0.0/0"})
 				return m, nav.PushCmd(screen)
 			}

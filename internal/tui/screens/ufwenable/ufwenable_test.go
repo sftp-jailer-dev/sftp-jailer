@@ -172,6 +172,32 @@ func TestUfwEnable_hard_block_r_chain_pushes_addrule_with_AutoRevert_false(t *te
 		"D-13: addrule pushed from [r] chain must have AutoRevert=false")
 }
 
+// TestUfwEnable_hard_block_r_chain_uses_root_as_fallback_user pins the
+// FW-11 lockedUser fallback contract: the SSH-bootstrap rule is
+// attributed to "root" because (a) ufwcomment.Encode rejects the
+// empty string with ErrInvalidUser, and (b) the rule is a system-level
+// SSH allow not tied to any sftp-jailer user. Without this fallback the
+// confirm step in addrule fails with "encode comment: invalid username"
+// and the operator is stuck in a retry loop with no edit affordance.
+func TestUfwEnable_hard_block_r_chain_uses_root_as_fallback_user(t *testing.T) {
+	t.Parallel()
+
+	m := ufwenable.New(nil)
+	_, _ = m.FeedPreFlightDoneMsgForTest(false, false, "")
+	_, cmd := m.Update(keyPress("r"))
+
+	require.NotNil(t, cmd)
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok)
+	addruleModel, isAddrule := nm.Screen.(*firewallrule.Model)
+	require.True(t, isAddrule)
+	require.True(t, addruleModel.UserLockedForTest(),
+		"FW-11 [r] chain must lock the user field (no admin pick step in this entry point)")
+	require.Equal(t, "root", addruleModel.UserFieldForTest(),
+		"FW-11 [r] chain must default lockedUser to 'root' so ufwcomment.Encode does not fail on empty username")
+}
+
 // TestUfwEnable_esc_pops_in_phaseError - [esc] from phaseError pops
 // without enabling ufw.
 func TestUfwEnable_esc_pops_in_phaseError(t *testing.T) {
