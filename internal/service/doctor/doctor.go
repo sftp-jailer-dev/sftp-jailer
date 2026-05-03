@@ -92,6 +92,24 @@ func NeedsCanonicalApply(rep model.DoctorReport) bool {
 	return rep.Subsystem.Warning && !rep.Subsystem.JailedOverrideForceInternal
 }
 
+// NeedsUfwEnable returns true iff the report indicates ufw is inactive
+// AND the operator has a path to fix it (binary present). Returns
+// false when ufw is unavailable (binary not installed) - that case
+// shows [INFO] in the doctor row and has no actionable [A].
+//
+// The doctor screen consults this AFTER NeedsCanonicalApply to decide
+// whether to fire the [A] Enable ufw dispatch (FW-11 / D-14
+// precedence: canonical-apply > ufw-enable). Pure function so the TUI
+// dispatcher can call it in View() AND in Update() without re-running
+// the detector chain.
+//
+// D-17 boundary: this precedence-based dispatch is for the doctor
+// screen only (read-only diagnostic with a small finite action set).
+// Phase 13's unified console will use a cursor-row-based pattern.
+func NeedsUfwEnable(rep model.DoctorReport) bool {
+	return rep.Ufw.Available && rep.Ufw.Inactive
+}
+
 // Run executes all six detectors sequentially and returns the aggregated
 // report. Phase 1 never errors the whole report - each detector reports its
 // own availability via its sub-report. The returned error is reserved for

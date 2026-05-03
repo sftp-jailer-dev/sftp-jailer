@@ -687,3 +687,31 @@ func TestNeedsCanonicalApply_chroot_chain_missing_only_false_when_dropin_clean(t
 	}
 	require.False(t, doctor.NeedsCanonicalApply(rep), "Missing-only links must NOT trip NeedsCanonicalApply (first-launch flow takes the SETUP-02 branch)")
 }
+
+// ---- NeedsUfwEnable ---------------------------------------------------------
+
+func TestNeedsUfwEnable_returns_true_when_available_and_inactive(t *testing.T) {
+	rep := model.DoctorReport{
+		Ufw: model.UfwReport{Available: true, Inactive: true},
+	}
+	require.True(t, doctor.NeedsUfwEnable(rep))
+}
+
+func TestNeedsUfwEnable_returns_false_when_available_and_active(t *testing.T) {
+	rep := model.DoctorReport{
+		Ufw: model.UfwReport{Available: true, Inactive: false},
+	}
+	require.False(t, doctor.NeedsUfwEnable(rep))
+}
+
+func TestNeedsUfwEnable_returns_false_when_unavailable(t *testing.T) {
+	rep := model.DoctorReport{
+		Ufw: model.UfwReport{Available: false, Inactive: true},
+	}
+	require.False(t, doctor.NeedsUfwEnable(rep), "binary missing -> no actionable [A]")
+}
+
+func TestNeedsUfwEnable_returns_false_for_zero_value_report(t *testing.T) {
+	var rep model.DoctorReport
+	require.False(t, doctor.NeedsUfwEnable(rep))
+}
