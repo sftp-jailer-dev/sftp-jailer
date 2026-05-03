@@ -326,3 +326,33 @@ func TestDoctor_no_marker_when_no_active_gap(t *testing.T) {
 	view := s.View()
 	require.NotContains(t, view, "> [A]", "no active > marker should be rendered when no gap")
 }
+
+// TestDoctor_footer_always_shows_esc_back: the doctor screen must
+// ALWAYS surface [esc] back so the operator never sees a dead-end.
+// Regression guard for the all-OK case where the prior implementation
+// rendered no footer hint at all.
+func TestDoctor_footer_always_shows_esc_back(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		rep  func() model.DoctorReport
+	}{
+		{"no gaps (all OK)", repNoGaps},
+		{"ufwenable gap only", repUfwEnableOnly},
+		{"both gaps", repBothGaps},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			svc := doctor.New(sysops.NewFake())
+			s := doctorscreen.New(svc)
+			s.LoadReportForTest(tc.rep())
+
+			view := s.View()
+			require.Contains(t, view, "[esc]",
+				"doctor footer must always include [esc] back for any report state")
+			require.Contains(t, view, "[c]",
+				"doctor footer must always include [c] copy report for any report state")
+		})
+	}
+}

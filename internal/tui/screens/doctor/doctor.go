@@ -137,17 +137,20 @@ func (m *Model) View() string {
 	}
 	body := colorizeReport(doctor.RenderText(*m.report), activeMarker)
 
-	// Footer hint (D-15): appended after body, before toast.
+	// Footer hint: ALWAYS show [esc] back so the operator knows how to
+	// leave the screen. When a dispatch is active (D-15 belt-and-suspenders),
+	// prepend the prescription text. The all-OK case still shows [esc] +
+	// [c] copy so the screen never appears as a dead-end.
 	var footerHint string
 	switch activeMarker {
 	case "[A] Apply SFTP jail configuration":
 		footerHint = "Press [a] to apply SFTP jail configuration  ([esc] back, [c] copy)"
 	case "[A] Enable ufw":
 		footerHint = "Press [a] to enable ufw  ([esc] back, [c] copy report)"
+	default:
+		footerHint = "[esc] back  [c] copy report"
 	}
-	if footerHint != "" {
-		body += "\n\n" + styles.Dim.Render(footerHint)
-	}
+	body += "\n\n" + styles.Dim.Render(footerHint)
 
 	if ts := m.toast.View(); ts != "" {
 		body += "\n" + ts
