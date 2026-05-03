@@ -1,0 +1,15 @@
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│  [38;2;74;158;255mEnable ufw[m                                                                        │
+│                                                                                    │
+│  [38;2;34;197;94m✓ SSH allow rule found: tcp/22[m                                                    │
+│  [2mno active SSH session detected[m                                                    │
+│                                                                                    │
+│  [2mRunning `ufw --force enable` will activate all pending rules immediately.[m         │
+│  [2mThis action cannot be automatically reversed (not under SAFE-04 timer coverage).[m  │
+│  [2mConfirm you have a valid SSH allow rule before proceeding.[m                        │
+│                                                                                    │
+│  Type YES (uppercase) and press Enter:                                             │
+│  [37m> [m[7;37mT[m                                                                               │
+│                                                                                    │
+│  [2m[esc] cancel[m                                                                      │
+└────────────────────────────────────────────────────────────────────────────────────┘

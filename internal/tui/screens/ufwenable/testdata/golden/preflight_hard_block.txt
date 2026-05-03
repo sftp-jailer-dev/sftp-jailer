@@ -1,0 +1,9 @@
+┌───────────────────────────────────────────────────────┐
+│  [38;2;74;158;255mEnable ufw[m                                           │
+│                                                       │
+│  [1;38;2;239;68;68m✗ no SSH allow rule found[m                            │
+│                                                       │
+│  [1;38;2;239;68;68mCannot enable ufw: no SSH allow rule found.[m          │
+│                                                       │
+│  [r] Add SSH allow rule (port 22/tcp)   [esc] cancel  │
+└───────────────────────────────────────────────────────┘
