@@ -8,6 +8,10 @@
 package app
 
 import (
+	"context"
+	"fmt"
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/firewall"
@@ -39,6 +43,28 @@ func RegisterPlaceholderResolver(r PlaceholderResolver) {
 	placeholderResolvers = append(placeholderResolvers, r)
 }
 
+// RevertCanceller is the injection seam for the SAFE-04 [C]onfirm key
+// (debug session safe04-confirm-view-keys). Wrap a single-step txn
+// dispatch of txn.NewCancelRevertStep here in main.go so the App stays
+// decoupled from sysops/txn:
+//
+//	a.SetRevertCanceller(func(ctx context.Context, unitName string) error {
+//	    return txn.New(ops).Apply(ctx, []txn.Step{
+//	        txn.NewCancelRevertStep(unitName, revertWatcher),
+//	    })
+//	})
+//
+// nil is valid (tests + pre-bootstrap construction); the C key becomes a
+// silent no-op when no canceller is bound.
+type RevertCanceller func(ctx context.Context, unitName string) error
+
+// revertConfirmedMsg is delivered back to App.Update after the canceller
+// goroutine returns. err is nil on success.
+type revertConfirmedMsg struct {
+	unitName string
+	err      error
+}
+
 // App is the root Bubble Tea model.
 type App struct {
 	stack      []nav.Screen
@@ -50,6 +76,14 @@ type App struct {
 	showHelp   bool
 	version    string
 	projectURL string
+
+	// SAFE-04 [C]onfirm / [V]iew countdown wiring (debug session
+	// safe04-confirm-view-keys). watcher mirrors the modebar's bound
+	// watcher so App.Update can Get() the armed state without poking the
+	// modebar's internals. revertCanceller is the injected dispatcher
+	// (see RevertCanceller doc).
+	watcher         *revert.Watcher
+	revertCanceller RevertCanceller
 }
 
 // New constructs an App with the given initial screen stack. If
@@ -75,8 +109,20 @@ func New(version, projectURL string, initialStack ...nav.Screen) *App {
 // countdown branch fires when a SAFE-04 timer is armed (D-L0809-03 +
 // D-S04-03). Idempotent - pass nil to detach (tests). Called from
 // main.go::runTUI after the Watcher singleton is constructed.
+//
+// Also stores the watcher on the App so Update can read armed state for
+// the [C]onfirm / [V]iew countdown key handlers (debug session
+// safe04-confirm-view-keys).
 func (a *App) SetWatcher(w *revert.Watcher) {
+	a.watcher = w
 	a.modebar = widgets.NewModeBar(w)
+}
+
+// SetRevertCanceller injects the [C]onfirm key dispatcher. Pass nil to
+// detach (tests, pre-bootstrap). See RevertCanceller doc for the wrapper
+// shape and main.go::runTUI for the production wiring.
+func (a *App) SetRevertCanceller(c RevertCanceller) {
+	a.revertCanceller = c
 }
 
 // SetMode forwards to the modebar widget. Called by callers that mutate
@@ -150,6 +196,26 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.showHelp = !a.showHelp
 			return a, nil
 		}
+		// SAFE-04 global hotkeys (debug session safe04-confirm-view-keys):
+		// [C]onfirm cancels the armed revert + persists the apply;
+		// [V]iew countdown surfaces a brief deadline + reverse-cmd-count
+		// toast. Both are gated by WantsRawKeys (textinput safety mirror
+		// of the `q` gate) and by an actually-armed watcher.Get() - they
+		// fall through to the top screen otherwise so they don't shadow
+		// per-screen `c`/`v` bindings (e.g. a future textinput).
+		if k := m.String(); k == "c" || k == "C" || k == "v" || k == "V" {
+			if len(a.stack) > 0 && a.stack[len(a.stack)-1].WantsRawKeys() {
+				// fall through to screen routing below
+			} else if cmd := a.handleSafe04Hotkey(k); cmd != nil {
+				return a, cmd
+			} else if a.armedState() != nil {
+				// Armed but the handler chose to swallow (e.g. C without
+				// a canceller bound, or any other defensive no-op):
+				// stop here so the keystroke does not leak to the screen.
+				return a, nil
+			}
+			// Not armed: fall through so screens still see plain c/v.
+		}
 
 	case nav.Msg:
 		return a.handleNav(m)
@@ -162,6 +228,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// the cycle alive so the countdown text refreshes every second.
 		a.modebar = a.modebar.Update(m)
 		return a, widgets.TickCmd()
+
+	case revertConfirmedMsg:
+		// SAFE-04 [C]onfirm result (debug session safe04-confirm-view-keys).
+		// Watcher.Clear has already run inside CancelRevertStep on success
+		// so the modebar will auto-revert to MODE on the next View().
+		if m.err != nil {
+			return a, a.FlashToast(fmt.Sprintf("Revert cancel failed: %v", m.err))
+		}
+		return a, a.FlashToast("Apply confirmed - revert disarmed")
 
 	case nav.ReplaceMsg:
 		var replacement nav.Screen
@@ -206,6 +281,66 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	a.stack[idx], cmd = a.stack[idx].Update(msg)
 	return a, cmd
+}
+
+// armedState returns the currently armed revert state or nil. Mirrors the
+// modebar's lookup so View and Update agree on when the SAFE-04 banner is
+// live.
+func (a *App) armedState() *revert.State {
+	if a.watcher == nil {
+		return nil
+	}
+	return a.watcher.Get()
+}
+
+// handleSafe04Hotkey returns a tea.Cmd for the c/C/v/V key when a revert
+// is armed, or nil when no revert is armed (caller falls through to
+// screen routing). Returning a non-nil cmd commits the hotkey - caller
+// short-circuits screen routing.
+//
+// C/c: dispatch the canceller in a goroutine; the result returns as a
+// revertConfirmedMsg. Without a bound canceller, returns nil so caller
+// can decide whether to swallow or pass through (caller swallows when
+// armed - no point letting a stale c keystroke fall through to a screen
+// that has its own c binding).
+//
+// V/v: flash an immediate toast describing the live deadline + queued
+// reverse-command count. No async work.
+func (a *App) handleSafe04Hotkey(key string) tea.Cmd {
+	armed := a.armedState()
+	if armed == nil {
+		return nil // caller falls through to screen routing
+	}
+	switch key {
+	case "c", "C":
+		if a.revertCanceller == nil {
+			return nil // no canceller bound; armed: caller swallows
+		}
+		canceller := a.revertCanceller
+		unitName := armed.UnitName
+		return func() tea.Msg {
+			// Bounded context so a hung systemctl can't pin the goroutine
+			// forever. 30s is generous - SystemctlStop on .timer/.service
+			// completes in <1s on a healthy system.
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			err := canceller(ctx, unitName)
+			return revertConfirmedMsg{unitName: unitName, err: err}
+		}
+	case "v", "V":
+		remaining := time.Until(time.Unix(0, armed.DeadlineUnixNs)).Round(time.Second)
+		if remaining < 0 {
+			remaining = 0
+		}
+		var cmdCount int
+		if a.watcher != nil {
+			cmdCount = len(a.watcher.ReverseCommands())
+		}
+		return a.FlashToast(fmt.Sprintf(
+			"Revert: %s remaining, %d rollback cmd(s) queued (press C to confirm)",
+			remaining, cmdCount))
+	}
+	return nil
 }
 
 // handleNav mutates the stack per the Intent.
@@ -309,6 +444,12 @@ func (a *App) FlashToast(text string) tea.Cmd {
 	a.toast = t
 	return cmd
 }
+
+// ToastText returns the currently displayed toast text (or "" when no
+// toast is active). Exported for tests that need to assert toast content
+// without rendering View. Mirrors widgets.Toast.View()'s rendered output
+// minus the leading checkmark glyph.
+func (a *App) ToastText() string { return a.toast.View() }
 
 // ShowHelp reports whether the help overlay is currently visible.
 // Exported for tests.

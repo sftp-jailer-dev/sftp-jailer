@@ -20,6 +20,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sshdcfg"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/store"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/txn"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/app"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
@@ -436,6 +437,17 @@ func runTUI(cmd *cobra.Command, args []string) error {
 	// repopulated the in-process State, the very first View() after
 	// program.Run will already render the countdown.
 	a.SetWatcher(revertWatcher)
+
+	// Debug session safe04-confirm-view-keys - inject the [C]onfirm
+	// canceller so the SAFE-04 modebar hotkey actually cancels the
+	// armed revert (was advertised by the modebar since plan 04-09 but
+	// never wired). Single-step txn dispatch keeps the saga BUG-04-D
+	// fix (timer + service stop ordering inside CancelRevertStep).
+	a.SetRevertCanceller(func(ctx context.Context, unitName string) error {
+		return txn.New(ops).Apply(ctx, []txn.Step{
+			txn.NewCancelRevertStep(unitName, revertWatcher),
+		})
+	})
 
 	// Exactly ONE program constructor per process (pitfall E1).
 	// Bubble Tea v2 notes:
