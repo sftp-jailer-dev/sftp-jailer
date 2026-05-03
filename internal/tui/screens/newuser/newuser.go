@@ -22,9 +22,8 @@
 //
 // Lifecycle phases:
 //
-//	phasePreflight - Init runs B4 (/etc/shells contains /usr/sbin/nologin)
-//	                 + chrootcheck.WalkRoot(chrootRoot) asynchronously.
-//	                 Block with errInline if either fails.
+//	phasePreflight - Init runs the chroot-chain walk asynchronously.
+//	                 Block with errInline if it fails.
 //	phaseEditing   - admin navigates the field list (j/k), enters a field
 //	                 (e/Enter on a textinput), types into it, commits with
 //	                 Enter, exits edit-of-field with Esc.
@@ -37,9 +36,9 @@
 //	                 admin presses Esc to back out.
 //
 // Test seams:
-//   - LoadPreflightForTest(shellsHasNologin, walkViolations): bypasses
+//   - LoadPreflightForTest(walkViolations): bypasses
 //     Init's async preflight and seeds the model directly into phaseEditing
-//     (or phaseError if either gate fails).
+//     (or phaseError if the chroot-chain walk fails).
 //   - SetUserLookupForTest / ResetUserLookupForTest: swap the os/user.LookupId
 //     seam that powers the UID-collision check (USER-04 reserved-range
 //     handling already lives in pure validate code).
@@ -142,10 +141,8 @@ const (
 	phaseError
 )
 
-// preflightLoadedMsg carries B4 + chrootcheck.WalkRoot results back into
-// Update.
+// preflightLoadedMsg carries chrootcheck.WalkRoot results back into Update.
 type preflightLoadedMsg struct {
-	shellsOK       bool
 	walkViolations []chrootcheck.Violation
 	err            error
 }
@@ -301,33 +298,23 @@ func (m *Model) Init() tea.Cmd {
 	)
 }
 
-// runPreflight reads /etc/shells and walks the chroot chain. Returns a
-// preflightLoadedMsg.
+// runPreflight walks the chroot chain. Returns a preflightLoadedMsg
+// with the chroot-chain violations and any walk error.
+//
+// SETUP-08 (Phase 8): the legacy B4 shells-list check was deleted.
+// useradd does not consult that file, and the SFTP login path uses
+// Match Group sftp-jailer + ForceCommand internal-sftp which overrides
+// the user shell entirely. Only the chroot-chain walk remains.
 func runPreflight(ctx context.Context, ops sysops.SystemOps, chrootRoot string) preflightLoadedMsg {
-	shellsOK := false
-	if b, err := ops.ReadFile(ctx, "/etc/shells"); err == nil {
-		// /etc/shells is a list of valid login shells, one per line. We
-		// require /usr/sbin/nologin to be present so useradd's `-s
-		// /usr/sbin/nologin` does not produce a user with an unlisted shell
-		// (B4 / pitfall). A line-prefix match handles trailing whitespace.
-		for _, line := range strings.Split(string(b), "\n") {
-			if strings.TrimSpace(line) == "/usr/sbin/nologin" {
-				shellsOK = true
-				break
-			}
-		}
-	}
 	v, err := chrootcheck.WalkRoot(ctx, ops, chrootRoot)
-	return preflightLoadedMsg{shellsOK: shellsOK, walkViolations: v, err: err}
+	return preflightLoadedMsg{walkViolations: v, err: err}
 }
 
 // LoadPreflightForTest bypasses Init's async tea.Cmd and drives the model
 // into phaseEditing (clean preflight) or phaseError (failed preflight).
-// shellsHasNologin=true + walkViolations empty + err==nil → phaseEditing.
-func (m *Model) LoadPreflightForTest(shellsHasNologin bool, walkViolations []chrootcheck.Violation, err error) {
-	m.applyPreflight(preflightLoadedMsg{
-		shellsOK: shellsHasNologin, walkViolations: walkViolations, err: err,
-	})
+// walkViolations empty + err==nil → phaseEditing.
+func (m *Model) LoadPreflightForTest(walkViolations []chrootcheck.Violation, err error) {
+	m.applyPreflight(preflightLoadedMsg{walkViolations: walkViolations, err: err})
 }
 
 // FeedSubmitDoneForTest delivers a synthesized submitDoneMsg to Update.
@@ -381,12 +368,6 @@ func (m *Model) SetUserLookupForTest(fn userLookupFn) { m.lookupFn = fn }
 func (m *Model) applyPreflight(msg preflightLoadedMsg) {
 	if msg.err != nil {
 		m.errInline = "preflight error: " + msg.err.Error()
-		m.errFatal = true
-		m.phase = phaseError
-		return
-	}
-	if !msg.shellsOK {
-		m.errInline = "/etc/shells does not list /usr/sbin/nologin - useradd would create a user with an unlisted shell (B4). Add the line and retry."
 		m.errFatal = true
 		m.phase = phaseError
 		return
@@ -749,7 +730,7 @@ func (m *Model) View() string {
 	var b strings.Builder
 	switch m.phase {
 	case phasePreflight:
-		b.WriteString(m.spinner.View() + " preflight: /etc/shells + chroot chain…")
+		b.WriteString(m.spinner.View() + " preflight: chroot chain…")
 	case phaseSubmitting:
 		b.WriteString(m.spinner.View() + " creating user (useradd → gpasswd → chmod → chown)…")
 	case phaseDone:

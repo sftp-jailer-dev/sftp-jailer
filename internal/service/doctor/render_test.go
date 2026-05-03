@@ -67,20 +67,37 @@ func TestRenderText_ufw_ipv6_no_warns(t *testing.T) {
 // TestRenderText_ufw_inactive_renders_fail_and_action: when ufw is
 // inactive, doctor must emit [FAIL] ufw: inactive AND the [A] Enable
 // ufw action label, AND must SUPPRESS the IPV6 sub-row (which is
-// moot when ufw is down). v1.2.2 false-negative fix.
+// moot when ufw is down). TUI-12 (D-05) verbatim 3-line block.
 func TestRenderText_ufw_inactive_renders_fail_and_action(t *testing.T) {
 	r := model.DoctorReport{
 		Ufw:     model.UfwReport{Available: true, Inactive: true},
 		UfwIPv6: model.UfwIPv6Report{Value: "yes"}, // would be [OK] alone
 	}
 	got := doctor.RenderText(r)
-	require.Contains(t, got, "[FAIL] ufw: inactive (no firewall enforcement; lockdown will fail)")
-	require.Contains(t, got, "[A] Enable ufw - run `ufw enable` (apply flow lands in v1.3)")
+	// TUI-12 (D-05): verbatim 3-line block from notes:65-69.
+	require.Contains(t, got, "[FAIL] ufw: inactive (rule enforcement disabled; run `sudo ufw enable`; lockdown will fail)")
+	require.Contains(t, got, "Note: `systemctl is-active ufw` may report \"active\" - that \"active (exited)\" is the oneshot")
+	require.Contains(t, got, "init service, not rule enforcement. `ufw status` is the source of truth.")
+	require.Contains(t, got, "[A] Enable ufw - run `sudo ufw enable`")
 	// IPV6 row SUPPRESSED when ufw is down - the setting is moot.
 	require.NotContains(t, got, "[OK]   ufw IPV6=yes",
 		"IPV6 row must be suppressed when ufw is inactive")
 	require.NotContains(t, got, "ufw IPV6=",
 		"no IPV6= literal at all when ufw is inactive")
+}
+
+// TestRenderText_no_ansi_in_ufw_inactive asserts the doctor render
+// remains ANSI-free per the established convention. The `>` marker
+// (D-15) is added by the TUI screen layer (colorizeReport), not by
+// this renderer. Per RESEARCH Pitfall 4, embedding ANSI codes here
+// would break --json output, the OSC52 copy path, and pipe-to-grep.
+func TestRenderText_no_ansi_in_ufw_inactive(t *testing.T) {
+	r := model.DoctorReport{
+		Ufw:     model.UfwReport{Available: true, Inactive: true},
+		UfwIPv6: model.UfwIPv6Report{Value: "yes"},
+	}
+	got := doctor.RenderText(r)
+	require.NotContains(t, got, "\x1b[", "render.go must remain ANSI-free; got: %q", got)
 }
 
 // TestRenderText_ufw_active_preserves_ipv6_row: when ufw is active,

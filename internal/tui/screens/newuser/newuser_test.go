@@ -1,5 +1,5 @@
 // Package newuser tests for M-NEW-USER - covers the D-12 useradd batch,
-// D-14 / B-03 orphan reconcile path, B4 /etc/shells preflight, USER-04
+// D-14 / B-03 orphan reconcile path, chroot-chain preflight, USER-04
 // reserved-UID gates (N-04 boundary tests at 60000 / 65535 / 65536), and
 // the chained-modal handoff to M-PASSWORD on submit success.
 package newuser_test
@@ -56,14 +56,12 @@ func callMethods(f *sysops.Fake) []string {
 	return out
 }
 
-// freshFake returns a Fake with /etc/shells correctly listing
-// /usr/sbin/nologin and a clean /srv/sftp-jailer chain (root-owned, mode
-// 0755). Tests that need to script a different preflight result mutate
+// freshFake returns a Fake with a clean /srv/sftp-jailer chain (root-owned,
+// mode 0755). Tests that need to script a different preflight result mutate
 // the returned Fake before constructing the model.
 func freshFake(t *testing.T) *sysops.Fake {
 	t.Helper()
 	f := sysops.NewFake()
-	f.Files["/etc/shells"] = []byte("/bin/sh\n/bin/bash\n/usr/sbin/nologin\n")
 	// Clean chroot chain: /, /srv, /srv/sftp-jailer all root-owned + 0755.
 	for _, p := range []string{"/", "/srv", "/srv/sftp-jailer"} {
 		f.FileStats[p] = sysops.FileInfo{
@@ -73,19 +71,22 @@ func freshFake(t *testing.T) *sysops.Fake {
 	return f
 }
 
-// 1. /etc/shells missing /usr/sbin/nologin → preflight blocks (B4).
-func TestNewUser_preflight_blocks_when_etc_shells_missing_nologin(t *testing.T) {
-	m := newuser.New(nil, "/srv/sftp-jailer")
-	m.LoadPreflightForTest(false /*shellsHasNologin*/, nil, nil)
-	require.Equal(t, newuser.PhaseErrorForTest, m.PhaseForTest())
-	require.Contains(t, m.ErrInlineForTest(), "/etc/shells")
-	require.Contains(t, m.ErrInlineForTest(), "nologin")
+// 1. SETUP-08 regression: runPreflight must not call ReadFile for /etc/shells.
+// The deletion contract is that no /etc/shells lookup ever re-appears.
+func TestNewUser_preflight_does_not_read_etc_shells(t *testing.T) {
+	f := freshFake(t)
+	m := newuser.New(f, "/srv/sftp-jailer")
+	m.LoadPreflightForTest(nil, nil)
+	for _, call := range f.Calls {
+		require.NotContains(t, call.Args, "/etc/shells",
+			"SETUP-08: runPreflight must not read /etc/shells; got call method=%q args=%v", call.Method, call.Args)
+	}
 }
 
 // 2. chrootcheck violations block preflight.
 func TestNewUser_preflight_blocks_when_chrootcheck_violation(t *testing.T) {
 	m := newuser.New(nil, "/srv/sftp-jailer")
-	m.LoadPreflightForTest(true, []chrootcheck.Violation{
+	m.LoadPreflightForTest([]chrootcheck.Violation{
 		{Path: "/srv", Reason: "/srv is owned uid=1000 gid=1000 (sshd requires root:root); fix with: sudo chown root:root /srv"},
 	}, nil)
 	require.Equal(t, newuser.PhaseErrorForTest, m.PhaseForTest())
@@ -306,7 +307,7 @@ func seededFreshCreate(t *testing.T) *newuser.Model {
 	t.Helper()
 	m := newuser.New(nil, "/srv/sftp-jailer")
 	m.SetUserLookupForTest(func(uid int) bool { return false })
-	m.LoadPreflightForTest(true, nil, nil)
+	m.LoadPreflightForTest(nil, nil)
 	require.Equal(t, newuser.PhaseEditingForTest, m.PhaseForTest(),
 		"seededFreshCreate must reach phaseEditing - got phase=%d errInline=%q",
 		m.PhaseForTest(), m.ErrInlineForTest())
@@ -319,7 +320,7 @@ func seededFreshCreateWithFake(t *testing.T, f *sysops.Fake) *newuser.Model {
 	t.Helper()
 	m := newuser.New(f, "/srv/sftp-jailer")
 	m.SetUserLookupForTest(func(uid int) bool { return false })
-	m.LoadPreflightForTest(true, nil, nil)
+	m.LoadPreflightForTest(nil, nil)
 	require.Equal(t, newuser.PhaseEditingForTest, m.PhaseForTest())
 	return m
 }
@@ -388,7 +389,7 @@ func buildAndSubmitFresh(t *testing.T, f *sysops.Fake, username, uid string) tea
 	t.Helper()
 	m := newuser.New(f, "/srv/sftp-jailer")
 	m.SetUserLookupForTest(func(int) bool { return false })
-	m.LoadPreflightForTest(true, nil, nil)
+	m.LoadPreflightForTest(nil, nil)
 	require.Equal(t, newuser.PhaseEditingForTest, m.PhaseForTest())
 	setRawForTest(m, username, uid)
 	// Navigate to [create] and submit - capture the cmd from the Update
@@ -407,7 +408,7 @@ func buildAndSubmitOrphan(t *testing.T, f *sysops.Fake, orphan users.InfoRow) te
 	t.Helper()
 	m := newuser.NewFromOrphan(f, "/srv/sftp-jailer", orphan)
 	m.SetUserLookupForTest(func(int) bool { return false })
-	m.LoadPreflightForTest(true, nil, nil)
+	m.LoadPreflightForTest(nil, nil)
 	require.Equal(t, newuser.PhaseEditingForTest, m.PhaseForTest())
 	for i := 0; i < 5; i++ {
 		_, _ = m.Update(keyPress("down"))
