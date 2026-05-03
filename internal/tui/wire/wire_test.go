@@ -17,7 +17,7 @@ import (
 // through nav.ReplaceMsg - end-to-end C4 seam.
 func TestWire_resolvesHomePlaceholder(t *testing.T) {
 	app.ResetPlaceholderResolversForTest()
-	wire.Register()
+	wire.Register(nil)
 
 	// Seed the App with a splash; then synthesize the tick that the splash
 	// would send to itself after 1s, which emits ReplaceMsg.
@@ -40,7 +40,7 @@ func TestWire_resolvesHomePlaceholder(t *testing.T) {
 // Ensure we don't accidentally match non-placeholder screens.
 func TestWire_ignoresOtherScreens(t *testing.T) {
 	app.ResetPlaceholderResolversForTest()
-	wire.Register()
+	wire.Register(nil)
 
 	other := &fakeScreen{title: "other"}
 	a := app.New("v", "u", &fakeScreen{title: "first"})

@@ -247,8 +247,11 @@ func runTUI(cmd *cobra.Command, args []string) error {
 		"sftp-jailer: if the terminal is wedged after a crash, run: %s\n",
 		recoveryPath)
 
-	// Register the splash.HomePlaceholder -> home.New resolver (C4 seam).
-	wire.Register()
+	// Register the splash.HomePlaceholder -> startup-doctor-gate -> home
+	// resolver (C4 seam). Passing nil here keeps the legacy splash -> home
+	// behavior; the production path overrides this below after doctorSvc
+	// is constructed (see "Re-Register wire" comment).
+	wire.Register(nil)
 
 	// --- Production bootstrap (plan 02-04) -------------------------------
 	// SystemOps is the single seam for /etc reads + subprocess execution
@@ -293,6 +296,12 @@ func runTUI(cmd *cobra.Command, args []string) error {
 
 	// C2 wiring (plan 01-04): doctor service.
 	doctorSvc := doctor.New(ops)
+
+	// Re-Register wire now that doctorSvc exists so the splash placeholder
+	// resolves into a startup-doctor gate instead of going straight to
+	// home. Operator-stated rule: only continue to home if everything
+	// is green ([no FAIL] rows in the doctor report).
+	wire.Register(doctorSvc)
 
 	// Phase 3 plan 03-07: resolve the chroot root once at startup so the
 	// usersscreen factory can hand it to M-NEW-USER pushes without each

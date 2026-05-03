@@ -32,6 +32,17 @@ type Model struct {
 	errText string
 	toast   widgets.Toast
 	keys    KeyMap
+
+	// startupGate is set by NewStartupGate. When true, the screen is
+	// the post-splash entry-point gate: it advances to the home screen
+	// only when doctor.IsHealthy returns true (no [FAIL] rows). [esc]
+	// quits the app instead of popping (no parent screen exists).
+	startupGate bool
+	// homeBuilder constructs the home screen the gate replaces itself
+	// with on healthy. Captured at NewStartupGate time so the doctor
+	// screen package never imports home (avoids the wire-cycle that
+	// motivated the splash.HomePlaceholder pattern in the first place).
+	homeBuilder func() nav.Screen
 }
 
 // reportLoadedMsg carries the report back to Update after the async Run.
@@ -43,6 +54,29 @@ type reportLoadedMsg struct {
 // New constructs a doctor screen backed by the given service.
 func New(svc *doctor.Service) *Model {
 	return &Model{svc: svc, loading: true, keys: DefaultKeyMap()}
+}
+
+// NewStartupGate constructs a doctor screen that acts as the post-splash
+// entry-point gate (operator-stated requirement: only continue to the
+// home screen if everything is green).
+//
+// Behavior delta vs New:
+//   - On a healthy report (doctor.IsHealthy returns true) the screen
+//     auto-emits nav.ReplaceMsg with homeBuilder()'s output. The user
+//     never sees the gate when the system is already configured.
+//   - On a non-healthy report the screen renders normally. The operator
+//     uses [a] to apply the highest-precedence fix; the post-pop
+//     DoctorRefreshMsg re-runs the diagnostic; the cycle repeats until
+//     IsHealthy passes and the gate advances.
+//   - [esc] quits the app (no home on the stack to pop to).
+//
+// homeBuilder is captured here so this package never imports home (avoids
+// the splash <- home <- wire cycle).
+func NewStartupGate(svc *doctor.Service, homeBuilder func() nav.Screen) *Model {
+	m := New(svc)
+	m.startupGate = true
+	m.homeBuilder = homeBuilder
+	return m
 }
 
 // Init kicks off the async report load. Returns a tea.Cmd that runs the
@@ -89,11 +123,26 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		}
 		r := msg.report
 		m.report = &r
+		// Startup gate: if the system is already healthy, auto-advance
+		// to home so the gate is invisible to operators with a working
+		// configuration. Non-healthy keeps the gate visible until the
+		// operator fixes the FAILs (each [a] dispatch + post-pop
+		// DoctorRefreshMsg re-runs this branch).
+		if m.startupGate && m.homeBuilder != nil && doctor.IsHealthy(r) {
+			builder := m.homeBuilder
+			return m, func() tea.Msg { return nav.ReplaceMsg{Factory: builder} }
+		}
 		return m, nil
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc", "q":
+			// Startup-gate mode has no parent screen on the stack -
+			// popping would crash. Quit the app instead, matching the
+			// operator-stated rule: "only continue to home if green."
+			if m.startupGate {
+				return m, tea.Quit
+			}
 			return m, nav.PopCmd()
 		case "c":
 			if m.report != nil {
@@ -248,3 +297,11 @@ func (m *Model) LoadReportForTest(r model.DoctorReport) {
 // DoctorRefreshMsg flips the screen back into its loading state
 // before the async re-load completes.
 func (m *Model) LoadingForTest() bool { return m.loading }
+
+// FeedReportLoadedMsgForTest constructs and delivers the unexported
+// reportLoadedMsg so external-package tests can drive the gate's
+// healthy / unhealthy advance branches without going through the
+// async Init goroutine.
+func (m *Model) FeedReportLoadedMsgForTest(rep model.DoctorReport, err error) (nav.Screen, tea.Cmd) {
+	return m.Update(reportLoadedMsg{report: rep, err: err})
+}

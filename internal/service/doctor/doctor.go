@@ -110,6 +110,22 @@ func NeedsUfwEnable(rep model.DoctorReport) bool {
 	return rep.Ufw.Available && rep.Ufw.Inactive
 }
 
+// IsHealthy returns true when the doctor report has zero [FAIL] rows -
+// the strict precondition for the startup-doctor gate to advance to the
+// home screen. Implemented as a substring check on RenderText so it
+// stays in lockstep with whatever the operator literally sees on the
+// screen: any future row that renders a [FAIL] automatically blocks
+// the gate without needing a code change here.
+//
+// Note: [WARN] rows do NOT block the gate. The user-stated rule is
+// "everything green," but warnings are advisory (e.g. sshd_config.d
+// drop-ins absent before any apply) and would block fresh installs
+// indefinitely. If we later decide warnings should also gate, swap
+// the substring check accordingly.
+func IsHealthy(rep model.DoctorReport) bool {
+	return !strings.Contains(RenderText(rep), "[FAIL]")
+}
+
 // Run executes all six detectors sequentially and returns the aggregated
 // report. Phase 1 never errors the whole report - each detector reports its
 // own availability via its sub-report. The returned error is reserved for

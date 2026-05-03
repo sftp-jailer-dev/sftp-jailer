@@ -327,6 +327,87 @@ func TestDoctor_no_marker_when_no_active_gap(t *testing.T) {
 	require.NotContains(t, view, "> [A]", "no active > marker should be rendered when no gap")
 }
 
+// TestDoctor_StartupGate_advances_to_home_when_healthy pins the
+// operator-stated rule: "only continue to home if everything is green."
+// When NewStartupGate's wrapped service returns a healthy report
+// (no [FAIL] rows), the gate must emit nav.ReplaceMsg with the
+// homeBuilder factory so the App swaps the gate for home.
+func TestDoctor_StartupGate_advances_to_home_when_healthy(t *testing.T) {
+	t.Parallel()
+
+	homeBuilt := false
+	homeBuilder := func() nav.Screen {
+		homeBuilt = true
+		return &fakeNavScreen{title: "home"}
+	}
+	svc := doctor.New(sysops.NewFake())
+	gate := doctorscreen.NewStartupGate(svc, homeBuilder)
+
+	// Inject a healthy report through the existing test seam. This
+	// bypasses the async Init path; the reportLoadedMsg branch is
+	// what we actually want to exercise here.
+	gate.LoadReportForTest(repNoGaps())
+	// LoadReportForTest sets m.report directly without going through
+	// the gate branch; explicitly drive a reportLoadedMsg now to hit it.
+	_, cmd := gate.FeedReportLoadedMsgForTest(repNoGaps(), nil)
+	require.NotNil(t, cmd, "healthy report on a startup gate must return a non-nil ReplaceMsg cmd")
+
+	msg := cmd()
+	rm, ok := msg.(nav.ReplaceMsg)
+	require.True(t, ok, "expected nav.ReplaceMsg, got %T", msg)
+	require.NotNil(t, rm.Factory, "ReplaceMsg.Factory must be the captured homeBuilder")
+
+	_ = rm.Factory()
+	require.True(t, homeBuilt,
+		"the gate must invoke the captured homeBuilder factory exactly once")
+}
+
+// TestDoctor_StartupGate_stays_on_failure: a report with [FAIL] must
+// NOT trigger the auto-advance. Operator must resolve the failure
+// before the gate releases.
+func TestDoctor_StartupGate_stays_on_failure(t *testing.T) {
+	t.Parallel()
+
+	svc := doctor.New(sysops.NewFake())
+	gate := doctorscreen.NewStartupGate(svc, func() nav.Screen {
+		return &fakeNavScreen{title: "home"}
+	})
+
+	_, cmd := gate.FeedReportLoadedMsgForTest(repUfwEnableOnly(), nil)
+	require.Nil(t, cmd,
+		"unhealthy report must NOT emit ReplaceMsg - gate stays visible until operator fixes the FAIL")
+}
+
+// TestDoctor_StartupGate_esc_quits: in startup-gate mode there is no
+// parent screen on the stack, so [esc] must Quit the app instead of
+// PopCmd-ing into nothing.
+func TestDoctor_StartupGate_esc_quits(t *testing.T) {
+	t.Parallel()
+
+	svc := doctor.New(sysops.NewFake())
+	gate := doctorscreen.NewStartupGate(svc, func() nav.Screen {
+		return &fakeNavScreen{title: "home"}
+	})
+	gate.LoadReportForTest(repUfwEnableOnly())
+
+	_, cmd := gate.Update(keyPress("esc"))
+	require.NotNil(t, cmd)
+	msg := cmd()
+	// tea.Quit returns a tea.QuitMsg sentinel; assert by type.
+	_, isQuit := msg.(tea.QuitMsg)
+	require.True(t, isQuit, "[esc] in startup gate must Quit, got %T", msg)
+}
+
+// fakeNavScreen is a minimal nav.Screen for gate tests.
+type fakeNavScreen struct{ title string }
+
+func (f *fakeNavScreen) Init() tea.Cmd                        { return nil }
+func (f *fakeNavScreen) Update(tea.Msg) (nav.Screen, tea.Cmd) { return f, nil }
+func (f *fakeNavScreen) View() string                         { return "fake:" + f.title }
+func (f *fakeNavScreen) Title() string                        { return f.title }
+func (f *fakeNavScreen) KeyMap() nav.KeyMap                   { return nil }
+func (f *fakeNavScreen) WantsRawKeys() bool                   { return false }
+
 // TestDoctor_DoctorRefreshMsg_resets_loading_and_returns_init_cmd
 // pins the gap-F refresh contract: when ufwenable (or any mutation
 // modal) emits nav.DoctorRefreshMsg as part of its pop, the doctor
