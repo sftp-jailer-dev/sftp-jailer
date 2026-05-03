@@ -709,16 +709,30 @@ func (m *Model) View() string {
 		}
 	case phaseReview, phaseEditingRoot:
 		b.WriteString(styles.Primary.Render("M-APPLY-SETUP - canonical chroot-SFTP drop-in"))
-		b.WriteString("\n\nchroot root:\n  ")
+		b.WriteString("\n\n")
+		// SETUP-07 (D-01): prominent ChrootDir bordered box. The path shown is
+		// the chroot ROOT the operator types (without the trailing /%u); the
+		// drop-in template at internal/sshdcfg/render.go:86 appends /%u itself.
+		// Validation: absolute-path check only (D-02); no new rules added.
+		// Re-preflight on edit is preserved (D-03).
+		chrootBoxStyle := lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(lipgloss.Color("#4a9eff")). // styles.Primary hex
+			Padding(0, 1)
+		var chrootContent string
 		if m.phase == phaseEditingRoot {
-			b.WriteString(m.ti.View())
-			if m.errInline != "" {
-				b.WriteString("\n  " + styles.Critical.Render(m.errInline))
-			}
+			chrootContent = "Chroot root: " + m.ti.View()
 		} else {
-			b.WriteString(styles.Dim.Render(m.ti.Value()))
-			b.WriteString("  " + styles.Dim.Render("(press 'e' to edit)"))
+			chrootContent = "Chroot root: " + m.ti.Value() + "  " +
+				styles.Dim.Render("(press 'e' to edit)")
 		}
+		b.WriteString(chrootBoxStyle.Render(chrootContent))
+		b.WriteString("\n")
+		if m.phase == phaseEditingRoot && m.errInline != "" {
+			b.WriteString(styles.Critical.Render(m.errInline))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
 		if len(m.violations) > 0 {
 			b.WriteString("\n\n" + styles.Critical.Render("path-walk violations - fix before apply:"))
 			for _, v := range m.violations {

@@ -498,3 +498,42 @@ func TestApplysetup_applyDoneMsg_LivePID_still_renders_kill_minus_9_pid(t *testi
 	require.Contains(t, v, "PID=31415",
 		"live-PID path: 'PID=N' with the live PID must still appear")
 }
+
+// TestApplySetup_phaseReview_renders_chroot_box asserts SETUP-07 (D-01):
+// the prominent bordered box with the canonical default ChrootDir is
+// the visible primary element of phaseReview, above the diff viewport.
+// The box shows the chroot ROOT (without /%u); the template at
+// internal/sshdcfg/render.go:86 appends /%u itself.
+func TestApplySetup_phaseReview_renders_chroot_box(t *testing.T) {
+	m, _ := newSeededModel()
+	m.LoadProposalForTest(
+		[]byte(""), // no current drop-in
+		"/srv/sftp-jailer",
+		nil,
+		false,
+	)
+	view := m.View()
+	require.Contains(t, view, "Chroot root: /srv/sftp-jailer",
+		"phaseReview must render chroot-root prominent box; got: %q", view)
+	require.Contains(t, view, "(press 'e' to edit)",
+		"phaseReview chroot box must include the edit hint; got: %q", view)
+	// The box must appear BEFORE the diff in the rendered output.
+	idxBox := strings.Index(view, "Chroot root: /srv/sftp-jailer")
+	idxDiff := strings.Index(view, "diff (SAFE-05)")
+	require.True(t, idxBox >= 0, "chroot box not found in view")
+	require.True(t, idxDiff < 0 || idxBox < idxDiff,
+		"chroot box must render BEFORE the diff viewport in phaseReview; idxBox=%d idxDiff=%d", idxBox, idxDiff)
+}
+
+// TestApplySetup_phaseEditingRoot_box_shows_textinput asserts the
+// edit-mode shape of the SETUP-07 bordered box: "Chroot root:" prefix
+// appears while in phaseEditingRoot.
+func TestApplySetup_phaseEditingRoot_box_shows_textinput(t *testing.T) {
+	m, _ := newSeededModel()
+	m.LoadProposalForTest([]byte(""), "/srv/sftp-jailer", nil, false)
+	// Drive into phaseEditingRoot via the existing 'e' key press.
+	_, _ = m.Update(keyPress("e"))
+	require.Equal(t, applysetup.PhaseEditingRootForTest, m.PhaseForTest())
+	require.Contains(t, m.View(), "Chroot root:",
+		"phaseEditingRoot must render 'Chroot root:' prefix in bordered box")
+}
