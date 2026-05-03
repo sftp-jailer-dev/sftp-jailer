@@ -246,12 +246,27 @@ Plans:
 
 **Captured 2026-05-03 from Phase 8 lab UAT.** Operator articulated this redesign while validating the v1.3 ufwenable modal: the 3-way separation between home / users / firewall feels scattered when every firewall rule is conceptually owned by a user (per the ufwcomment grammar `sftpj:v=1:user=<u>`).
 
-**Operator-stated direction (refined 2026-05-03 UAT round 2):**
-- Home screen IS the users screen (users list with per-user rule rows embedded)
-- Firewall rules are integrated into the user view, not a separate top-level
-- Firewall mode renders as **"FIREWALL MODE"** (not "MODE:") and lives in the **right-hand side** of the chrome as a **visual switch widget** (orange = not locked, green = LOCKED)
+**Operator-stated direction (refined 2026-05-03 UAT rounds 2-4):**
+
+**Overarching metaphor:** Midnight-Commander-style full-screen terminal with a full system overview always visible. No vestigial menu home screen.
+
+- Home screen IS the users screen (users list with per-user rule rows embedded). Operator lands on this directly after splash → doctor.
+- Firewall rules are integrated into the user view, not a separate top-level.
+- Firewall mode renders as **"FIREWALL MODE"** (not "MODE:") and lives in the **right-hand side** of the chrome as a **visual switch widget** (orange = not locked, green = LOCKED).
 - The state color wraps the entire UI frame: top line + left border + right border all painted in the current state color (orange = unlocked, green = LOCKED). A glance at any pixel of the chrome tells the operator whether the system is protected.
 - The command bar (currently a per-screen footer hint) moves to **the bottom two lines of the terminal** with **light background colors borrowed from the splash screen palette**. This is a global element, not per-screen.
+
+**Always-visible overview strip (replaces the v1.x home `SSH: ? · Users: ? · Rules: ?` placeholders that were never wired):**
+- **SSH:** count of active SSH sessions (parsed from `who` output - same source as the FW-11 SSH-detection fallback)
+- **Users:** count of sftp-jailer users (from the FW-08 mirror or live `users.Enumerator`)
+- **Rules:** count of firewall rules with the `sftpj:v=1:user=` comment (from `ufw status numbered` parse, filtered)
+- Render as a header strip on every screen (like the modebar today) - operator never has to navigate to see system state.
+
+**Lockdown toggle (L key):**
+- `L` from anywhere toggles between LOCKED and UNLOCKED based on current firewall mode.
+- If UNLOCKED → opens lockdown commit wizard (current S-LOCKDOWN flow).
+- If LOCKED → invokes the rollback-to-OPEN flow directly (currently buried inside S-LOCKDOWN behind the `R` key).
+- Eliminates the discoverability problem operators hit in v1.x: once locked, the path back to OPEN is hidden inside a screen they have to navigate to.
 
 **Affected surfaces (initial scan):**
 - `internal/tui/screens/home/home.go` (becomes user-list-rooted)
