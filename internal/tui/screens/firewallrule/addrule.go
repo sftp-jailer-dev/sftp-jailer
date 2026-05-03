@@ -538,7 +538,24 @@ func (m *Model) commitCmd() tea.Cmd {
 		}
 
 		// FW mutation step (always present).
-		insertStep := txn.NewUfwInsertStep(opts)
+		//
+		// FW-11 / D-13: when m.autoRevert is false (the [r] chain
+		// bootstrap path on a possibly-empty ufw rule list), use
+		// NewUfwAllowStep (`ufw allow ...` - appends) instead of
+		// NewUfwInsertStep (`ufw insert 1 allow ...` - which ufw
+		// rejects with "ERROR: Invalid position '1'" when the rule
+		// list is empty). NewUfwAllowStep's no-op compensator matches
+		// the AutoRevert=false / no-SAFE-04 contract: there is no
+		// timer-armed batch to roll back. The append vs position-1
+		// distinction does not matter for the bootstrap rule because
+		// it is the first (and only) rule on a fresh ufw at this
+		// point in the flow.
+		var insertStep txn.Step
+		if m.autoRevert {
+			insertStep = txn.NewUfwInsertStep(opts)
+		} else {
+			insertStep = txn.NewUfwAllowStep(opts)
+		}
 		steps = append(steps, insertStep)
 
 		tx := txn.New(ops)
@@ -761,6 +778,11 @@ func (m *Model) UserFieldForTest() string { return m.userField }
 
 // NormalizedSourceForTest exposes the post-validate CIDR.
 func (m *Model) NormalizedSourceForTest() string { return m.normalizedSource }
+
+// CommitCmdForTest exposes commitCmd so tests can drive the commit
+// path synchronously via cmd() and inspect Fake.Calls. Mirrors the
+// deleterule.CommitCmdForTest seam.
+func (m *Model) CommitCmdForTest() tea.Cmd { return m.commitCmd() }
 
 // ErrInlineForTest exposes the inline error.
 func (m *Model) ErrInlineForTest() string { return m.errInline }

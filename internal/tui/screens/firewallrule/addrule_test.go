@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/firewallrule"
 )
 
@@ -178,3 +179,37 @@ func TestAddRule_NewWithOptions_PrefillCIDR(t *testing.T) {
 		firewallrule.Options{AutoRevert: false, PrefillCIDR: "0.0.0.0/0"})
 	require.Equal(t, "0.0.0.0/0", m.CIDRInputValueForTest())
 }
+
+// TestAddRule_commitCmd_AutoRevert_false_uses_UfwAllow_not_UfwInsert
+// pins the FW-11 [r] chain bootstrap contract: when AutoRevert is
+// false, the commit batch must call sysops.UfwAllow (`ufw allow ...`,
+// appends) NOT sysops.UfwInsert (`ufw insert 1 allow ...`, fails with
+// "Invalid position '1'" on a freshly-reset / empty-rules ufw). This
+// is the path the ufwenable hard-block [r] chain takes.
+func TestAddRule_commitCmd_AutoRevert_false_uses_UfwAllow_not_UfwInsert(t *testing.T) {
+	t.Parallel()
+	f := sysops.NewFake()
+
+	m := firewallrule.NewWithOptions(f, nil, "22", "root",
+		firewallrule.Options{AutoRevert: false, PrefillCIDR: "0.0.0.0/0"})
+	m.LoadStateForTest(firewallrule.PhaseReviewForTest, "0.0.0.0/0", "root", "", "")
+
+	cmd := m.CommitCmdForTest()
+	require.NotNil(t, cmd)
+	_ = cmd() // executes the goroutine body inline
+
+	var allowCount, insertCount int
+	for _, c := range f.Calls {
+		switch c.Method {
+		case "UfwAllow":
+			allowCount++
+		case "UfwInsert":
+			insertCount++
+		}
+	}
+	require.Equal(t, 1, allowCount,
+		"AutoRevert=false must produce exactly one UfwAllow call (append on empty ufw)")
+	require.Equal(t, 0, insertCount,
+		"AutoRevert=false must NOT call UfwInsert (would fail with Invalid position '1' on fresh ufw)")
+}
+
