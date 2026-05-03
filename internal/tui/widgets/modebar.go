@@ -103,18 +103,24 @@ func (b ModeBar) View() string {
 			"⏱ REVERTING IN %s - [C]onfirm [V]iew countdown",
 			formatDuration(remaining)))
 	}
+	// Operator-stated rule (2026-05-03 lab UAT): the firewall state
+	// must read as LOCKED or UNLOCKED, not the internal 4-state model.
+	// LOCKED is green; everything else is red with a state qualifier
+	// so the operator still gets the underlying-state context. The
+	// internal firewall.Mode enum is preserved (lockdown/users packages
+	// still consume the 4 states); only this render is binarized.
 	switch b.mode {
-	case firewall.ModeOpen:
-		return styles.Warn.Render("MODE: OPEN - observing")
-	case firewall.ModeStaging:
-		return styles.Info.Render(fmt.Sprintf(
-			"MODE: STAGING - %d rules staged", b.ruleCount))
 	case firewall.ModeLocked:
 		return styles.Success.Render(fmt.Sprintf(
 			"MODE: LOCKED - %d allow rules, %d users",
 			b.ruleCount, b.userCount))
+	case firewall.ModeOpen:
+		return styles.Critical.Render("MODE: UNLOCKED - observing only (no enforcement)")
+	case firewall.ModeStaging:
+		return styles.Critical.Render(fmt.Sprintf(
+			"MODE: UNLOCKED - %d rules staged, not enforced", b.ruleCount))
 	default:
-		return styles.Dim.Render("MODE: UNKNOWN - no SFTP allow rules yet")
+		return styles.Critical.Render("MODE: UNLOCKED - no SFTP allow rules yet")
 	}
 }
 

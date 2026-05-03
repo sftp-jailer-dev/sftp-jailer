@@ -11,20 +11,29 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/revert"
 )
 
-func TestModeBar_renders_OPEN_when_mode_is_ModeOpen(t *testing.T) {
+// Operator-stated rule (2026-05-03 lab UAT): the modebar firewall state
+// renders as binary LOCKED / UNLOCKED. The internal firewall.Mode enum
+// keeps its 4 values; only the modebar render is binarized. UNLOCKED
+// covers ModeOpen, ModeStaging, and ModeUnknown - each carries a state
+// qualifier so the operator does not lose context.
+
+func TestModeBar_renders_UNLOCKED_when_mode_is_ModeOpen(t *testing.T) {
 	t.Parallel()
 	b := NewModeBar(nil).SetMode(firewall.ModeOpen, 0, 0)
 	view := b.View()
-	require.Contains(t, view, "MODE: OPEN")
-	require.Contains(t, view, "observing")
+	require.Contains(t, view, "MODE: UNLOCKED")
+	require.Contains(t, view, "observing only")
+	require.NotContains(t, view, "MODE: LOCKED",
+		"ModeOpen must NOT render the green MODE: LOCKED label")
 }
 
-func TestModeBar_renders_STAGING_with_rule_count(t *testing.T) {
+func TestModeBar_renders_UNLOCKED_for_STAGING_with_rule_count(t *testing.T) {
 	t.Parallel()
 	b := NewModeBar(nil).SetMode(firewall.ModeStaging, 5, 0)
 	view := b.View()
-	require.Contains(t, view, "MODE: STAGING")
+	require.Contains(t, view, "MODE: UNLOCKED")
 	require.Contains(t, view, "5 rules staged")
+	require.Contains(t, view, "not enforced")
 }
 
 func TestModeBar_renders_LOCKED_with_rule_and_user_count(t *testing.T) {
@@ -36,11 +45,12 @@ func TestModeBar_renders_LOCKED_with_rule_and_user_count(t *testing.T) {
 	require.Contains(t, view, "3 users")
 }
 
-func TestModeBar_renders_UNKNOWN_for_default(t *testing.T) {
+func TestModeBar_renders_UNLOCKED_for_default_unknown(t *testing.T) {
 	t.Parallel()
 	b := NewModeBar(nil).SetMode(firewall.ModeUnknown, 0, 0)
 	view := b.View()
-	require.Contains(t, view, "MODE: UNKNOWN")
+	require.Contains(t, view, "MODE: UNLOCKED")
+	require.Contains(t, view, "no SFTP allow rules yet")
 }
 
 func TestModeBar_renders_REVERTING_when_armed_overrides_mode(t *testing.T) {
@@ -54,7 +64,7 @@ func TestModeBar_renders_REVERTING_when_armed_overrides_mode(t *testing.T) {
 		})
 	view := b.View()
 	require.Contains(t, view, "REVERTING IN")
-	require.NotContains(t, view, "MODE: OPEN") // overridden
+	require.NotContains(t, view, "MODE: UNLOCKED") // overridden
 	// The remaining time should be approximately 2:53 (allow ±1s for test scheduling).
 	require.True(t,
 		strings.Contains(view, "2:53") ||
@@ -77,7 +87,7 @@ func TestModeBar_Update_routes_tick_msg_returns_same_value(t *testing.T) {
 	// Update is a no-op for tick (re-rendering happens via View); the
 	// returned value must still render the same MODE state.
 	view := got.View()
-	require.Contains(t, view, "MODE: STAGING")
+	require.Contains(t, view, "MODE: UNLOCKED")
 	require.Contains(t, view, "7 rules staged")
 }
 

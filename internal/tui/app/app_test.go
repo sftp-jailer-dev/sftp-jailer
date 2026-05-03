@@ -240,13 +240,13 @@ func TestApp_View_includes_modebar_above_screen_body(t *testing.T) {
 	a.SetMode(firewall.ModeOpen, 0, 0)
 	v := a.View()
 	rendered := v.Content
-	require.Contains(t, rendered, "MODE: OPEN")
+	require.Contains(t, rendered, "MODE: UNLOCKED")
 	require.Contains(t, rendered, "test:BODY")
 	// Modebar must render BEFORE the screen body in the composed output -
 	// otherwise the global strip is no longer always-visible above the
 	// active screen (D-L0809-03 + D-S04-03).
 	require.Less(t,
-		strings.Index(rendered, "MODE: OPEN"),
+		strings.Index(rendered, "MODE: UNLOCKED"),
 		strings.Index(rendered, "test:BODY"),
 		"modebar must render above screen body; got:\n%s", rendered)
 }
@@ -256,7 +256,8 @@ func TestApp_View_modebar_renders_when_stack_empty(t *testing.T) {
 	a := app.New("v0", "http://example.com")
 	a.SetMode(firewall.ModeStaging, 3, 0)
 	v := a.View()
-	require.Contains(t, v.Content, "MODE: STAGING")
+	require.Contains(t, v.Content, "MODE: UNLOCKED")
+	require.Contains(t, v.Content, "3 rules staged")
 }
 
 func TestApp_Init_returns_modebar_tick_cmd(t *testing.T) {
@@ -280,8 +281,8 @@ func TestApp_Update_routes_ModeBarTickMsg_and_re_arms(t *testing.T) {
 func TestApp_SetMode_passthrough_updates_modebar_render(t *testing.T) {
 	tuitest.ResetResolvers(t)
 	a := app.New("v0", "http://example.com", &testScreen{name: "s"})
-	// Default render is UNKNOWN.
-	require.Contains(t, a.View().Content, "MODE: UNKNOWN")
+	// Default render is UNLOCKED (binarized; ModeUnknown maps to UNLOCKED).
+	require.Contains(t, a.View().Content, "MODE: UNLOCKED")
 	// SetMode → LOCKED must update the next View() output.
 	a.SetMode(firewall.ModeLocked, 9, 4)
 	got := a.View().Content
