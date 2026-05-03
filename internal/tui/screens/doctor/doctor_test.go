@@ -162,14 +162,6 @@ func TestDoctorScreen_a_action_noop_when_canonical_already_applied(t *testing.T)
 
 // ---- Phase 8 plan 08-04: precedence dispatch + > marker + footer hint --------
 
-// repCanonicalOnly: NeedsCanonicalApply=true, NeedsUfwEnable=false.
-func repCanonicalOnly() model.DoctorReport {
-	return model.DoctorReport{
-		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: false},
-		Ufw:         model.UfwReport{Available: true, Inactive: false}, // ufw active
-	}
-}
-
 // repUfwEnableOnly: NeedsCanonicalApply=false, NeedsUfwEnable=true.
 func repUfwEnableOnly() model.DoctorReport {
 	return model.DoctorReport{
@@ -281,7 +273,10 @@ func TestDoctor_active_marker_set_for_ufwenable(t *testing.T) {
 
 // TestDoctor_active_marker_for_canonical_when_both_gaps: when BOTH
 // gaps are present, the > marker anchors on the canonical-apply row
-// (D-14 precedence), not on [A] Enable ufw.
+// (D-14 precedence), not on [A] Enable ufw. In the rendered text,
+// the [A] Enable ufw row appears inline in the ufw section, while
+// [A] Apply SFTP jail configuration is appended at the end by RenderText.
+// The marker must appear adjacent to [A] Apply (near end), not near [A] Enable ufw.
 func TestDoctor_active_marker_for_canonical_when_both_gaps(t *testing.T) {
 	t.Parallel()
 
@@ -297,13 +292,25 @@ func TestDoctor_active_marker_for_canonical_when_both_gaps(t *testing.T) {
 	require.GreaterOrEqual(t, idxMarker, 0, "active > marker must be present")
 	require.GreaterOrEqual(t, idxApply, 0, "[A] Apply line must be in view")
 
-	// The > marker appears near/before the [A] Apply line.
-	// It must appear before (or at) [A] Enable ufw (if that line exists).
-	require.Less(t, idxMarker, idxApply+50,
-		"marker must be near the [A] Apply canonical-apply row, not the ufw row")
+	// The > marker must appear within ~100 chars before [A] Apply (ANSI prefix adds bytes).
+	require.Less(t, idxApply-idxMarker, 100,
+		"marker must be close before the [A] Apply canonical-apply row")
+	require.GreaterOrEqual(t, idxApply-idxMarker, 0,
+		"marker must appear before [A] Apply, not after")
+
+	// The [A] Enable ufw row appears earlier (ufw section renders before the
+	// [A] Apply row which is appended last by RenderText / NeedsCanonicalApply).
+	// The marker must NOT be near [A] Enable ufw.
 	if idxUfw >= 0 {
-		require.Less(t, idxApply, idxUfw,
-			"[A] Apply must appear before [A] Enable ufw in the rendered output")
+		require.Greater(t, idxApply, idxUfw,
+			"[A] Apply SFTP jail configuration must appear after [A] Enable ufw in render order")
+		// Marker must be far from the ufw row (> 50 chars separation).
+		dist := idxMarker - idxUfw
+		if dist < 0 {
+			dist = -dist
+		}
+		require.Greater(t, dist, 50,
+			"marker must not be near [A] Enable ufw row (should be near [A] Apply row)")
 	}
 }
 

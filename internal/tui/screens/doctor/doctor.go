@@ -19,6 +19,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/service/doctor"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/applysetup"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/ufwenable"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/styles"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/widgets"
 )
@@ -92,15 +93,22 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 				return m, tea.Batch(tea.SetClipboard(text), flashCmd)
 			}
 		case "a", "A":
-			// Phase 3 / D-06: prescription action - push M-APPLY-SETUP when
-			// the report indicates a SETUP-02..06 gap. NeedsCanonicalApply
-			// returns true for missing drop-in / chroot-chain violation /
-			// external-sftp warning. The modal sources its SystemOps via
-			// doctor.Service.Ops() (single-handle ownership; plan 03-06
-			// Task 1).
-			if m.report != nil && m.svc != nil && doctor.NeedsCanonicalApply(*m.report) {
+			// Phase 3 / D-06: prescription action. Phase 8 / D-14: precedence
+			// dispatch - canonical-apply > ufw-enable. The first matching gap
+			// is fired; subsequent [a] presses fire the next gap after the
+			// operator resolves the prior one. Pitfall 7: m.report != nil
+			// gates the dispatch, so the post-pop Init() re-run window does
+			// not double-fire.
+			if m.report == nil || m.svc == nil {
+				return m, nil
+			}
+			if doctor.NeedsCanonicalApply(*m.report) {
 				return m, nav.PushCmd(applysetup.New(m.svc.Ops(), m.svc.ChrootRoot()))
 			}
+			if doctor.NeedsUfwEnable(*m.report) {
+				return m, nav.PushCmd(ufwenable.New(m.svc.Ops()))
+			}
+			return m, nil
 		}
 	}
 	m.toast = m.toast.Update(msg)
@@ -119,7 +127,28 @@ func (m *Model) View() string {
 	if m.report == nil {
 		return styles.Dim.Render("(no report)")
 	}
-	body := colorizeReport(doctor.RenderText(*m.report))
+	// D-14: select the active marker substring for the highest-precedence gap.
+	// D-15 belt-and-suspenders: > marker + footer hint both reflect the target.
+	activeMarker := ""
+	if doctor.NeedsCanonicalApply(*m.report) {
+		activeMarker = "[A] Apply SFTP jail configuration"
+	} else if doctor.NeedsUfwEnable(*m.report) {
+		activeMarker = "[A] Enable ufw"
+	}
+	body := colorizeReport(doctor.RenderText(*m.report), activeMarker)
+
+	// Footer hint (D-15): appended after body, before toast.
+	var footerHint string
+	switch activeMarker {
+	case "[A] Apply SFTP jail configuration":
+		footerHint = "Press [a] to apply SFTP jail configuration  ([esc] back, [c] copy)"
+	case "[A] Enable ufw":
+		footerHint = "Press [a] to enable ufw  ([esc] back, [c] copy report)"
+	}
+	if footerHint != "" {
+		body += "\n\n" + styles.Dim.Render(footerHint)
+	}
+
 	if ts := m.toast.View(); ts != "" {
 		body += "\n" + ts
 	}
@@ -129,21 +158,31 @@ func (m *Model) View() string {
 // colorizeReport wraps each [OK]/[WARN]/[FAIL]/[INFO] row in the matching
 // Lip Gloss style. Per-line coloring (vs. per-token) keeps the alignment
 // intact and is simpler to verify in tests.
-func colorizeReport(text string) string {
+//
+// activeMarker, when non-empty, prepends "> " in Primary style to the first
+// line that contains the substring. D-15 belt-and-suspenders: the marker is
+// intentionally redundant with the footer hint. Pitfall 4: this layering
+// happens HERE (TUI screen), not in render.go (which stays ANSI-free).
+func colorizeReport(text string, activeMarker string) string {
 	lines := strings.Split(text, "\n")
 	out := make([]string, 0, len(lines))
 	for _, l := range lines {
+		// Prepend `> ` in Primary style if this row is the active dispatch target.
+		prefixed := l
+		if activeMarker != "" && strings.Contains(l, activeMarker) {
+			prefixed = styles.Primary.Render("> ") + l
+		}
 		switch {
 		case strings.HasPrefix(l, "[OK]"):
-			out = append(out, styles.Success.Render(l))
+			out = append(out, styles.Success.Render(prefixed))
 		case strings.HasPrefix(l, "[WARN]"):
-			out = append(out, styles.Warn.Render(l))
+			out = append(out, styles.Warn.Render(prefixed))
 		case strings.HasPrefix(l, "[FAIL]"):
-			out = append(out, styles.Critical.Render(l))
+			out = append(out, styles.Critical.Render(prefixed))
 		case strings.HasPrefix(l, "[INFO]"):
-			out = append(out, styles.Dim.Render(l))
+			out = append(out, styles.Dim.Render(prefixed))
 		default:
-			out = append(out, l)
+			out = append(out, prefixed)
 		}
 	}
 	return strings.Join(out, "\n")
