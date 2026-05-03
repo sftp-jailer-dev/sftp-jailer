@@ -93,12 +93,10 @@ func renderChrootChain(r model.ChrootChainReport) string {
 // prescription. When ufw is active, fall through to the existing
 // renderUfwIPv6 logic (preserves the v1.2.1 FW-06 row byte-for-byte).
 //
-// v1.2.2 decision (operator-locked): the `[A] Enable ufw` is a LABEL
-// only. The actual `ufw --force enable` mutation belongs in v1.3
-// where it can land alongside other ufw mutations under proper
-// SAFE-04 timer coverage. Surfacing the label here without the
-// handler is the documented v1.2.2 scope - it tells operators what
-// the fix is without us shipping an unsupervised mutation path.
+// FW-11: the [A] Enable ufw action is handled by the doctor screen
+// dispatching to internal/tui/screens/ufwenable. The mutation runs
+// `ufw --force enable` via sysops.EnableUFW under a confirm-only
+// (NOT SAFE-04) flow per CONTEXT D-08.
 func renderUfwRow(r model.UfwReport, ipv6 model.UfwIPv6Report) string {
 	switch {
 	case !r.Available:
@@ -107,12 +105,15 @@ func renderUfwRow(r model.UfwReport, ipv6 model.UfwIPv6Report) string {
 		}
 		return "[INFO] ufw: status unavailable (binary may not be installed)\n"
 	case r.Inactive:
-		// [FAIL] + [A] label pair. The IPV6 row is suppressed because
-		// the setting is moot when ufw is down (no rules of any kind
-		// are enforced). When the operator runs `ufw enable` the row
-		// collapses back to the existing renderUfwIPv6 output.
-		return "[FAIL] ufw: inactive (no firewall enforcement; lockdown will fail)\n" +
-			"[A] Enable ufw - run `ufw enable` (apply flow lands in v1.3)\n"
+		// TUI-12 (D-05): operator-locked verbatim 3-line block sourced
+		// byte-identically from notes/2026-05-03-v1.3-first-run-ux.md:65-69.
+		// Em-dash forbidden (D-18); use `-`. Backticks in the rendered
+		// output are part of the operator-locked copy and MUST appear
+		// verbatim.
+		return "[FAIL] ufw: inactive (rule enforcement disabled; run `sudo ufw enable`; lockdown will fail)\n" +
+			"       Note: `systemctl is-active ufw` may report \"active\" - that \"active (exited)\" is the oneshot\n" +
+			"       init service, not rule enforcement. `ufw status` is the source of truth.\n" +
+			"[A] Enable ufw - run `sudo ufw enable`\n"
 	default:
 		// Active: delegate to the existing renderer. Byte-for-byte
 		// identical output to the v1.2.1 path.
