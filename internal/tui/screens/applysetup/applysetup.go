@@ -488,13 +488,16 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 	case autoPopMsg:
 		var flashCmd tea.Cmd
 		m.toast, flashCmd = m.toast.Flash("SFTP jail configuration applied")
-		// Emit DoctorRefreshMsg alongside the pop so the underlying
-		// doctor screen re-runs its diagnostic and the operator sees
-		// the post-apply state without restarting.
+		// MUST use tea.Sequence for the Pop -> DoctorRefreshMsg
+		// ordering (see ufwenable.go autoPopMsg comment). The toast
+		// flash can stay in tea.Batch since it does not depend on
+		// the post-pop top screen.
 		return m, tea.Batch(
-			nav.PopCmd(),
 			flashCmd,
-			func() tea.Msg { return nav.DoctorRefreshMsg{} },
+			tea.Sequence(
+				nav.PopCmd(),
+				func() tea.Msg { return nav.DoctorRefreshMsg{} },
+			),
 		)
 
 	case spinner.TickMsg:

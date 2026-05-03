@@ -197,7 +197,14 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		// diagnostic (gap F): without the refresh, doctor still shows
 		// the pre-enable [FAIL] ufw inactive row and the operator has
 		// to restart sftp-jailer to confirm the apply worked.
-		return m, tea.Batch(
+		//
+		// MUST use tea.Sequence (not tea.Batch): tea.Batch dispatches
+		// cmds concurrently, so the DoctorRefreshMsg can arrive at the
+		// App BEFORE the Pop is processed - in which case the App
+		// routes it to the still-top ufwenable (no-op) instead of the
+		// post-pop doctor. tea.Sequence guarantees PopCmd is fully
+		// processed before the refresh msg is emitted.
+		return m, tea.Sequence(
 			nav.PopCmd(),
 			func() tea.Msg { return nav.DoctorRefreshMsg{} },
 		)
