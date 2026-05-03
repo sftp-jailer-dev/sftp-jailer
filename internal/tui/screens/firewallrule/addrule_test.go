@@ -153,3 +153,28 @@ func TestWantsRawKeys_true_in_phaseInput_and_phaseError(t *testing.T) {
 	m.LoadStateForTest(firewallrule.PhaseErrorForTest, "203.0.113.7/32", "alice", "", "boom")
 	require.True(t, m.WantsRawKeys(), "phaseError → WantsRawKeys true")
 }
+
+// TestAddRule_New_defaults_AutoRevert_true asserts the backwards-
+// compatible shim sets AutoRevert=true so existing call sites continue
+// to receive SAFE-04 coverage.
+func TestAddRule_New_defaults_AutoRevert_true(t *testing.T) {
+	t.Parallel()
+	m := firewallrule.New(nil, nil, "22", "")
+	require.True(t, m.AutoRevertForTest(), "New(...) must default AutoRevert to true")
+}
+
+// TestAddRule_NewWithOptions_AutoRevert_false asserts the configurable
+// constructor produces a Model with autoRevert=false.
+func TestAddRule_NewWithOptions_AutoRevert_false(t *testing.T) {
+	t.Parallel()
+	m := firewallrule.NewWithOptions(nil, nil, "22", "", firewallrule.Options{AutoRevert: false})
+	require.False(t, m.AutoRevertForTest(), "NewWithOptions must honor AutoRevert: false")
+}
+
+// TestAddRule_NewWithOptions_PrefillCIDR seeds the CIDR textinput.
+func TestAddRule_NewWithOptions_PrefillCIDR(t *testing.T) {
+	t.Parallel()
+	m := firewallrule.NewWithOptions(nil, nil, "22", "",
+		firewallrule.Options{AutoRevert: false, PrefillCIDR: "0.0.0.0/0"})
+	require.Equal(t, "0.0.0.0/0", m.CIDRInputValueForTest())
+}

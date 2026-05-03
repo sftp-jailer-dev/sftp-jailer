@@ -131,6 +131,12 @@ type Model struct {
 	toast   widgets.Toast
 	keys    KeyMap
 	nowFn   func() time.Time
+
+	// autoRevert gates the SAFE-04 NewScheduleRevertStep in commitCmd.
+	// FW-11 D-13: when false, commitCmd skips NewScheduleRevertStep so
+	// the ufw-enable [r] chain does not arm a timer that could fire mid-
+	// enable flow and cut the operator's SSH session.
+	autoRevert bool
 }
 
 // preflightDoneMsg carries the FW-06 leak-check result back to Update.
@@ -149,15 +155,43 @@ type committedMsg struct {
 // autoPopMsg pops the modal after a successful commit lingers for autoPopDelay.
 type autoPopMsg struct{}
 
-// New constructs an M-ADD-RULE modal. lockedUser is "" for the
-// S-FIREWALL `a` path (admin picks user later - currently the user
-// field is admin-typed via the user textinput; for v1 we only support
-// the S-USER-DETAIL pre-fill path); set to a username for the
-// S-USER-DETAIL `r` path (user is read-only).
+// Options threads optional configuration through the constructor without
+// breaking existing call sites. Zero-value Options{} means AutoRevert=false
+// (caller MUST pass AutoRevert: true for SAFE-04 coverage). Existing
+// callers should use New(...) which sets the safe defaults via the
+// backwards-compatible shim.
+type Options struct {
+	// AutoRevert arms the 3-min SAFE-04 revert timer; default true via
+	// New(...). FW-11 / D-13: the ufw-enable [r] chain passes false
+	// because the SAFE-04 compensator (`ufw delete N + ufw reload`)
+	// would fire mid-ufw-enable flow and could cut the operator's SSH
+	// session - the very lockout the pre-flight is protecting against.
+	AutoRevert bool
+
+	// PrefillCIDR optionally seeds the CIDR textinput. "" leaves it
+	// blank. FW-11 [r] chain passes "0.0.0.0/0" so the operator does
+	// not have to retype the source.
+	PrefillCIDR string
+}
+
+// New constructs an M-ADD-RULE modal with AutoRevert=true (the standard
+// SAFE-04 flow). Existing call sites keep working unchanged.
+//
+// lockedUser is "" for the S-FIREWALL `a` path (admin picks user later);
+// set to a username for the S-USER-DETAIL `r` path (user is read-only).
 //
 // ops / watcher MAY be nil in unit-test paths that drive the model via
 // LoadStateForTest; the goroutine paths short-circuit on nil.
 func New(ops sysops.SystemOps, watcher *revert.Watcher, sftpPort, lockedUser string) *Model {
+	return NewWithOptions(ops, watcher, sftpPort, lockedUser, Options{AutoRevert: true})
+}
+
+// NewWithOptions is the configurable constructor. The ufw-enable [r]
+// chain (FW-11 / D-13) passes AutoRevert=false because the SAFE-04
+// 3-min revert (`ufw delete N + ufw reload`) would fire mid-ufw-enable
+// and could cut the operator's SSH session - the very lockout the
+// pre-flight is protecting against.
+func NewWithOptions(ops sysops.SystemOps, watcher *revert.Watcher, sftpPort, lockedUser string, opts Options) *Model {
 	ti := textinput.New()
 	ti.Placeholder = "203.0.113.7/32"
 	ti.Focus()
@@ -167,7 +201,7 @@ func New(ops sysops.SystemOps, watcher *revert.Watcher, sftpPort, lockedUser str
 	sp.Spinner = spinner.Line
 	sp.Style = styles.Primary
 
-	return &Model{
+	m := &Model{
 		ops:        ops,
 		watcher:    watcher,
 		sftpPort:   sftpPort,
@@ -178,7 +212,12 @@ func New(ops sysops.SystemOps, watcher *revert.Watcher, sftpPort, lockedUser str
 		spinner:    sp,
 		keys:       DefaultKeyMap(),
 		nowFn:      time.Now,
+		autoRevert: opts.AutoRevert,
 	}
+	if opts.PrefillCIDR != "" {
+		m.cidrInput.SetValue(opts.PrefillCIDR)
+	}
+	return m
 }
 
 // SetStore injects the FW-08 mirror handle. Production wires the real
@@ -476,24 +515,33 @@ func (m *Model) commitCmd() tea.Cmd {
 		}
 
 		// === D-S04-09 step 3 ordering (B1+B5 fix) ===
-		// Comment-grep placeholder reverse-cmd - see commitCmd doc.
-		reverseCmd := fmt.Sprintf(
-			"ID=$(ufw status numbered | grep -F '%s' | head -1 | "+
-				"sed -E 's/^\\[ +([0-9]+)\\].*/\\1/'); "+
-				"[ -n \"$ID\" ] && ufw --force delete $ID",
-			comment,
-		)
-		reverseCmds := []string{reverseCmd, "ufw reload"}
+		// FW-11 / D-13: when m.autoRevert is false, skip NewScheduleRevertStep
+		// entirely. The reverseCmds payload is unused in that path. The batch
+		// becomes a single-step [NewUfwInsertStep] which is irreversible from
+		// the operator's perspective; the ufw-enable flow that triggers this
+		// path provides its own gate.
+		var steps []txn.Step
+		if m.autoRevert {
+			// Comment-grep placeholder reverse-cmd - see commitCmd doc.
+			reverseCmd := fmt.Sprintf(
+				"ID=$(ufw status numbered | grep -F '%s' | head -1 | "+
+					"sed -E 's/^\\[ +([0-9]+)\\].*/\\1/'); "+
+					"[ -n \"$ID\" ] && ufw --force delete $ID",
+				comment,
+			)
+			reverseCmds := []string{reverseCmd, "ufw reload"}
 
-		// Step 1: arm the timer FIRST (D-S04-09 step 3).
-		scheduleStep := txn.NewScheduleRevertStep(
-			reverseCmds, nowFn().Add(revertWindow), watcher, nowFn)
+			// Step 1: arm the timer FIRST (D-S04-09 step 3).
+			scheduleStep := txn.NewScheduleRevertStep(
+				reverseCmds, nowFn().Add(revertWindow), watcher, nowFn)
+			steps = append(steps, scheduleStep)
+		}
 
-		// Step 2: the FW mutation.
+		// FW mutation step (always present).
 		insertStep := txn.NewUfwInsertStep(opts)
+		steps = append(steps, insertStep)
 
 		tx := txn.New(ops)
-		steps := []txn.Step{scheduleStep, insertStep}
 		if err := tx.Apply(ctx, steps); err != nil {
 			// tx.Apply's reverse-order Compensate runs Schedule's
 			// Compensate (stops the unit, clears watcher pointer).
@@ -530,8 +578,11 @@ func (m *Model) handleCommitted(msg committedMsg) (nav.Screen, tea.Cmd) {
 	m.phase = phaseDone
 	var flashCmd tea.Cmd
 	flashText := fmt.Sprintf(
-		"added rule for %s from %s (id=%d) - 3-min revert armed",
+		"added rule for %s from %s (id=%d)",
 		m.userField, m.normalizedSource, m.assignedID)
+	if m.autoRevert {
+		flashText += " - 3-min revert armed"
+	}
 	m.toast, flashCmd = m.toast.Flash(flashText)
 	return m, tea.Batch(
 		flashCmd,
@@ -595,9 +646,12 @@ func (m *Model) View() string {
 		b.WriteString(styles.Dim.Render(
 			"applying ufw insert + arming 3-min revert…"))
 	case phaseDone:
-		b.WriteString(styles.Success.Render(fmt.Sprintf(
-			"✓ rule added for %s from %s (id=%d) - 3-min revert armed",
-			m.userField, m.normalizedSource, m.assignedID)))
+		doneMsg := fmt.Sprintf("✓ rule added for %s from %s (id=%d)",
+			m.userField, m.normalizedSource, m.assignedID)
+		if m.autoRevert {
+			doneMsg += " - 3-min revert armed"
+		}
+		b.WriteString(styles.Success.Render(doneMsg))
 	case phaseError:
 		b.WriteString(styles.Critical.Render(m.errInline))
 		b.WriteString("\n\n")
@@ -716,3 +770,10 @@ func (m *Model) WarnInlineForTest() string { return m.warnInline }
 
 // AssignedIDForTest exposes the post-Apply assigned rule ID.
 func (m *Model) AssignedIDForTest() int { return m.assignedID }
+
+// AutoRevertForTest exposes the autoRevert flag for tests in external
+// packages. Returns m.autoRevert.
+func (m *Model) AutoRevertForTest() bool { return m.autoRevert }
+
+// CIDRInputValueForTest exposes the current CIDR textinput value.
+func (m *Model) CIDRInputValueForTest() string { return m.cidrInput.Value() }
