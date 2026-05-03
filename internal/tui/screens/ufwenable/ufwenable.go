@@ -149,7 +149,7 @@ func (m *Model) Init() tea.Cmd {
 			return preFlightDoneMsg{
 				sshAllowPresent: firewall.SSHAllowPresent(rules),
 				matchedAs:       firewall.SSHAllowMatchedAs(rules),
-				onSSHSession:    os.Getenv("SSH_CONNECTION") != "",
+				onSSHSession:    detectActiveSSHSession(ctx, ops),
 			}
 		},
 	)
@@ -271,6 +271,81 @@ func (m *Model) handleKey(v tea.KeyPressMsg) (nav.Screen, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// detectActiveSSHSession returns true when an SSH session is currently
+// connected to this host. The pre-flight uses this to warn the operator
+// before enabling ufw - if they are SSH'd in and there is no SSH allow
+// rule, enabling ufw would cut their session.
+//
+// Detection has two channels because $SSH_CONNECTION is unreliable under
+// sudo:
+//
+//   - Channel 1: $SSH_CONNECTION env var. Set by sshd when an
+//     interactive SSH session is established. Plain shell sees it; sudo
+//     STRIPS it by default for security; sudo -E preserves it.
+//
+//   - Channel 2 (fallback): parse `who` output. Lines have the format
+//     "user  tty  date time (source)". For SSH sessions the source is
+//     the client IP / hostname. For local console sessions the source
+//     is "(:0)" / "(login screen)" / empty / a tmux pane name. We treat
+//     any line whose source-in-parens is non-empty AND not a `:N`
+//     X-display AND not a "login " prefix as SSH.
+//
+// The fallback covers the common operator path (`sudo sftp-jailer`
+// from an SSH session - the dominant lab + production case). Operators
+// who launch via `sudo -E` get the env channel as well; both must
+// agree on "SSH active" but either positive triggers the warning.
+func detectActiveSSHSession(ctx context.Context, ops sysops.SystemOps) bool {
+	if os.Getenv("SSH_CONNECTION") != "" {
+		return true
+	}
+	// Fallback for sudo (which strips SSH_CONNECTION). `who` is in
+	// every Ubuntu base install via the coreutils package; if it is
+	// missing the Exec returns ENOENT and we conservatively report no
+	// SSH session.
+	res, err := ops.Exec(ctx, "who")
+	if err != nil || res.ExitCode != 0 {
+		return false
+	}
+	return whoOutputContainsSSHSession(string(res.Stdout))
+}
+
+// whoOutputContainsSSHSession is the pure parsing layer of the SSH
+// session detector. Exposed for unit testing without needing to mock
+// the os.Getenv channel or shell out to the real `who`.
+//
+// `who` line format on Ubuntu 24.04:
+//
+//	jnuyens  pts/2        May  3 14:44 (192.168.1.169)   <- SSH
+//	jnuyens  seat0        Apr 28 23:30 (login screen)    <- console login
+//	jnuyens  :0           Apr 28 23:30 (:0)              <- X11 display
+//	jnuyens  pts/1        Apr 28 23:31                    <- local tmux/screen
+//
+// Rule: any row whose source-in-parens is non-empty AND not an X-display
+// (`:N`) AND not a "login " prefix is treated as SSH.
+func whoOutputContainsSSHSession(out string) bool {
+	for _, line := range strings.Split(out, "\n") {
+		i := strings.LastIndex(line, "(")
+		if i < 0 {
+			continue
+		}
+		inside := strings.TrimSpace(strings.TrimSuffix(line[i+1:], ")"))
+		if inside == "" {
+			continue
+		}
+		if strings.HasPrefix(inside, ":") || strings.HasPrefix(inside, "login ") {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// WhoOutputContainsSSHSessionForTest exposes the unexported parser to
+// the external test package.
+func WhoOutputContainsSSHSessionForTest(out string) bool {
+	return whoOutputContainsSSHSession(out)
 }
 
 // applyCmd runs `ufw --force enable` DIRECTLY via sysops (D-08 / P3-A):

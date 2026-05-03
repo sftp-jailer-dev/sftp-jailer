@@ -73,6 +73,73 @@ func TestUfwEnable_preflight_hard_block_when_no_ssh_allow(t *testing.T) {
 
 // TestUfwEnable_yes_gate_rejects_lowercase_yes - "yes" (lowercase) is
 // rejected; phase stays phaseConfirm with inline error.
+// TestWhoOutputContainsSSHSessionForTest pins the SSH-detection
+// fallback parser used when sudo strips SSH_CONNECTION from the
+// environment. Real `who` output on Ubuntu 24.04 mixes SSH sessions
+// (IP/hostname in parens), local console logins (`(login screen)`
+// or `(:0)`), and tmux/screen sessions (no parens). The parser
+// must positive-match ONLY SSH rows.
+func TestWhoOutputContainsSSHSessionForTest(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{
+			name: "single SSH session (IPv4 source)",
+			out:  "jnuyens  pts/2        May  3 14:44 (192.168.1.169)\n",
+			want: true,
+		},
+		{
+			name: "single SSH session (hostname source)",
+			out:  "alice    pts/0        May  3 09:12 (workstation.lab.local)\n",
+			want: true,
+		},
+		{
+			name: "console login only",
+			out:  "jnuyens  seat0        Apr 28 23:30 (login screen)\n",
+			want: false,
+		},
+		{
+			name: "X11 display only",
+			out:  "jnuyens  :0           Apr 28 23:30 (:0)\n",
+			want: false,
+		},
+		{
+			name: "local pts with no parens (tmux / screen)",
+			out:  "jnuyens  pts/1        Apr 28 23:31\n",
+			want: false,
+		},
+		{
+			name: "mixed: console + X11 + SSH",
+			out: "jnuyens  seat0        Apr 28 23:30 (login screen)\n" +
+				"jnuyens  :0           Apr 28 23:30 (:0)\n" +
+				"jnuyens  pts/2        May  3 14:44 (192.168.1.169)\n",
+			want: true,
+		},
+		{
+			name: "mixed: console + X11 + local pts (no SSH)",
+			out: "jnuyens  seat0        Apr 28 23:30 (login screen)\n" +
+				"jnuyens  :0           Apr 28 23:30 (:0)\n" +
+				"jnuyens  pts/1        Apr 28 23:31\n",
+			want: false,
+		},
+		{
+			name: "empty output",
+			out:  "",
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := ufwenable.WhoOutputContainsSSHSessionForTest(tc.out)
+			require.Equal(t, tc.want, got, "case %q", tc.name)
+		})
+	}
+}
+
 func TestUfwEnable_yes_gate_rejects_lowercase_yes(t *testing.T) {
 	t.Parallel()
 
