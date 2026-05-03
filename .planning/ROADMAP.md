@@ -84,7 +84,7 @@ Full archive: [`milestones/v1.2-ROADMAP.md`](milestones/v1.2-ROADMAP.md). 12/12 
 
 **Requirements**: FW-10, LOG-07, LOG-08, LOG-09, LOG-10 (5 requirements)
 
-**Plans**: ~2-3 plans hint
+**Plans**: 3 plans
 
 **Success Criteria** (what must be TRUE):
   1. `internal/ufwcomment` decodes both `sftpj:v=1:user=<name>` (existing) and `sftpj:v=1:scope=subnet:reason=<rfc1918|rfc4193|link-local|operator>` (new) shapes; v1.2.x binaries continue to safely treat the new shape as foreign per the `ErrBadVersion` forward-compat contract pinned in `firewall/mode_test.go`.
@@ -94,7 +94,10 @@ Full archive: [`milestones/v1.2-ROADMAP.md`](milestones/v1.2-ROADMAP.md). 12/12 
 
 **UAT gate**: Empirical UAT REQUIRED for P2-B (real-DB query plan on lab observation DB) + P2-D (migration latency on lab host with 6 months of attack noise). Synthetic 100k-row benchmark in CI; lab-host measurement to confirm <100ms first-paint and acceptable migration UX (block-on-launch with progress label vs lazy-with-warning is a plan-check decision).
 
-**Plans**: TBD
+**Plans**:
+- [ ] 09-01-data-layer-PLAN.md - FW-10 ufwcomment discriminated union (Kind enum + KindUser/KindSubnet, ReasonRFC1918/RFC4193/LinkLocal/Operator constants, EncodeSubnet, ErrInvalidReason, RED-GREEN forward-compat regression); Wave 1 parallel-safe
+- [ ] 09-02-data-layer-PLAN.md - LOG-10 migration 004_add_dedup_index.sql (4-column covering index per RQ-9 option B; ANALYZE first occurrence) + ExpectedSchemaVersion bump 3->4 + WithProgress functional-option API for D-15 splash hook; Wave 1 parallel-safe
+- [ ] 09-03-data-layer-PLAN.md - LOG-07/LOG-08/LOG-09 Queries.DedupRows + Queries.EventsForPair + EXPLAIN QUERY PLAN regression (first occurrence; ADR-3) + 100k-row CI benchmark <50ms gate (D-19) + LogsDedupWindowDays config field (P-05 mirror of LockdownProposalWindowDays); Wave 2 (depends on 09-02 index)
 
 ---
 
@@ -224,7 +227,7 @@ Full archive: [`milestones/v1.2-ROADMAP.md`](milestones/v1.2-ROADMAP.md). 12/12 
 | v1.2 | 6. v1.1 Carry-over Closure - Firewall edge + TUI polish | 5/5 | ✅ Complete | 2026-05-01 |
 | v1.2 | 7. Retroactive Nyquist Validation Authoring | 4/4 | ✅ Complete | 2026-05-02 |
 | v1.3 | 8. Frame | 0/4 | Planned | - |
-| v1.3 | 9. Data Layer | 0/? | Not started | - |
+| v1.3 | 9. Data Layer | 0/3 | Planned | - |
 | v1.3 | 10. Migrate | 0/? | Not started | - |
 | v1.3 | 11. Subnet | 0/? | Not started | - |
 | v1.3 | 13. Console (flagship) | 0/? | Not started | - |
