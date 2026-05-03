@@ -84,6 +84,10 @@ type App struct {
 	// (see RevertCanceller doc).
 	watcher         *revert.Watcher
 	revertCanceller RevertCanceller
+	// modeDetector is the injected closure App calls on Init and after
+	// every revertConfirmedMsg success to refresh the modebar firewall
+	// state. nil = no-op (tests, pre-bootstrap).
+	modeDetector ModeDetector
 }
 
 // New constructs an App with the given initial screen stack. If
@@ -125,6 +129,36 @@ func (a *App) SetRevertCanceller(c RevertCanceller) {
 	a.revertCanceller = c
 }
 
+// ModeDetector returns the current firewall mode + rule + user counts
+// for the modebar. The closure shape decouples App from firewall +
+// sysops (similar to RevertCanceller). main.go wires a closure that
+// calls firewall.Enumerate + DetectMode + counts users.
+//
+// Without an injected detector, the modebar stays on its default
+// ModeUnknown value forever (a UAT regression on 2026-05-03 - the
+// SetMode method has existed since v1.0 but no production callsite
+// invoked it). The App calls the detector on Init (startup) and on
+// every revertConfirmedMsg success (post-mutation).
+type ModeDetector func() (mode firewall.Mode, ruleCount int, userCount int)
+
+// SetModeDetector injects the modebar refresh closure. Pass nil to
+// detach (tests, pre-bootstrap). Calling it after Init has no immediate
+// effect - the next refreshMode() call (Init + revertConfirmedMsg)
+// will pick up the new detector.
+func (a *App) SetModeDetector(d ModeDetector) {
+	a.modeDetector = d
+}
+
+// refreshMode invokes the injected ModeDetector and pushes the result
+// into the modebar. No-op when no detector is bound.
+func (a *App) refreshMode() {
+	if a.modeDetector == nil {
+		return
+	}
+	mode, ruleCount, userCount := a.modeDetector()
+	a.modebar = a.modebar.SetMode(mode, ruleCount, userCount)
+}
+
 // SetMode forwards to the modebar widget. Called by callers that mutate
 // firewall state (S-FIREWALL post-mutation, S-LOCKDOWN post-commit, app
 // bootstrap after the first firewall.Enumerate) to keep the global strip
@@ -147,6 +181,11 @@ func (a *App) ProjectURL() string { return a.projectURL }
 // updates during splash → home transitions.
 func (a *App) Init() tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(a.stack)+1)
+	// Refresh the firewall mode at startup so the modebar reflects the
+	// real state instead of the default ModeUnknown. UAT round 3 caught
+	// the prior behavior - modebar was stuck on UNKNOWN forever because
+	// no production callsite ever invoked SetMode.
+	a.refreshMode()
 	// Phase 4 plan 04-09 - start the periodic modebar re-render so the
 	// REVERTING countdown text updates every second.
 	cmds = append(cmds, widgets.TickCmd())
@@ -236,6 +275,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.err != nil {
 			return a, a.FlashToast(fmt.Sprintf("Revert cancel failed: %v", m.err))
 		}
+		// Refresh the firewall mode now that the SAFE-04 timer is gone -
+		// the just-applied mutation should be reflected in the modebar
+		// (e.g. lockdown commit + confirm should flip the modebar from
+		// REVERTING -> FIREWALL MODE: LOCKED, not back to the stale
+		// pre-mutation mode).
+		a.refreshMode()
 		return a, a.FlashToast("Apply confirmed - revert disarmed")
 
 	case nav.ReplaceMsg:

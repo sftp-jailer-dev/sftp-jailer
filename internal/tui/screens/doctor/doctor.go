@@ -134,13 +134,23 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
+		case "enter":
+			// Operator-stated (UAT round 4): the diagnostic dismiss is
+			// "Press return to continue" (Enter), which reads naturally
+			// in both gate mode and normal-back mode. Esc still works
+			// as a silent backup below.
+			if m.startupGate {
+				if m.report != nil && doctor.IsHealthy(*m.report) && m.homeBuilder != nil {
+					builder := m.homeBuilder
+					return m, func() tea.Msg { return nav.ReplaceMsg{Factory: builder} }
+				}
+				return m, tea.Quit
+			}
+			return m, nav.PopCmd()
 		case "esc", "q":
-			// Startup-gate mode (operator-stated: "only continue to
-			// home if everything is green"):
-			//   - Healthy report → [esc] advances to home (replace).
-			//   - Unhealthy or no report yet → [esc] quits the app
-			//     (no parent on the stack, and the gate must not let
-			//     unfixed FAILs through).
+			// Esc/q: silent back-channel (advance / quit / pop) - same
+			// behavior as Enter for parity with other screens. The
+			// footer hint surfaces Enter as the documented key.
 			if m.startupGate {
 				if m.report != nil && doctor.IsHealthy(*m.report) && m.homeBuilder != nil {
 					builder := m.homeBuilder
@@ -203,18 +213,20 @@ func (m *Model) View() string {
 	}
 	body := colorizeReport(doctor.RenderText(*m.report), activeMarker)
 
-	// Footer hint: ALWAYS show [esc] back so the operator knows how to
-	// leave the screen. When a dispatch is active (D-15 belt-and-suspenders),
-	// prepend the prescription text. The all-OK case still shows [esc] +
-	// [c] copy so the screen never appears as a dead-end.
+	// Footer hint: ALWAYS surface a continue affordance. Operator-stated
+	// (UAT round 4): "Press return to continue" reads naturally in both
+	// startup-gate mode (advance to home) and normal-back mode (return to
+	// previous screen). When a dispatch is active (D-15 belt-and-suspenders),
+	// prepend the prescription text. [esc] is kept as a silent fallback
+	// in the keymap but not shown in the footer.
 	var footerHint string
 	switch activeMarker {
 	case "[A] Apply SFTP jail configuration":
-		footerHint = "Press [a] to apply SFTP jail configuration  ([esc] back, [c] copy)"
+		footerHint = "Press [a] to apply SFTP jail configuration  ([return] continue, [c] copy)"
 	case "[A] Enable ufw":
-		footerHint = "Press [a] to enable ufw  ([esc] back, [c] copy report)"
+		footerHint = "Press [a] to enable ufw  ([return] continue, [c] copy report)"
 	default:
-		footerHint = "[esc] back  [c] copy report"
+		footerHint = "Press return to continue  ([c] copy report)"
 	}
 	body += "\n\n" + styles.Dim.Render(footerHint)
 

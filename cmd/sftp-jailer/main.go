@@ -458,6 +458,28 @@ func runTUI(cmd *cobra.Command, args []string) error {
 		})
 	})
 
+	// Modebar refresh closure (UAT round 3 fix): without this, the
+	// modebar is stuck on its default ModeUnknown forever because no
+	// production callsite ever invoked SetMode. The closure runs at
+	// App.Init (startup) and after every revertConfirmedMsg success
+	// (post-mutation), so the FIREWALL MODE strip reflects reality.
+	a.SetModeDetector(func() (firewall.Mode, int, int) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		rules, err := firewall.Enumerate(ctx, ops)
+		if err != nil {
+			return firewall.ModeUnknown, 0, 0
+		}
+		mode := firewall.DetectMode(rules, defaultSFTPPort)
+		userSet := map[string]struct{}{}
+		for _, r := range rules {
+			if r.User != "" {
+				userSet[r.User] = struct{}{}
+			}
+		}
+		return mode, len(rules), len(userSet)
+	})
+
 	// Exactly ONE program constructor per process (pitfall E1).
 	// Bubble Tea v2 notes:
 	//   - tea.WithAltScreen is not a ProgramOption in v2; alt-screen is set

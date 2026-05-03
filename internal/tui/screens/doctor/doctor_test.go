@@ -267,7 +267,7 @@ func TestDoctor_active_marker_set_for_ufwenable(t *testing.T) {
 	view := s.View()
 	require.Contains(t, view, "> ", "active > marker must be present")
 	require.Contains(t, view, "[A] Enable ufw")
-	require.Contains(t, view, "Press [a] to enable ufw  ([esc] back, [c] copy report)",
+	require.Contains(t, view, "Press [a] to enable ufw  ([return] continue, [c] copy report)",
 		"footer hint must reflect ufwenable dispatch target")
 }
 
@@ -428,11 +428,13 @@ func TestDoctor_DoctorRefreshMsg_resets_loading_and_returns_init_cmd(t *testing.
 		"DoctorRefreshMsg must return a non-nil tea.Cmd that re-runs the async diagnostic")
 }
 
-// TestDoctor_footer_always_shows_esc_back: the doctor screen must
-// ALWAYS surface [esc] back so the operator never sees a dead-end.
-// Regression guard for the all-OK case where the prior implementation
-// rendered no footer hint at all.
-func TestDoctor_footer_always_shows_esc_back(t *testing.T) {
+// TestDoctor_footer_always_shows_continue_affordance: the doctor
+// screen must ALWAYS surface a continue/dismiss affordance so the
+// operator never sees a dead-end. Operator-stated (UAT round 4):
+// the dismiss key is "Press return to continue" instead of
+// "[esc] back" - reads naturally in both startup-gate (advance to
+// home) and normal-back (return to previous screen) contexts.
+func TestDoctor_footer_always_shows_continue_affordance(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
@@ -450,10 +452,37 @@ func TestDoctor_footer_always_shows_esc_back(t *testing.T) {
 			s.LoadReportForTest(tc.rep())
 
 			view := s.View()
-			require.Contains(t, view, "[esc]",
-				"doctor footer must always include [esc] back for any report state")
+			require.Contains(t, view, "return",
+				"doctor footer must always include 'return' continue affordance")
 			require.Contains(t, view, "[c]",
 				"doctor footer must always include [c] copy report for any report state")
 		})
 	}
+}
+
+// TestDoctor_StartupGate_enter_advances_to_home_when_healthy: the
+// new primary dismiss key (operator-stated UAT round 4) - Enter on
+// a healthy startup gate emits ReplaceMsg with the homeBuilder.
+func TestDoctor_StartupGate_enter_advances_to_home_when_healthy(t *testing.T) {
+	t.Parallel()
+
+	homeBuilt := false
+	homeBuilder := func() nav.Screen {
+		homeBuilt = true
+		return &fakeNavScreen{title: "home"}
+	}
+	svc := doctor.New(sysops.NewFake())
+	gate := doctorscreen.NewStartupGate(svc, homeBuilder)
+	gate.LoadReportForTest(repNoGaps())
+
+	enterPress := tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})
+	_, cmd := gate.Update(enterPress)
+	require.NotNil(t, cmd, "[enter] on a healthy gate must return a non-nil cmd")
+
+	msg := cmd()
+	rm, ok := msg.(nav.ReplaceMsg)
+	require.True(t, ok, "expected nav.ReplaceMsg, got %T", msg)
+	require.NotNil(t, rm.Factory)
+	_ = rm.Factory()
+	require.True(t, homeBuilt, "homeBuilder factory must be invoked exactly once")
 }
