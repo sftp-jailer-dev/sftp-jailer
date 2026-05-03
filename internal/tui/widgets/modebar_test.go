@@ -21,9 +21,9 @@ func TestModeBar_renders_UNLOCKED_when_mode_is_ModeOpen(t *testing.T) {
 	t.Parallel()
 	b := NewModeBar(nil).SetMode(firewall.ModeOpen, 0, 0)
 	view := b.View()
-	require.Contains(t, view, "MODE: UNLOCKED")
+	require.Contains(t, view, "FIREWALL MODE: UNLOCKED")
 	require.Contains(t, view, "observing only")
-	require.NotContains(t, view, "MODE: LOCKED",
+	require.NotContains(t, view, "FIREWALL MODE: LOCKED",
 		"ModeOpen must NOT render the green MODE: LOCKED label")
 }
 
@@ -31,7 +31,7 @@ func TestModeBar_renders_UNLOCKED_for_STAGING_with_rule_count(t *testing.T) {
 	t.Parallel()
 	b := NewModeBar(nil).SetMode(firewall.ModeStaging, 5, 0)
 	view := b.View()
-	require.Contains(t, view, "MODE: UNLOCKED")
+	require.Contains(t, view, "FIREWALL MODE: UNLOCKED")
 	require.Contains(t, view, "5 rules staged")
 	require.Contains(t, view, "not enforced")
 }
@@ -40,7 +40,7 @@ func TestModeBar_renders_LOCKED_with_rule_and_user_count(t *testing.T) {
 	t.Parallel()
 	b := NewModeBar(nil).SetMode(firewall.ModeLocked, 12, 3)
 	view := b.View()
-	require.Contains(t, view, "MODE: LOCKED")
+	require.Contains(t, view, "FIREWALL MODE: LOCKED")
 	require.Contains(t, view, "12 allow rules")
 	require.Contains(t, view, "3 users")
 }
@@ -49,7 +49,7 @@ func TestModeBar_renders_UNLOCKED_for_default_unknown(t *testing.T) {
 	t.Parallel()
 	b := NewModeBar(nil).SetMode(firewall.ModeUnknown, 0, 0)
 	view := b.View()
-	require.Contains(t, view, "MODE: UNLOCKED")
+	require.Contains(t, view, "FIREWALL MODE: UNLOCKED")
 	require.Contains(t, view, "no SFTP allow rules yet")
 }
 
@@ -64,7 +64,7 @@ func TestModeBar_renders_REVERTING_when_armed_overrides_mode(t *testing.T) {
 		})
 	view := b.View()
 	require.Contains(t, view, "REVERTING IN")
-	require.NotContains(t, view, "MODE: UNLOCKED") // overridden
+	require.NotContains(t, view, "FIREWALL MODE: UNLOCKED") // overridden
 	// The remaining time should be approximately 2:53 (allow ±1s for test scheduling).
 	require.True(t,
 		strings.Contains(view, "2:53") ||
@@ -87,7 +87,7 @@ func TestModeBar_Update_routes_tick_msg_returns_same_value(t *testing.T) {
 	// Update is a no-op for tick (re-rendering happens via View); the
 	// returned value must still render the same MODE state.
 	view := got.View()
-	require.Contains(t, view, "MODE: UNLOCKED")
+	require.Contains(t, view, "FIREWALL MODE: UNLOCKED")
 	require.Contains(t, view, "7 rules staged")
 }
 

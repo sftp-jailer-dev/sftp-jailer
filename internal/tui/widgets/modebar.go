@@ -112,15 +112,15 @@ func (b ModeBar) View() string {
 	switch b.mode {
 	case firewall.ModeLocked:
 		return styles.Success.Render(fmt.Sprintf(
-			"MODE: LOCKED - %d allow rules, %d users",
+			"FIREWALL MODE: LOCKED - %d allow rules, %d users",
 			b.ruleCount, b.userCount))
 	case firewall.ModeOpen:
-		return styles.Critical.Render("MODE: UNLOCKED - observing only (no enforcement)")
+		return styles.Critical.Render("FIREWALL MODE: UNLOCKED - observing only (no enforcement)")
 	case firewall.ModeStaging:
 		return styles.Critical.Render(fmt.Sprintf(
-			"MODE: UNLOCKED - %d rules staged, not enforced", b.ruleCount))
+			"FIREWALL MODE: UNLOCKED - %d rules staged, not enforced", b.ruleCount))
 	default:
-		return styles.Critical.Render("MODE: UNLOCKED - no SFTP allow rules yet")
+		return styles.Critical.Render("FIREWALL MODE: UNLOCKED - no SFTP allow rules yet")
 	}
 }
 

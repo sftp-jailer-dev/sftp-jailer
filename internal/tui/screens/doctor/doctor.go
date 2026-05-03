@@ -123,24 +123,29 @@ func (m *Model) Update(msg tea.Msg) (nav.Screen, tea.Cmd) {
 		}
 		r := msg.report
 		m.report = &r
-		// Startup gate: if the system is already healthy, auto-advance
-		// to home so the gate is invisible to operators with a working
-		// configuration. Non-healthy keeps the gate visible until the
-		// operator fixes the FAILs (each [a] dispatch + post-pop
-		// DoctorRefreshMsg re-runs this branch).
-		if m.startupGate && m.homeBuilder != nil && doctor.IsHealthy(r) {
-			builder := m.homeBuilder
-			return m, func() tea.Msg { return nav.ReplaceMsg{Factory: builder} }
-		}
+		// Startup gate: ALWAYS render the report after splash so the
+		// operator sees the diagnostic state at every launch (operator-
+		// stated requirement, refined 2026-05-03 lab UAT round 3).
+		// Auto-advance was prior behavior - operator wanted to land on
+		// doctor regardless of health to confirm the system is green.
+		// [esc] in startup-gate mode advances to home only when healthy
+		// (the "only continue to home if green" half of the rule).
 		return m, nil
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "esc", "q":
-			// Startup-gate mode has no parent screen on the stack -
-			// popping would crash. Quit the app instead, matching the
-			// operator-stated rule: "only continue to home if green."
+			// Startup-gate mode (operator-stated: "only continue to
+			// home if everything is green"):
+			//   - Healthy report → [esc] advances to home (replace).
+			//   - Unhealthy or no report yet → [esc] quits the app
+			//     (no parent on the stack, and the gate must not let
+			//     unfixed FAILs through).
 			if m.startupGate {
+				if m.report != nil && doctor.IsHealthy(*m.report) && m.homeBuilder != nil {
+					builder := m.homeBuilder
+					return m, func() tea.Msg { return nav.ReplaceMsg{Factory: builder} }
+				}
 				return m, tea.Quit
 			}
 			return m, nav.PopCmd()

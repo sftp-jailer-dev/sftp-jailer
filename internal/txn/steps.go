@@ -1173,16 +1173,14 @@ func (s *cancelRevertStep) Apply(ctx context.Context, ops sysops.SystemOps) erro
 	// scheduleRevertStep.Apply (fmt.Sprintf("sftpj-revert-%d.service", ...)).
 	timerName := strings.TrimSuffix(s.unitName, ".service") + ".timer"
 	if err := ops.SystemctlStop(ctx, timerName); err != nil {
-		msg := err.Error()
-		if !strings.Contains(msg, "not loaded") && !strings.Contains(msg, "not found") {
+		if !isIdempotentSystemctlStopError(err) {
 			return fmt.Errorf("CancelRevert stop timer: %w", err)
 		}
-		// "not loaded" / "not found" → idempotent success; fall through
-		// to .service stop (the .service may still be running).
+		// "no such unit" variant (incl. exit 5) → idempotent success;
+		// fall through to .service stop (the .service may still be running).
 	}
 	if err := ops.SystemctlStop(ctx, s.unitName); err != nil {
-		msg := err.Error()
-		if !strings.Contains(msg, "not loaded") && !strings.Contains(msg, "not found") {
+		if !isIdempotentSystemctlStopError(err) {
 			return fmt.Errorf("CancelRevert stop service: %w", err)
 		}
 		// fall through to watcher.Clear
@@ -1199,4 +1197,40 @@ func (s *cancelRevertStep) Compensate(_ context.Context, _ sysops.SystemOps) err
 	// design. Once SystemctlStop succeeds, the SAFE-04 transient unit is
 	// gone - the FW rules just applied are permanent.
 	return nil
+}
+
+// isIdempotentSystemctlStopError returns true when a SystemctlStop error
+// reports that the target unit was already absent. This is the expected
+// state when:
+//   - The SAFE-04 timer fired before the operator pressed [C] (transient
+//     unit self-cleaned after firing).
+//   - The operator pressed [C] twice in quick succession (second call
+//     finds nothing to stop).
+//
+// Detection covers two channels:
+//   - **Exit code 5**: systemd's documented exit code for "unit not
+//     found / not loaded." sysops.SystemctlStop wraps this as
+//     "...: exit 5: ...", so the substring "exit 5:" is the structural
+//     signal independent of locale or systemd version.
+//   - **English-language stderr**: "not loaded" / "not found" /
+//     "could not be found". Kept as a belt-and-suspenders fallback for
+//     systemd builds that map exit code differently.
+//
+// A live UAT regression on Ubuntu 24.04 + systemd 255 surfaced this -
+// the prior implementation only checked the English strings; if the
+// stderr was truncated in the toast or the error wrap reordered the
+// message, the substring miss bubbled up as "Revert cancel failed"
+// even though the timer was already gone.
+func isIdempotentSystemctlStopError(err error) bool {
+	if err == nil {
+		return true
+	}
+	msg := err.Error()
+	// Match systemd's actual stop-failure phrasing for "no such unit"
+	// (NOT generic "not found" - that would false-positive on exec errors
+	// like `exec: "systemctl": executable file not found in $PATH` which
+	// is a real failure caller must surface).
+	return strings.Contains(msg, "exit 5:") ||
+		strings.Contains(msg, "not loaded") ||
+		strings.Contains(msg, "could not be found")
 }

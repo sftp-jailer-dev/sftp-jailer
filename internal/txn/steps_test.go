@@ -1199,6 +1199,46 @@ func TestNewCancelRevertStep_apply_stops_timer_BEFORE_service(t *testing.T) {
 			"stopping .timer first prevents the timer re-arming the service between stops)")
 }
 
+// TestIsIdempotentSystemctlStopError pins the widened error-classification
+// the cancelRevertStep relies on. Live UAT regression on Ubuntu 24.04 +
+// systemd 255 surfaced that the prior implementation matched ONLY English
+// stderr substrings ("not loaded" / "not found"). When the toast cropped
+// the error or systemd's stderr wording differed, the substring miss
+// bubbled "Revert cancel failed" up to the operator even though the
+// timer was already gone.
+//
+// The widened classifier ALSO matches the structural "exit 5:" signal
+// since systemd reliably uses exit 5 for "no such unit" regardless of
+// locale or version.
+func TestIsIdempotentSystemctlStopError(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name        string
+		err         error
+		idempotent  bool
+		whyMatched  string
+	}{
+		{"nil", nil, true, "no error == nothing to undo"},
+		{"not loaded suffix", fmt.Errorf("sysops.SystemctlStop foo.timer: exit 5: Failed to stop foo.timer: Unit foo.timer not loaded."), true, "not loaded substring"},
+		{"could not be found suffix", fmt.Errorf("Unit foo.timer could not be found"), true, "could not be found substring (systemd alt)"},
+		{"could not be found phrase", fmt.Errorf("Unit foo.timer could not be found."), true, "could not be found substring"},
+		{"exit 5 with cropped stderr", fmt.Errorf("sysops.SystemctlStop foo.timer: exit 5:"), true, "exit 5 structural signal"},
+		{"exit 5 with non-English stderr", fmt.Errorf("sysops.SystemctlStop foo.timer: exit 5: Échec de l'arrêt"), true, "exit 5 still matches even with localized stderr"},
+		{"interactive auth required (real failure)", fmt.Errorf("sysops.SystemctlStop foo.timer: exit 1: Interactive authentication required."), false, "exit 1 + auth message is a real failure"},
+		{"exec failure", fmt.Errorf("sysops.SystemctlStop foo.timer: exec: \"systemctl\": executable file not found in $PATH"), false, "exec failure is a real failure"},
+		{"exit 4 (no such file)", fmt.Errorf("sysops.SystemctlStop foo.timer: exit 4: No such file or directory"), false, "exit 4 is not the documented 'unit not found' code"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.idempotent, isIdempotentSystemctlStopError(tc.err),
+				"%s: %s", tc.name, tc.whyMatched)
+		})
+	}
+}
+
 func TestNewCancelRevertStep_compensate_is_intentional_noop(t *testing.T) {
 	t.Parallel()
 	f := sysops.NewFake()

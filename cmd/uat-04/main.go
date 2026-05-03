@@ -347,7 +347,7 @@ func phase3LockCommit(ctx context.Context, ops sysops.SystemOps, watcher *revert
 	if mode != firewall.ModeOpen {
 		return fmt.Errorf("expected starting MODE=Open, got %s - phase 3 needs catch-all baseline", mode)
 	}
-	fmt.Println("  starting state: firewall.ModeOpen (modebar renders as MODE: UNLOCKED - observing only)")
+	fmt.Println("  starting state: firewall.ModeOpen (modebar renders as FIREWALL MODE: UNLOCKED - observing only)")
 
 	// Find catch-all rule ID by signature match (Source="Anywhere", ALLOW,
 	// no sftpj comment).
