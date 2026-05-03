@@ -233,4 +233,42 @@ Full archive: [`milestones/v1.2-ROADMAP.md`](milestones/v1.2-ROADMAP.md). 12/12 
 
 ---
 
+## Backlog
+
+### Phase 999.1: Unified home with users + firewall integration + always-visible LOCKED/UNLOCKED indicator (BACKLOG)
+
+**Goal:** [Captured for future planning - candidate v1.4 flagship]
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+**Captured 2026-05-03 from Phase 8 lab UAT.** Operator articulated this redesign while validating the v1.3 ufwenable modal: the 3-way separation between home / users / firewall feels scattered when every firewall rule is conceptually owned by a user (per the ufwcomment grammar `sftpj:v=1:user=<u>`).
+
+**Operator-stated direction:**
+- Home screen IS the users screen (users list with per-user rule rows embedded)
+- Firewall LOCKED / UNLOCKED indicator always visible at the top of home in green / red
+- Firewall rules are integrated into the user view, not a separate top-level
+
+**Affected surfaces (initial scan):**
+- `internal/tui/screens/home/home.go` (becomes user-list-rooted)
+- `internal/tui/screens/users/users.go` (likely merges into home)
+- `internal/tui/screens/firewall/firewall.go` (likely deprecates as a separate top-level)
+- `internal/tui/widgets/modebar.go` (LOCKED/UNLOCKED becomes prominent header, not subtle banner)
+- KeyMap rebinds (`f` may free up; `u` may become no-op since users IS home)
+- Help overlay structure
+- Any screen that depends on the current 3-way separation
+
+**Open questions for the v1.4 discuss-phase:**
+- Does the doctor screen stay as a separate `d` jump, or fold into home as a status strip?
+- Does the lockdown screen stay separate or merge?
+- How do per-user rule rows render when users have many rules (truncation / drill-down)?
+- How does the always-visible LOCKED/UNLOCKED interact with REVERTING (SAFE-04 banner)? Precedence?
+- Adjacent: doctor screen needs auto-run on app startup (separate but related UX request from same UAT session).
+
+**Suggested milestone:** v1.4 (after v1.3 Phase 8-14 ships). Plan via `/gsd:new-milestone v1.4` with this backlog item as the seed PROJECT.md update.
+
+---
+
 *Roadmap created: 2026-04-24. Last reorganized: 2026-05-03 - v1.3 First-Run + Daily-Driver UX scoped (38 requirements across 7 phases; phase numbers 8-14 continue from v1.2's Phase 7; build order is 8 -> 9 -> 10 -> 11 -> 13 -> 12 -> 14 with Phase 12 landing AFTER Phase 13 because the console is the post-green-gate routing target).*
