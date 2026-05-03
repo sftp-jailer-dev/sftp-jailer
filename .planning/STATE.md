@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: - First-Run + Daily-Driver UX
-status: verifying
+status: ready_to_plan
 last_updated: "2026-05-03T12:27:47.554Z"
 last_activity: 2026-05-03
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
   completed_plans: 3
-  percent: 75
+  percent: 14
 ---
 
 # STATE: sftp-jailer
@@ -27,9 +27,9 @@ See `.planning/PROJECT.md` (updated 2026-05-03 - v1.3 Current Milestone block + 
 
 ## Current Position
 
-Phase: 08 (frame) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
+Phase: 999.1
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-05-03
 
 ## Accumulated Context

@@ -69,10 +69,10 @@ Full archive: [`milestones/v1.2-ROADMAP.md`](milestones/v1.2-ROADMAP.md). 12/12 
 **UAT gate**: Empirical UAT REQUIRED on lab hosts ubuntu-wifi (192.168.1.187) + debian13 (192.168.1.170). P3-A and P3-B (SAFE-04 boundary; remote-SSH session-cut semantics) cannot be caught by CI - operator must run `[A] Enable ufw` from a real SSH session and confirm pre-flight blocks correctly. Architectural Key Decision logged in PROJECT.md: "SAFE-04 boundary - non-self-revertable mutations use confirm-only."
 
 **Plans**:
-- [ ] 08-01-PLAN.md — SETUP-08 (B4 deletion) + TUI-12 (doctor copy update); Wave 1 parallel-safe
-- [ ] 08-02-PLAN.md — SETUP-07 (ChrootDir confirm-or-edit in apply flow); Wave 1 parallel-safe
-- [ ] 08-03-PLAN.md — FW-11 foundations: sysops EnableUFW + ShowUFWAdded, firewall pending parser + SSHAllowPresent, doctor.NeedsUfwEnable, addrule AutoRevert flag; Wave 1 parallel-safe
-- [ ] 08-04-PLAN.md — FW-11 composition: ufwenable modal + doctor [a] precedence dispatch + > marker + footer hint + lab-host UAT; Wave 2 (depends on 08-01 + 08-03)
+- [x] 08-01-PLAN.md — SETUP-08 (B4 deletion) + TUI-12 (doctor copy update); Wave 1 parallel-safe
+- [x] 08-02-PLAN.md — SETUP-07 (ChrootDir confirm-or-edit in apply flow); Wave 1 parallel-safe
+- [x] 08-03-PLAN.md — FW-11 foundations: sysops EnableUFW + ShowUFWAdded, firewall pending parser + SSHAllowPresent, doctor.NeedsUfwEnable, addrule AutoRevert flag; Wave 1 parallel-safe
+- [x] 08-04-PLAN.md — FW-11 composition: ufwenable modal + doctor [a] precedence dispatch + > marker + footer hint + lab-host UAT; Wave 2 (depends on 08-01 + 08-03)
 
 ---
 
