@@ -246,10 +246,12 @@ Plans:
 
 **Captured 2026-05-03 from Phase 8 lab UAT.** Operator articulated this redesign while validating the v1.3 ufwenable modal: the 3-way separation between home / users / firewall feels scattered when every firewall rule is conceptually owned by a user (per the ufwcomment grammar `sftpj:v=1:user=<u>`).
 
-**Operator-stated direction:**
+**Operator-stated direction (refined 2026-05-03 UAT round 2):**
 - Home screen IS the users screen (users list with per-user rule rows embedded)
-- Firewall LOCKED / UNLOCKED indicator always visible at the top of home in green / red
 - Firewall rules are integrated into the user view, not a separate top-level
+- Firewall mode renders as **"FIREWALL MODE"** (not "MODE:") and lives in the **right-hand side** of the chrome as a **visual switch widget** (orange = not locked, green = LOCKED)
+- The state color wraps the entire UI frame: top line + left border + right border all painted in the current state color (orange = unlocked, green = LOCKED). A glance at any pixel of the chrome tells the operator whether the system is protected.
+- The command bar (currently a per-screen footer hint) moves to **the bottom two lines of the terminal** with **light background colors borrowed from the splash screen palette**. This is a global element, not per-screen.
 
 **Affected surfaces (initial scan):**
 - `internal/tui/screens/home/home.go` (becomes user-list-rooted)
@@ -268,6 +270,39 @@ Plans:
 - Adjacent: doctor screen needs auto-run on app startup (separate but related UX request from same UAT session).
 
 **Suggested milestone:** v1.4 (after v1.3 Phase 8-14 ships). Plan via `/gsd:new-milestone v1.4` with this backlog item as the seed PROJECT.md update.
+
+---
+
+### Phase 999.2: Settings allow changing chroot jail directory post-setup (BACKLOG)
+
+**Goal:** [Captured for future planning]
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+**Captured 2026-05-03 from Phase 8 lab UAT.**
+
+The chroot directory is currently locked in once at apply-setup time (the SETUP-07 bordered box added in Phase 8 / 08-02 lets the operator confirm or edit it before the first apply, but afterwards there is no UI path to change it). The settings screen stores `chrootRoot` only to pass it through to the `pwauthdisable` modal for path validation - it does NOT expose an "edit chroot" affordance.
+
+**Operator-stated direction:** The settings screen should let the operator change the chroot jail directory post-initial-setup.
+
+**Open questions for the discuss-phase:**
+- What happens to existing per-user home directories under the old chroot? Move (rsync), symlink, or require manual relocation?
+- Does this trigger a re-run of M-APPLY-SETUP (rewrite `sshd_config.d/50-sftp-jailer.conf` with the new `ChrootDirectory` path) and `sshd -t` validation?
+- Does it lock-out current SSH sessions while the move runs? Does it use SAFE-04?
+- Overlap with Phase 10 (Migrate) which already handles user-home relocation in 3 modes (LINK / REUSE_IN_PLACE / MOVE-with-rsync) - does this become a settings entry-point that pushes the migrate flow?
+- Permission semantics: is the new chroot path validated for `root:root + 0755 all the way down` like the existing chain check?
+
+**Affected surfaces (initial scan):**
+- `internal/tui/screens/settings/settings.go` - new dispatch row + handler
+- New mutation modal (or reuse the M-APPLY-SETUP entry point with a different prefilled root)
+- `internal/sshdcfg/` - rewrite drop-in with new path
+- `internal/chrootcheck/` - validate new path before write
+- Possibly Phase 10's migrate flow - relocate user homes
+
+**Suggested milestone:** v1.4 or v1.5 depending on whether it lands as a standalone phase or folds into the v1.4 unified-home redesign.
 
 ---
 
