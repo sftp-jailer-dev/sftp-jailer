@@ -1,6 +1,7 @@
 package doctorscreen_test
 
 import (
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -11,6 +12,7 @@ import (
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/sysops"
 	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/nav"
 	doctorscreen "github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/doctor"
+	"github.com/sftp-jailer-dev/sftp-jailer/internal/tui/screens/ufwenable"
 )
 
 func keyPress(s string) tea.KeyPressMsg {
@@ -156,4 +158,164 @@ func TestDoctorScreen_a_action_noop_when_canonical_already_applied(t *testing.T)
 	})
 	_, cmd := s.Update(keyPress("a"))
 	require.Nil(t, cmd, "Apply on a clean report must NOT push a modal")
+}
+
+// ---- Phase 8 plan 08-04: precedence dispatch + > marker + footer hint --------
+
+// repCanonicalOnly: NeedsCanonicalApply=true, NeedsUfwEnable=false.
+func repCanonicalOnly() model.DoctorReport {
+	return model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: false},
+		Ufw:         model.UfwReport{Available: true, Inactive: false}, // ufw active
+	}
+}
+
+// repUfwEnableOnly: NeedsCanonicalApply=false, NeedsUfwEnable=true.
+func repUfwEnableOnly() model.DoctorReport {
+	return model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: true},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+			},
+		},
+		Subsystem: model.SubsystemReport{IsInternal: true},
+		Ufw:       model.UfwReport{Available: true, Inactive: true}, // ufw inactive
+	}
+}
+
+// repBothGaps: NeedsCanonicalApply=true AND NeedsUfwEnable=true.
+func repBothGaps() model.DoctorReport {
+	return model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: false}, // canonical gap
+		Ufw:         model.UfwReport{Available: true, Inactive: true},   // ufw gap
+	}
+}
+
+// repNoGaps: both predicates false.
+func repNoGaps() model.DoctorReport {
+	return model.DoctorReport{
+		SshdDropIns: model.SshdDropInReport{ContainsChrootMatch: true},
+		ChrootChain: model.ChrootChainReport{
+			Root: "/srv/sftp-jailer",
+			Links: []model.ChrootChainLink{
+				{Path: "/", RootOwned: true, NoGroupWrite: true, NoOtherWrite: true, Mode: 0o755},
+			},
+		},
+		Subsystem: model.SubsystemReport{IsInternal: true},
+		Ufw:       model.UfwReport{Available: true, Inactive: false}, // ufw active
+	}
+}
+
+// TestDoctor_apply_precedence_canonical_first asserts D-14: when BOTH
+// gaps are present, [a] fires canonical-apply first (highest precedence).
+func TestDoctor_apply_precedence_canonical_first(t *testing.T) {
+	t.Parallel()
+
+	svc := doctor.New(sysops.NewFake())
+	s := doctorscreen.New(svc)
+	s.LoadReportForTest(repBothGaps())
+
+	_, cmd := s.Update(keyPress("a"))
+	require.NotNil(t, cmd, "[a] on both-gaps report must emit a tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.NotNil(t, nm.Screen)
+	require.Equal(t, "apply SFTP jail configuration", nm.Screen.Title(),
+		"D-14: canonical-apply must fire first, not ufwenable")
+}
+
+// TestDoctor_apply_precedence_ufwenable_when_canonical_resolved fires
+// ufwenable when canonical-apply is resolved (NeedsCanonicalApply=false).
+func TestDoctor_apply_precedence_ufwenable_when_canonical_resolved(t *testing.T) {
+	t.Parallel()
+
+	svc := doctor.New(sysops.NewFake())
+	s := doctorscreen.New(svc)
+	s.LoadReportForTest(repUfwEnableOnly())
+
+	_, cmd := s.Update(keyPress("a"))
+	require.NotNil(t, cmd, "[a] on ufw-only-gap report must emit a tea.Cmd")
+	msg := cmd()
+	nm, ok := msg.(nav.Msg)
+	require.True(t, ok, "expected nav.Msg, got %T", msg)
+	require.Equal(t, nav.Push, nm.Intent)
+	require.NotNil(t, nm.Screen)
+	_, isUfwEnable := nm.Screen.(*ufwenable.Model)
+	require.True(t, isUfwEnable,
+		"D-14: when canonical resolved, [a] must push *ufwenable.Model, got %T", nm.Screen)
+}
+
+// TestDoctor_apply_no_op_when_no_gap asserts that pressing [a] when
+// neither predicate fires does nothing.
+func TestDoctor_apply_no_op_when_no_gap(t *testing.T) {
+	t.Parallel()
+
+	svc := doctor.New(sysops.NewFake())
+	s := doctorscreen.New(svc)
+	s.LoadReportForTest(repNoGaps())
+
+	_, cmd := s.Update(keyPress("a"))
+	require.Nil(t, cmd, "[a] on fully-clean report must be a no-op")
+}
+
+// TestDoctor_active_marker_set_for_ufwenable: when ufwenable is the
+// active dispatch target, View contains "> " + "[A] Enable ufw" and
+// the footer hint. D-15 belt-and-suspenders.
+func TestDoctor_active_marker_set_for_ufwenable(t *testing.T) {
+	t.Parallel()
+
+	svc := doctor.New(sysops.NewFake())
+	s := doctorscreen.New(svc)
+	s.LoadReportForTest(repUfwEnableOnly())
+
+	view := s.View()
+	require.Contains(t, view, "> ", "active > marker must be present")
+	require.Contains(t, view, "[A] Enable ufw")
+	require.Contains(t, view, "Press [a] to enable ufw  ([esc] back, [c] copy report)",
+		"footer hint must reflect ufwenable dispatch target")
+}
+
+// TestDoctor_active_marker_for_canonical_when_both_gaps: when BOTH
+// gaps are present, the > marker anchors on the canonical-apply row
+// (D-14 precedence), not on [A] Enable ufw.
+func TestDoctor_active_marker_for_canonical_when_both_gaps(t *testing.T) {
+	t.Parallel()
+
+	svc := doctor.New(sysops.NewFake())
+	s := doctorscreen.New(svc)
+	s.LoadReportForTest(repBothGaps())
+
+	view := s.View()
+	idxApply := strings.Index(view, "[A] Apply SFTP jail configuration")
+	idxUfw := strings.Index(view, "[A] Enable ufw")
+	idxMarker := strings.Index(view, "> ")
+
+	require.GreaterOrEqual(t, idxMarker, 0, "active > marker must be present")
+	require.GreaterOrEqual(t, idxApply, 0, "[A] Apply line must be in view")
+
+	// The > marker appears near/before the [A] Apply line.
+	// It must appear before (or at) [A] Enable ufw (if that line exists).
+	require.Less(t, idxMarker, idxApply+50,
+		"marker must be near the [A] Apply canonical-apply row, not the ufw row")
+	if idxUfw >= 0 {
+		require.Less(t, idxApply, idxUfw,
+			"[A] Apply must appear before [A] Enable ufw in the rendered output")
+	}
+}
+
+// TestDoctor_no_marker_when_no_active_gap: when neither predicate fires,
+// no > marker is rendered.
+func TestDoctor_no_marker_when_no_active_gap(t *testing.T) {
+	t.Parallel()
+
+	svc := doctor.New(sysops.NewFake())
+	s := doctorscreen.New(svc)
+	s.LoadReportForTest(repNoGaps())
+
+	view := s.View()
+	require.NotContains(t, view, "> [A]", "no active > marker should be rendered when no gap")
 }
