@@ -35,7 +35,11 @@ import (
 )
 
 // autoPopDelay is how long phaseDone lingers before the modal pops.
-const autoPopDelay = 500 * time.Millisecond
+//
+// Previously 500ms - too quick for the operator to register the green
+// success line. Bumped to 1500ms so '✓ ufw enabled - rule enforcement
+// active.' is clearly visible before returning to the doctor screen.
+const autoPopDelay = 1500 * time.Millisecond
 
 // phase tracks the M-UFW-ENABLE state-machine position.
 type phase int

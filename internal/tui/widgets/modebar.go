@@ -114,7 +114,7 @@ func (b ModeBar) View() string {
 			"MODE: LOCKED - %d allow rules, %d users",
 			b.ruleCount, b.userCount))
 	default:
-		return styles.Dim.Render("MODE: UNKNOWN - no SFTP-port rules")
+		return styles.Dim.Render("MODE: UNKNOWN - no SFTP allow rules yet")
 	}
 }
 
