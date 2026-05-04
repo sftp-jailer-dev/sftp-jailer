@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"sort"
@@ -114,7 +115,10 @@ func (s *Store) Migrate(ctx context.Context, opts ...MigrateOption) error {
 		// Defensive: if the embedded directory is somehow absent (shouldn't
 		// happen given the //go:embed directive), treat as no-op rather
 		// than forcing a release blocker on empty-migrations day 1.
-		if strings.Contains(err.Error(), "no such file") || strings.Contains(err.Error(), "file does not exist") {
+		// Use errors.Is(err, fs.ErrNotExist) instead of string-matching the
+		// error message: the wording is not part of the stdlib API contract
+		// and may shift between Go versions, but fs.ErrNotExist is.
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return fmt.Errorf("store.Migrate: read embedded dir: %w", err)
