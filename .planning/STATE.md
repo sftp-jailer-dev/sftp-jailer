@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: - First-Run + Daily-Driver UX
-status: planning
-last_updated: "2026-05-04T01:45:00.000Z"
-last_activity: 2026-05-04
+status: executing
+last_updated: "2026-05-04T00:25:00.000Z"
+last_activity: 2026-05-04 -- Phase 09 Wave 1 complete (09-01, 09-02)
 progress:
   total_phases: 9
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_plans: 7
+  completed_plans: 6
+  percent: 86
 ---
 
 # STATE: sftp-jailer
 
-**Updated:** 2026-05-04 - Phase 9 (Data Layer) planned via `/gsd:plan-phase 9`; 3 plans, 13 tasks total, 2 waves. Ready to execute via `/gsd:execute-phase 9`.
+**Updated:** 2026-05-04 - Phase 09 Wave 1 complete: 09-01 (FW-10 ufwcomment v=1 discriminated union) and 09-02 (LOG-10 migration 004 + WithProgress hook) both merged green. Wave 2 (09-03 dedup queries) ready.
 
 ## Project Reference
 
@@ -23,14 +23,14 @@ See `.planning/PROJECT.md` (updated 2026-05-03 - v1.3 Current Milestone block + 
 
 **What this is:** Interactive TUI for Linux sysadmins managing a chrooted SFTP server on Ubuntu 24.04 - one supervised flow from "fresh box" to "per-user IP-locked-down SFTP" with observation-driven intel.
 **Core value:** One TUI takes a fresh Ubuntu 24.04 box from "no SFTP" to "hardened chrooted SFTP with per-user IP lockdown" - safely, interactively, with observable traffic intel driving every decision.
-**Current focus:** Phase 09 - data-layer (planned, ready to execute)
+**Current focus:** Phase 09 - data-layer
 
 ## Current Position
 
-Phase: 09
-Plan: 09-01 (Wave 1, parallel with 09-02)
-Status: Planned (3 plans, 13 tasks; ready to execute)
-Last activity: 2026-05-04
+Phase: 09 (data-layer) - EXECUTING
+Plan: Wave 1 complete (2/3); Wave 2 ready (09-03)
+Status: Executing Phase 09
+Last activity: 2026-05-04 -- Phase 09 Wave 1 merged green
 
 ## Accumulated Context
 

@@ -95,8 +95,8 @@ Full archive: [`milestones/v1.2-ROADMAP.md`](milestones/v1.2-ROADMAP.md). 12/12 
 **UAT gate**: Empirical UAT REQUIRED for P2-B (real-DB query plan on lab observation DB) + P2-D (migration latency on lab host with 6 months of attack noise). Synthetic 100k-row benchmark in CI; lab-host measurement to confirm <100ms first-paint and acceptable migration UX (block-on-launch with progress label vs lazy-with-warning is a plan-check decision).
 
 **Plans**:
-- [ ] 09-01-data-layer-PLAN.md - FW-10 ufwcomment discriminated union (Kind enum + KindUser/KindSubnet, ReasonRFC1918/RFC4193/LinkLocal/Operator constants, EncodeSubnet, ErrInvalidReason, RED-GREEN forward-compat regression); Wave 1 parallel-safe
-- [ ] 09-02-data-layer-PLAN.md - LOG-10 migration 004_add_dedup_index.sql (4-column covering index per RQ-9 option B; ANALYZE first occurrence) + ExpectedSchemaVersion bump 3->4 + WithProgress functional-option API for D-15 splash hook; Wave 1 parallel-safe
+- [x] 09-01-data-layer-PLAN.md - FW-10 ufwcomment discriminated union (Kind enum + KindUser/KindSubnet, ReasonRFC1918/RFC4193/LinkLocal/Operator constants, EncodeSubnet, ErrInvalidReason, RED-GREEN forward-compat regression); Wave 1 parallel-safe
+- [x] 09-02-data-layer-PLAN.md - LOG-10 migration 004_add_dedup_index.sql (4-column covering index per RQ-9 option B; ANALYZE first occurrence) + ExpectedSchemaVersion bump 3->4 + WithProgress functional-option API for D-15 splash hook; Wave 1 parallel-safe
 - [ ] 09-03-data-layer-PLAN.md - LOG-07/LOG-08/LOG-09 Queries.DedupRows + Queries.EventsForPair + EXPLAIN QUERY PLAN regression (first occurrence; ADR-3) + 100k-row CI benchmark <50ms gate (D-19) + LogsDedupWindowDays config field (P-05 mirror of LockdownProposalWindowDays); Wave 2 (depends on 09-02 index)
 
 ---
