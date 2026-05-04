@@ -35,6 +35,7 @@ var migrationsFS embed.FS
 //	migrations/001_init.sql                 → user_version = 1
 //	migrations/002_add_observations.sql     → user_version = 2
 //	migrations/003_user_ips.sql             → user_version = 3
+//	migrations/004_add_dedup_index.sql      → user_version = 4
 //
 // Each migration runs inside its own transaction; the PRAGMA user_version
 // update is in the same tx. If the DDL fails, the transaction rolls back

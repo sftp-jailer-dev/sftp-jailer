@@ -62,11 +62,11 @@ func TestReader_pool_sized(t *testing.T) {
 }
 
 // TestMigrate_advances_to_expected_version replaces the Phase-1
-// "empty migrations" no-op test. With Phase 2's 001+002 migrations
-// and Phase 4 plan 04-03's 003_user_ips.sql landed, a fresh DB MUST
-// advance to ExpectedSchemaVersion (currently 3) on Migrate. The
-// detailed table+index assertions live in
-// TestMigrate_applies_001_init_and_002_indexes.
+// "empty migrations" no-op test. With Phase 2's 001+002 migrations,
+// Phase 4 plan 04-03's 003_user_ips.sql, and Phase 9 plan 09-02's
+// 004_add_dedup_index.sql landed, a fresh DB MUST advance to
+// ExpectedSchemaVersion (currently 4) on Migrate. The detailed
+// table+index assertions live in TestMigrate_applies_001_init_and_002_indexes.
 func TestMigrate_advances_to_expected_version(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 	s, err := store.Open(path)
@@ -96,8 +96,10 @@ func TestClose_closes_both(t *testing.T) {
 }
 
 // TestMigrate_applies_001_init_and_002_indexes verifies that the embedded
-// 001 + 002 migrations bring a fresh DB to user_version=2, with all three
-// tables and at least the seven expected indexes named per RESEARCH.md.
+// 001-004 migrations bring a fresh DB to user_version=4, with all three
+// tables and at least the eight expected indexes named per RESEARCH.md.
+// (Test name kept stable per D-22 grep history; covers all index-creating
+// migrations through 004_add_dedup_index.sql.)
 func TestMigrate_applies_001_init_and_002_indexes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 	s, err := store.Open(path)
@@ -108,8 +110,9 @@ func TestMigrate_applies_001_init_and_002_indexes(t *testing.T) {
 
 	var version int
 	require.NoError(t, s.R.QueryRow("PRAGMA user_version").Scan(&version))
-	// Phase 4 plan 04-03 adds 003_user_ips.sql → expected version is now 3.
-	require.Equal(t, 3, version, "migrations 001+002+003 must advance user_version to 3")
+	// Phase 4 plan 04-03 added 003_user_ips.sql; Phase 9 plan 09-02 adds
+	// 004_add_dedup_index.sql -> expected version is now 4.
+	require.Equal(t, 4, version, "migrations 001+002+003+004 must advance user_version to 4")
 
 	tables := map[string]bool{}
 	rows, err := s.R.Query("SELECT name FROM sqlite_master WHERE type='table'")
@@ -132,6 +135,9 @@ func TestMigrate_applies_001_init_and_002_indexes(t *testing.T) {
 		"idx_observations_event",
 		"idx_observations_run",
 		"idx_observation_runs_finished",
+		// 8th entry: covering index for LOG-07 dedup query landed by
+		// migration 004_add_dedup_index.sql (Phase 9 plan 09-02).
+		"idx_observations_dedup",
 	}
 	idx := map[string]bool{}
 	rows2, err := s.R.Query("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'")
@@ -204,10 +210,11 @@ func TestPeekUserVersion_nonexistent_path(t *testing.T) {
 }
 
 // TestExpectedSchemaVersion_constant verifies the exported constant matches
-// the highest-numbered migration this binary ships (currently 3 - Phase 4
-// plan 04-03 added 003_user_ips.sql for the FW-08 derived cache mirror).
+// the highest-numbered migration this binary ships (currently 4 - Phase 9
+// plan 09-02 added 004_add_dedup_index.sql for the LOG-07/LOG-08 covering
+// index). Test name kept stable per D-22 grep history.
 func TestExpectedSchemaVersion_constant(t *testing.T) {
-	require.Equal(t, 3, store.ExpectedSchemaVersion, "ExpectedSchemaVersion must equal 3 (highest migration)")
+	require.Equal(t, 4, store.ExpectedSchemaVersion, "ExpectedSchemaVersion must equal 4 (highest migration: 004_add_dedup_index.sql)")
 }
 
 // TestSchema_observations_columns verifies the observations table schema
