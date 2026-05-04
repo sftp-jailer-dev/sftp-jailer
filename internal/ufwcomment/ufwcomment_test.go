@@ -75,6 +75,19 @@ func TestDecode_v2_forward(t *testing.T) {
 	require.Equal(t, 2, p.Version)
 }
 
+// TestDecode_v1_subnet_shape_decoded pins the post-Phase-9 positive
+// contract for the FW-10 subnet shape: Decode returns nil error and
+// classifies as KindSubnet with the parsed reason. Replaces the
+// pre-extension RED gate from Task 1's first commit.
+func TestDecode_v1_subnet_shape_decoded(t *testing.T) {
+	p, err := ufwcomment.Decode("sftpj:v=1:scope=subnet:reason=rfc1918")
+	require.NoError(t, err)
+	require.Equal(t, 1, p.Version)
+	require.Equal(t, ufwcomment.KindSubnet, p.Kind)
+	require.Equal(t, ufwcomment.ReasonRFC1918, p.SubnetReason)
+	require.Equal(t, "", p.User)
+}
+
 func TestDecode_not_ours(t *testing.T) {
 	_, err := ufwcomment.Decode("my random comment")
 	require.ErrorIs(t, err, ufwcomment.ErrNotOurs)
@@ -120,7 +133,9 @@ func FuzzRoundTrip(f *testing.F) {
 }
 
 // FuzzDecodeNeverPanics: Decode must not panic on arbitrary input.
-// Seeds include malformed sftpj: prefixes, traversal attempts, NUL bytes.
+// Seeds include malformed sftpj: prefixes, traversal attempts, NUL bytes,
+// and (post-FW-10) the new v=1 subnet-shape variants so the three-way
+// classifier's branches are exercised by every fuzz iteration.
 func FuzzDecodeNeverPanics(f *testing.F) {
 	f.Add("sftpj:v=1:user=alice")
 	f.Add("not_ours")
@@ -130,7 +145,116 @@ func FuzzDecodeNeverPanics(f *testing.F) {
 	f.Add("sftpj:v=")
 	f.Add("sftpj:v=abc:user=x")
 	f.Add("\x00sftpj:v=1:user=a")
+	// FW-10 subnet-shape seeds (Phase 9 09-CONTEXT.md D-24).
+	f.Add("sftpj:v=1:scope=subnet:reason=rfc1918")
+	f.Add("sftpj:v=1:scope=subnet:reason=")
+	f.Add("sftpj:v=1:scope=other:reason=rfc1918")
+	f.Add("sftpj:v=1:scope=subnet:reason=\x00")
 	f.Fuzz(func(_ *testing.T, s string) {
 		_, _ = ufwcomment.Decode(s)
 	})
+}
+
+func TestEncodeSubnet_all_reasons_roundtrip(t *testing.T) {
+	cases := []struct {
+		reason string
+		want   string
+	}{
+		{ufwcomment.ReasonRFC1918, "sftpj:v=1:scope=subnet:reason=rfc1918"},
+		{ufwcomment.ReasonRFC4193, "sftpj:v=1:scope=subnet:reason=rfc4193"},
+		{ufwcomment.ReasonLinkLocal, "sftpj:v=1:scope=subnet:reason=link-local"},
+		{ufwcomment.ReasonOperator, "sftpj:v=1:scope=subnet:reason=operator"},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.reason, func(t *testing.T) {
+			got, err := ufwcomment.EncodeSubnet(c.reason)
+			require.NoError(t, err)
+			require.Equal(t, c.want, got)
+
+			p, err := ufwcomment.Decode(got)
+			require.NoError(t, err)
+			require.Equal(t, ufwcomment.Version, p.Version)
+			require.Equal(t, ufwcomment.KindSubnet, p.Kind)
+			require.Equal(t, c.reason, p.SubnetReason)
+			require.Equal(t, "", p.User)
+		})
+	}
+}
+
+// TestSubnetCommentByteCaps pins the empirical byte counts for each
+// subnet shape. CONTEXT.md D-06 originally said link-local is 38 bytes;
+// the actual longest is 40 bytes (Researcher Pitfall 1). All shapes must
+// fit under MaxComment=64.
+func TestSubnetCommentByteCaps(t *testing.T) {
+	cases := []struct {
+		reason string
+		bytes  int
+	}{
+		{ufwcomment.ReasonRFC1918, 37},
+		{ufwcomment.ReasonRFC4193, 37},
+		{ufwcomment.ReasonLinkLocal, 40}, // longest; D-06 said 38, empirical is 40
+		{ufwcomment.ReasonOperator, 38},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.reason, func(t *testing.T) {
+			got, err := ufwcomment.EncodeSubnet(c.reason)
+			require.NoError(t, err)
+			require.Equal(t, c.bytes, len(got),
+				"subnet comment for reason=%q must be %d bytes (per RQ-12 Pitfall 1)", c.reason, c.bytes)
+			require.LessOrEqual(t, len(got), ufwcomment.MaxComment,
+				"subnet comment must fit in MaxComment cap")
+		})
+	}
+}
+
+func TestEncodeSubnet_invalid_reasons(t *testing.T) {
+	cases := []string{"", "unknown", "RFC1918", "rfc1918 ", "rfc4194", "private"}
+	for _, r := range cases {
+		r := r
+		t.Run(r, func(t *testing.T) {
+			_, err := ufwcomment.EncodeSubnet(r)
+			require.ErrorIs(t, err, ufwcomment.ErrInvalidReason)
+		})
+	}
+}
+
+func TestDecode_v1_subnet_invalid_reason(t *testing.T) {
+	cases := []string{
+		"sftpj:v=1:scope=subnet:reason=garbage",
+		"sftpj:v=1:scope=subnet:reason=",
+		"sftpj:v=1:scope=subnet:reason=RFC1918",
+		"sftpj:v=1:scope=other:reason=rfc1918",
+		"sftpj:v=1:scope=subnet",
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c, func(t *testing.T) {
+			p, err := ufwcomment.Decode(c)
+			require.ErrorIs(t, err, ufwcomment.ErrBadVersion)
+			require.Equal(t, ufwcomment.KindUnknown, p.Kind, "error-path Parsed must leave Kind at zero value")
+		})
+	}
+}
+
+// TestDecode_v0_legacy_kind_is_KindUser pins the per-D-02 invariant that
+// legacy v=0 successful decode sets Kind=KindUser (NOT KindUnknown). This
+// matters for downstream callers that switch on p.Kind rather than
+// p.User != "".
+func TestDecode_v0_legacy_kind_is_KindUser(t *testing.T) {
+	p, err := ufwcomment.Decode("sftpj:user=alice")
+	require.NoError(t, err)
+	require.Equal(t, 0, p.Version)
+	require.Equal(t, ufwcomment.KindUser, p.Kind)
+	require.Equal(t, "alice", p.User)
+}
+
+func TestDecode_v1_user_kind_is_KindUser(t *testing.T) {
+	p, err := ufwcomment.Decode("sftpj:v=1:user=alice")
+	require.NoError(t, err)
+	require.Equal(t, 1, p.Version)
+	require.Equal(t, ufwcomment.KindUser, p.Kind)
+	require.Equal(t, "alice", p.User)
+	require.Equal(t, "", p.SubnetReason)
 }
