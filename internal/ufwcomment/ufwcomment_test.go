@@ -75,30 +75,16 @@ func TestDecode_v2_forward(t *testing.T) {
 	require.Equal(t, 2, p.Version)
 }
 
-// TestDecode_v1_subnet_shape_pre_extension_returns_ErrBadVersion is the
-// FW-10 RED gate: it pins the v1.2.x decode behavior for the literal
-// subnet-rule comment string that Phase 11's writer will emit. A v1.2.x
-// binary parses through the v=1 branch, finds no "user=" prefix, and
-// returns ErrBadVersion - which internal/firewall/mode.go::DetectMode
-// then skips per its `r.ParseErr != nil` guard.
-//
-// Pre-extension (this commit): the v=1 branch returns the zero-value
-// Parsed{} alongside ErrBadVersion when the payload shape after "v=1:"
-// is not "user=...". Both Version and User are zero-valued. This is the
-// snapshot Phase 11 binaries will encounter when run on a v1.2.x install.
-//
-// AFTER Task 2 (decode.go three-way branching), this test is REPLACED
-// (NOT amended) by TestDecode_v1_subnet_shape_decoded which asserts the
-// post-extension positive contract (KindSubnet + SubnetReason="rfc1918").
-// See 09-CONTEXT.md D-01 + 09-PATTERNS.md P-07 for the two-step gate.
-func TestDecode_v1_subnet_shape_pre_extension_returns_ErrBadVersion(t *testing.T) {
+// TestDecode_v1_subnet_shape_decoded pins the post-Phase-9 positive
+// contract for the FW-10 subnet shape: Decode returns nil error and
+// classifies as KindSubnet with the parsed reason. Replaces the
+// pre-extension RED gate from Task 1's first commit.
+func TestDecode_v1_subnet_shape_decoded(t *testing.T) {
 	p, err := ufwcomment.Decode("sftpj:v=1:scope=subnet:reason=rfc1918")
-	require.ErrorIs(t, err, ufwcomment.ErrBadVersion)
-	// Pre-extension contract: v=1 branch with unknown payload returns Parsed{}.
-	// Version is the zero value because the current decode.go discards it on
-	// payload-shape failure inside v=1 (decode.go:64). Phase 9 Task 2 will
-	// replace this test with the post-extension positive shape.
-	require.Equal(t, 0, p.Version)
+	require.NoError(t, err)
+	require.Equal(t, 1, p.Version)
+	require.Equal(t, ufwcomment.KindSubnet, p.Kind)
+	require.Equal(t, ufwcomment.ReasonRFC1918, p.SubnetReason)
 	require.Equal(t, "", p.User)
 }
 

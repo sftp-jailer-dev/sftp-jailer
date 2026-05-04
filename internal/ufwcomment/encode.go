@@ -61,3 +61,60 @@ func Encode(user string) (string, error) {
 	}
 	return c, nil
 }
+
+// Kind discriminates which payload shape Decode classified for a v=1
+// comment. Defaults to KindUnknown (zero value) so a Parsed returned
+// alongside an error reads as "unclassified". Legacy v=0 sets Kind=KindUser
+// explicitly (NOT KindUnknown) so downstream switches on Kind work for
+// legacy rules. See 09-CONTEXT.md D-02.
+type Kind int
+
+// Kind enumeration values. KindUnknown is the zero value and is what
+// callers will see in any Parsed returned alongside a non-nil error.
+const (
+	KindUnknown Kind = iota // zero value: no successful classification (error path)
+	KindUser                // user-rule: sftpj:v=1:user=<name> (or legacy sftpj:user=<name>)
+	KindSubnet              // subnet-rule: sftpj:v=1:scope=subnet:reason=<r>
+)
+
+// Subnet-rule reason constants. Closed enum per D-03; unknown reason
+// strings on Decode return ErrBadVersion (single forward-compat sentinel),
+// on Encode return ErrInvalidReason (precise caller surface for Phase 11
+// M-DRY-RUN preview per D-04).
+const (
+	ReasonRFC1918   = "rfc1918"
+	ReasonRFC4193   = "rfc4193"
+	ReasonLinkLocal = "link-local"
+	ReasonOperator  = "operator"
+)
+
+// ErrInvalidReason is returned by EncodeSubnet for any reason string not
+// in the closed enum. Decode-side rejects unknown reasons with the broader
+// ErrBadVersion (forward-compat: future v1.4 may add a fifth reason; older
+// binaries should treat it as opaque, not "invalid").
+var ErrInvalidReason = errors.New("ufwcomment: invalid subnet reason")
+
+// EncodeSubnet renders a subnet-rule comment in the form
+//
+//	sftpj:v=1:scope=subnet:reason=<r>
+//
+// where <r> is one of ReasonRFC1918, ReasonRFC4193, ReasonLinkLocal,
+// ReasonOperator. Returns ErrInvalidReason for any other input.
+//
+// Longest output is `sftpj:v=1:scope=subnet:reason=link-local` at 40 bytes
+// (well under MaxComment=64). The defensive cap check is preserved for
+// the same reason Encode keeps it: future grammar changes that push past
+// the cap surface here, not silently in the firewall.
+func EncodeSubnet(reason string) (string, error) {
+	switch reason {
+	case ReasonRFC1918, ReasonRFC4193, ReasonLinkLocal, ReasonOperator:
+		// valid; fall through
+	default:
+		return "", ErrInvalidReason
+	}
+	c := fmt.Sprintf("%s:v=%d:scope=subnet:reason=%s", Prefix, Version, reason)
+	if len(c) > MaxComment {
+		return "", ErrTooLong
+	}
+	return c, nil
+}

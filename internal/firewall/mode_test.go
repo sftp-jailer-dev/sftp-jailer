@@ -80,10 +80,8 @@ func TestDetectMode_ignores_deny_rules(t *testing.T) {
 
 // TestDetectMode_skips_v1_subnet_shape extends the forward-compat contract
 // from TestDetectMode_skips_forward_compat_rules to cover the new v=1
-// subnet-rule shape that Phase 11 will write. Pre-Phase-9 (this Task 1
-// snapshot): Decode returns ErrBadVersion; the rule is treated as opaque
-// and DetectMode returns ModeUnknown. Post-Phase-9 (Task 2): Decode
-// returns nil error + Kind=KindSubnet + User=""; DetectMode's sftpj
+// subnet-rule shape that Phase 11 will write. Post-Phase-9 (Task 2):
+// Decode returns nil error + Kind=KindSubnet + User=""; DetectMode's sftpj
 // predicate `r.User != "" && r.ParseErr == nil` STILL drops the rule
 // (User is empty), so DetectMode returns ModeUnknown unchanged. Phase 11
 // will explicitly extend DetectMode to recognize Kind==KindSubnet.
@@ -95,8 +93,10 @@ func TestDetectMode_skips_v1_subnet_shape(t *testing.T) {
 	subnetRule := Rule{
 		ID: 8, Port: "22", Source: "10.0.0.0/8", Action: "ALLOW IN",
 		RawComment: "sftpj:v=1:scope=subnet:reason=rfc1918",
-		User:       "",                       // Decode returns User="" for subnet rules
-		ParseErr:   ufwcomment.ErrBadVersion, // pre-Phase-9 expectation
+		User:       "", // Decode now returns Kind=KindSubnet, User stays empty
+		ParseErr:   nil, // post-Phase-9: Decode succeeds; mode predicate at
+		// mode.go:67-99 still drops it because User=="".
+		// Phase 11 will explicitly extend DetectMode for KindSubnet.
 	}
 	require.Equal(t, ModeUnknown, DetectMode([]Rule{subnetRule}, "22"))
 }
