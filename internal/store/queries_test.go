@@ -22,7 +22,12 @@ import (
 // newSeededDB opens + migrates a tmp DB and returns the Store + a Queries
 // wrapper. The cleanup hook closes the store. Callers seed via s.W
 // directly using the helper insert functions below.
-func newSeededDB(t *testing.T) (*store.Store, *store.Queries) {
+//
+// Signature widened to testing.TB (Phase 9 plan 09-03 Task 4) so the
+// benchmark file (queries_bench_test.go) can call this from *testing.B.
+// Both *testing.T and *testing.B satisfy testing.TB; existing callers
+// continue to type-check unchanged.
+func newSeededDB(t testing.TB) (*store.Store, *store.Queries) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "test.db")
 	s, err := store.Open(path)
@@ -34,7 +39,10 @@ func newSeededDB(t *testing.T) (*store.Store, *store.Queries) {
 
 // insertRun inserts an observation_runs row and returns its rowid. Callers
 // pass result + finishedAt; everything else is zero-valued.
-func insertRun(t *testing.T, w *sql.DB, result string, finishedAtNs int64) int64 {
+//
+// Signature widened to testing.TB (Phase 9 plan 09-03 Task 4) so the
+// benchmark seeder can reuse this helper.
+func insertRun(t testing.TB, w *sql.DB, result string, finishedAtNs int64) int64 {
 	t.Helper()
 	res, err := w.ExecContext(context.Background(),
 		`INSERT INTO observation_runs(started_at_unix_ns, finished_at_unix_ns, result)
@@ -47,7 +55,10 @@ func insertRun(t *testing.T, w *sql.DB, result string, finishedAtNs int64) int64
 }
 
 // insertObservation inserts one observations row. Returns the new rowid.
-func insertObservation(t *testing.T, w *sql.DB, runID int64, ts int64, tier, user, ip, eventType string) int64 {
+//
+// Signature widened to testing.TB (Phase 9 plan 09-03 Task 4) so the
+// benchmark seeder can reuse this helper.
+func insertObservation(t testing.TB, w *sql.DB, runID int64, ts int64, tier, user, ip, eventType string) int64 {
 	t.Helper()
 	res, err := w.ExecContext(context.Background(),
 		`INSERT INTO observations(ts_unix_ns, tier, user, source_ip, event_type, raw_message, raw_json, pid, run_id)
@@ -60,7 +71,11 @@ func insertObservation(t *testing.T, w *sql.DB, runID int64, ts int64, tier, use
 }
 
 // insertCounter inserts one noise_counters row.
-func insertCounter(t *testing.T, w *sql.DB, date, tier, user, ip, eventType string, count int64) {
+//
+// Signature widened to testing.TB for consistency with the other helpers
+// (Phase 9 plan 09-03 Task 4) - no benchmark consumer is planned today
+// but this avoids future helper-asymmetry confusion.
+func insertCounter(t testing.TB, w *sql.DB, date, tier, user, ip, eventType string, count int64) {
 	t.Helper()
 	_, err := w.ExecContext(context.Background(),
 		`INSERT INTO noise_counters(bucket_date, tier, user, source_ip, event_type, count)
@@ -473,13 +488,9 @@ func TestRebuildUserIPs_idempotent_repeat_call(t *testing.T) {
 // ------ Phase 9 plan 09-03: DedupRows + EventsForPair (LOG-07/LOG-08/LOG-09) ------
 
 // seedDedupCorpus seeds 3 (ip, user) buckets with deterministic ts increments.
-// Returns the runID for the inserted rows.
-//
-// Signature is widened to testing.TB in Task 4 (helper-widening commit) so
-// the benchmark's seeder can reuse it; for now it takes *testing.T because
-// the existing helper signatures in this file (insertRun / insertObservation)
-// haven't been widened yet.
-func seedDedupCorpus(t *testing.T, db *sql.DB) int64 {
+// Returns the runID for the inserted rows. testing.TB-widened so the
+// benchmark file can reuse it.
+func seedDedupCorpus(t testing.TB, db *sql.DB) int64 {
 	t.Helper()
 	runID := insertRun(t, db, "success", int64(1_700_000_000_000_000_000))
 	base := int64(1_700_000_000_000_000_000)
