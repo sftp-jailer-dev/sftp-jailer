@@ -211,6 +211,32 @@ const (
 	perUserLastSuccessSQL = `SELECT MAX(ts_unix_ns) FROM observations WHERE user = ? AND tier = 'success'`
 )
 
+// perUserTiers runs the perUserTiersSQL query and returns the parsed
+// TierBreakdown slice. Extracted from PerUserBreakdown so the rows
+// handle's lifecycle (defer Close + Err()-while-live) matches the rest
+// of this file's read paths (e.g. LastLoginPerUser). Calling rows.Err()
+// after rows.Close() is fragile and inconsistent; this helper enforces
+// the canonical ordering.
+func (q *Queries) perUserTiers(ctx context.Context, user string, sinceNs int64) ([]TierBreakdown, error) {
+	rows, err := q.r.QueryContext(ctx, perUserTiersSQL, user, sinceNs, sinceNs)
+	if err != nil {
+		return nil, fmt.Errorf("queries.PerUserBreakdown tiers: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []TierBreakdown
+	for rows.Next() {
+		var tb TierBreakdown
+		if err := rows.Scan(&tb.Tier, &tb.Count); err != nil {
+			return nil, fmt.Errorf("queries.PerUserBreakdown tiers scan: %w", err)
+		}
+		out = append(out, tb)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("queries.PerUserBreakdown tiers rows.Err: %w", err)
+	}
+	return out, nil
+}
+
 // PerUserBreakdown returns the LOG-06 aggregation for a single user.
 //
 // sinceNs filters the per-tier counts to observations with
@@ -228,22 +254,11 @@ const (
 func (q *Queries) PerUserBreakdown(ctx context.Context, user string, sinceNs int64) (UserBreakdown, error) {
 	var ub UserBreakdown
 
-	rows, err := q.r.QueryContext(ctx, perUserTiersSQL, user, sinceNs, sinceNs)
+	tiers, err := q.perUserTiers(ctx, user, sinceNs)
 	if err != nil {
-		return ub, fmt.Errorf("queries.PerUserBreakdown tiers: %w", err)
+		return ub, err
 	}
-	for rows.Next() {
-		var tb TierBreakdown
-		if err := rows.Scan(&tb.Tier, &tb.Count); err != nil {
-			_ = rows.Close()
-			return ub, fmt.Errorf("queries.PerUserBreakdown tiers scan: %w", err)
-		}
-		ub.Tiers = append(ub.Tiers, tb)
-	}
-	_ = rows.Close()
-	if err := rows.Err(); err != nil {
-		return ub, fmt.Errorf("queries.PerUserBreakdown tiers rows.Err: %w", err)
-	}
+	ub.Tiers = tiers
 
 	// First-seen IP: NULL/no-row tolerated.
 	if err := q.r.QueryRowContext(ctx, perUserFirstSeenIPSQL, user).Scan(&ub.FirstSeenIP); err != nil && !errors.Is(err, sql.ErrNoRows) {
