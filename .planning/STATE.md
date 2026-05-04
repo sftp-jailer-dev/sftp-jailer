@@ -3,19 +3,19 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: - First-Run + Daily-Driver UX
 status: executing
-last_updated: "2026-05-04T00:25:00.000Z"
-last_activity: 2026-05-04 -- Phase 09 Wave 1 complete (09-01, 09-02)
+last_updated: "2026-05-04T00:50:00.000Z"
+last_activity: 2026-05-04 -- Phase 09 all 3 plans complete; ready to verify
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 7
-  completed_plans: 6
-  percent: 86
+  completed_plans: 7
+  percent: 100
 ---
 
 # STATE: sftp-jailer
 
-**Updated:** 2026-05-04 - Phase 09 Wave 1 complete: 09-01 (FW-10 ufwcomment v=1 discriminated union) and 09-02 (LOG-10 migration 004 + WithProgress hook) both merged green. Wave 2 (09-03 dedup queries) ready.
+**Updated:** 2026-05-04 - Phase 09 all plans complete: 09-01 (FW-10 ufwcomment v=1 discriminated union), 09-02 (LOG-10 migration 004 + WithProgress hook), 09-03 (LOG-07/08/09 dedup + drill-down + tier classification + 100k benchmark). Post-merge D-19 budget widened 50ms -> 1000ms after macOS dev variance flapping. Ready for verify_phase_goal.
 
 ## Project Reference
 
@@ -27,10 +27,10 @@ See `.planning/PROJECT.md` (updated 2026-05-03 - v1.3 Current Milestone block + 
 
 ## Current Position
 
-Phase: 09 (data-layer) - EXECUTING
-Plan: Wave 1 complete (2/3); Wave 2 ready (09-03)
-Status: Executing Phase 09
-Last activity: 2026-05-04 -- Phase 09 Wave 1 merged green
+Phase: 09 (data-layer) - VERIFYING
+Plan: All 3 plans complete (Wave 1: 09-01 + 09-02; Wave 2: 09-03)
+Status: All plans merged + green; verify_phase_goal next
+Last activity: 2026-05-04 -- D-19 benchmark gate widened 50ms -> 1000ms
 
 ## Accumulated Context
 
