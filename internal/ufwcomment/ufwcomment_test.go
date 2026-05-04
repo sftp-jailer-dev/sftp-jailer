@@ -133,7 +133,9 @@ func FuzzRoundTrip(f *testing.F) {
 }
 
 // FuzzDecodeNeverPanics: Decode must not panic on arbitrary input.
-// Seeds include malformed sftpj: prefixes, traversal attempts, NUL bytes.
+// Seeds include malformed sftpj: prefixes, traversal attempts, NUL bytes,
+// and (post-FW-10) the new v=1 subnet-shape variants so the three-way
+// classifier's branches are exercised by every fuzz iteration.
 func FuzzDecodeNeverPanics(f *testing.F) {
 	f.Add("sftpj:v=1:user=alice")
 	f.Add("not_ours")
@@ -143,6 +145,11 @@ func FuzzDecodeNeverPanics(f *testing.F) {
 	f.Add("sftpj:v=")
 	f.Add("sftpj:v=abc:user=x")
 	f.Add("\x00sftpj:v=1:user=a")
+	// FW-10 subnet-shape seeds (Phase 9 09-CONTEXT.md D-24).
+	f.Add("sftpj:v=1:scope=subnet:reason=rfc1918")
+	f.Add("sftpj:v=1:scope=subnet:reason=")
+	f.Add("sftpj:v=1:scope=other:reason=rfc1918")
+	f.Add("sftpj:v=1:scope=subnet:reason=\x00")
 	f.Fuzz(func(_ *testing.T, s string) {
 		_, _ = ufwcomment.Decode(s)
 	})
