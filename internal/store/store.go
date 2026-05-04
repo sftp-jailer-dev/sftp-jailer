@@ -34,8 +34,10 @@ import (
 //
 // MUST equal the highest numeric prefix in `internal/store/migrations/`.
 // The TestExpectedSchemaVersion_constant test pins this invariant.
-// Phase 4 plan 04-03 bumps to 3 with 003_user_ips.sql (FW-08 derived cache).
-const ExpectedSchemaVersion = 3
+// Phase 4 plan 04-03 bumped to 3 with 003_user_ips.sql (FW-08 derived cache).
+// Phase 9 plan 09-02 bumped to 4 with 004_add_dedup_index.sql (LOG-10
+// covering index for dedup queries).
+const ExpectedSchemaVersion = 4
 
 // Store splits read and write traffic into two separate *sql.DB handles
 // pointing at the same on-disk database. R is a pooled reader

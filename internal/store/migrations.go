@@ -26,6 +26,59 @@ import (
 //go:embed all:migrations
 var migrationsFS embed.FS
 
+// MigrateOption configures Migrate behavior. Use WithProgress to install
+// a progress callback. Multiple options may be passed; they are applied
+// in order.
+type MigrateOption func(*migrateOpts)
+
+// migrateOpts is the internal options struct populated by MigrateOption
+// functions. Fields are package-private; callers configure via the
+// exported With* helpers.
+type migrateOpts struct {
+	progress func(label string)
+}
+
+// WithProgress installs a progress callback that fires once per migration
+// applied (i.e., migrations whose numeric prefix > current user_version).
+// The callback receives a human-friendly label tied to the migration's
+// purpose. On an already-migrated DB, the callback is NOT called.
+//
+// Phase 9 plan 09-02 ships this hook. Phase 12's launch state machine
+// will plumb the callback into the splash/doctor handoff to render
+// "Upgrading observation index..." during multi-second migrations on
+// noisy lab hosts (per 09-CONTEXT.md D-15).
+//
+// Passing a nil callback is safe and silent (treated as no-op, identical
+// to omitting the option entirely).
+func WithProgress(fn func(label string)) MigrateOption {
+	return func(o *migrateOpts) {
+		if fn != nil {
+			o.progress = fn
+		}
+	}
+}
+
+// migrationLabel maps a migration filename to a human-friendly progress
+// label. Unknown migrations fall back to a generic "Applying NNN..."
+// string so future migrations don't crash callers that haven't yet been
+// updated. Labels for known migrations are LOCKED at plan time per
+// 09-CONTEXT.md D-15 (the "Upgrading observation index..." string is
+// the load-bearing user-facing copy for the Phase 12 splash).
+func migrationLabel(name string) string {
+	switch name {
+	case "001_init.sql":
+		return "Creating observation tables..."
+	case "002_add_indexes.sql":
+		return "Creating observation indexes..."
+	case "003_user_ips.sql":
+		return "Creating user-IP cache table..."
+	case "004_add_dedup_index.sql":
+		return "Upgrading observation index..."
+	default:
+		return "Applying " + name + "..."
+	}
+}
+
 // Migrate applies any migrations/NNN_name.sql files that haven't been
 // applied yet, tracking progress via SQLite's PRAGMA user_version.
 //
@@ -35,6 +88,7 @@ var migrationsFS embed.FS
 //	migrations/001_init.sql                 → user_version = 1
 //	migrations/002_add_observations.sql     → user_version = 2
 //	migrations/003_user_ips.sql             → user_version = 3
+//	migrations/004_add_dedup_index.sql      → user_version = 4
 //
 // Each migration runs inside its own transaction; the PRAGMA user_version
 // update is in the same tx. If the DDL fails, the transaction rolls back
@@ -44,7 +98,17 @@ var migrationsFS embed.FS
 // Phase 1 ships an empty migrations/ directory (only .gitkeep), so this
 // function is a no-op until Phase 2 populates it. Callers must treat
 // "no migrations to run" as success.
-func (s *Store) Migrate(ctx context.Context) error {
+//
+// Variadic MigrateOption arguments configure optional behavior. Use
+// WithProgress to receive a per-applied-migration callback (Phase 9 plan
+// 09-02 hook for Phase 12's splash UI). The 1-arg form `s.Migrate(ctx)`
+// remains supported for all existing call sites (variadic = backwards-compatible).
+func (s *Store) Migrate(ctx context.Context, opts ...MigrateOption) error {
+	var o migrateOpts
+	for _, opt := range opts {
+		opt(&o)
+	}
+
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
 	if err != nil {
 		// Defensive: if the embedded directory is somehow absent (shouldn't
@@ -89,6 +153,13 @@ func (s *Store) Migrate(ctx context.Context) error {
 	for _, m := range migs {
 		if m.version <= currentVersion {
 			continue
+		}
+		// Fire progress callback BEFORE executing the migration so the UI
+		// can paint the label before the synchronous DDL stalls the
+		// goroutine. On an already-migrated DB, none of the loop body
+		// runs so the callback is never called (per WithProgress contract).
+		if o.progress != nil {
+			o.progress(migrationLabel(m.name))
 		}
 		sqlBytes, err := fs.ReadFile(migrationsFS, "migrations/"+m.name)
 		if err != nil {

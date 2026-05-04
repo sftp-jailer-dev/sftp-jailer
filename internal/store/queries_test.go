@@ -92,8 +92,9 @@ func TestQueries_StatusRow_seeded(t *testing.T) {
 
 	got, err := q.StatusRow(context.Background())
 	require.NoError(t, err)
-	// Phase 4 plan 04-03 bumps ExpectedSchemaVersion 2 → 3 with 003_user_ips.sql.
-	require.Equal(t, 3, got.SchemaVersion)
+	// Phase 4 plan 04-03 bumped ExpectedSchemaVersion 2 -> 3 with 003_user_ips.sql.
+	// Phase 9 plan 09-02 bumps 3 -> 4 with 004_add_dedup_index.sql.
+	require.Equal(t, 4, got.SchemaVersion)
 	require.Equal(t, int64(5), got.DetailCount)
 	require.Equal(t, int64(2), got.CounterCount)
 	require.Equal(t, ts, got.LastSuccessNs)
@@ -343,12 +344,13 @@ func TestQueries_FilterEvents_parameterized_no_injection(t *testing.T) {
 
 // ------ FW-08 SQLite mirror (Phase 4 plan 04-03) ------
 
-// TestExpectedSchemaVersion_is_3 pins the Phase 4 schema bump from 2 → 3.
-// Migration 003_user_ips.sql lands the user_ips table; ExpectedSchemaVersion
-// must equal the highest migration prefix.
-func TestExpectedSchemaVersion_is_3(t *testing.T) {
+// TestExpectedSchemaVersion_is_4 pins the Phase 9 schema bump from 3 -> 4.
+// Migration 004_add_dedup_index.sql lands the LOG-07/LOG-08 covering index;
+// ExpectedSchemaVersion is bumped accordingly. If the migrations directory
+// gains 005_*.sql but ExpectedSchemaVersion stays at 4, this test fails.
+func TestExpectedSchemaVersion_is_4(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, 3, store.ExpectedSchemaVersion)
+	require.Equal(t, 4, store.ExpectedSchemaVersion)
 }
 
 // TestRebuildUserIPs_replaces_table_in_single_tx pins the D-FW-04 contract:
