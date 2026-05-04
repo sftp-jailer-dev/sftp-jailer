@@ -75,6 +75,17 @@ func TestDecode_v2_forward(t *testing.T) {
 	require.Equal(t, 2, p.Version)
 }
 
+// TestDecode_v_field_with_trailing_garbage pins the WR-01 regression:
+// the v= field must reject any input with trailing non-digits as
+// ErrBadVersion. The previous fmt.Sscanf-based parse silently accepted
+// "1abc" as 1, letting "sftpj:v=1abc:user=alice" decode as v=1 in
+// violation of the file-header contract.
+func TestDecode_v_field_with_trailing_garbage(t *testing.T) {
+	_, err := ufwcomment.Decode("sftpj:v=1abc:user=alice")
+	require.ErrorIs(t, err, ufwcomment.ErrBadVersion,
+		"v= field with trailing non-digits must reject as bad version, not parse as v=1")
+}
+
 // TestDecode_v1_subnet_shape_decoded pins the post-Phase-9 positive
 // contract for the FW-10 subnet shape: Decode returns nil error and
 // classifies as KindSubnet with the parsed reason. Replaces the

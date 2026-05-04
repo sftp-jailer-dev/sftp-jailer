@@ -1,7 +1,7 @@
 package ufwcomment
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -75,8 +75,12 @@ func Decode(c string) (Parsed, error) {
 	if len(parts) != 2 {
 		return Parsed{}, ErrBadVersion
 	}
-	var v int
-	if _, err := fmt.Sscanf(parts[0], "%d", &v); err != nil {
+	// strconv.Atoi (not fmt.Sscanf with %d) so trailing non-digits in the
+	// v= field reject as ErrBadVersion. fmt.Sscanf accepts "1abc" as 1
+	// silently, which would let "sftpj:v=1abc:user=alice" decode as v=1
+	// in violation of the file-header contract.
+	v, err := strconv.Atoi(parts[0])
+	if err != nil {
 		return Parsed{}, ErrBadVersion
 	}
 	// Forward-compat: v>=2 preserves the integer so the caller can report
