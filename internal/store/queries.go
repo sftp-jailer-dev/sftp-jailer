@@ -505,3 +505,149 @@ func (q *Queries) LockdownObservations(ctx context.Context, cutoffUnixNs int64, 
 	}
 	return out, nil
 }
+
+// ----------------------------------------------------------------------------
+// Phase 9 plan 09-03 - LOG-07 dedup view + LOG-09 most-recent-tier
+// classification + LOG-08 drill-down.
+//
+// The dedup query GROUP BYs (source_ip, user) within a SinceNs window and
+// projects per-tier mini-counters + last_seen + most_recent_tier. The
+// drill-down query returns the full per-pair event history.
+//
+// Both queries hit idx_observations_dedup (4-column covering index from
+// migration 004). The dedup query achieves COVERING form (RQ-9 option B);
+// the drill-down query does NOT (raw_message + raw_json projections
+// preclude any covering form regardless of index column set per ADR-4).
+//
+// Threat model (T-OBS-01): all string fields flow through `?` placeholders.
+// Numeric opts (SinceNs/Limit/Offset) have no string injection vector but
+// remain parameterized for the same audit discipline.
+// ----------------------------------------------------------------------------
+
+// DedupRow is the LOG-07 deduped result: one (source_ip, user) bucket
+// within the active window with per-tier mini-counters, last-seen, and
+// the most-recent-tier classification (LOG-09).
+//
+// MostRecentTier is the tier of the latest event in the bucket per D-07's
+// "most-recent-tier-wins" rule. Tiebreak on shared ts_unix_ns is highest
+// id wins (D-10).
+//
+// All counter fields are int64 to match the SUM(...) return type from
+// SQLite; SQLite emits INTEGER for SUM-of-zero-or-one expressions but
+// database/sql promotes to int64.
+//
+// Empty-username buckets (user = '') are included as a (source_ip, '')
+// row whose MostRecentTier is typically 'unmatched' - rendered yellow in
+// the LOG-09 palette. See 09-03 plan ADR-5.
+type DedupRow struct {
+	SourceIP       string
+	User           string
+	TotalCount     int64
+	SuccessCount   int64
+	TargetedCount  int64
+	NoiseCount     int64
+	UnmatchedCount int64
+	LastSeenNs     int64
+	MostRecentTier string // "success" | "targeted" | "noise" | "unmatched"
+}
+
+// DedupOpts covers the LOG-07 dedup-query filter set.
+//
+// Discipline: every field maps to a `?` placeholder in dedupRowsSQL.
+// New filters MUST follow the same shape - never format directly into
+// the SQL string (T-OBS-01 threat model).
+//
+// SinceNs: lower bound on ts_unix_ns. Both the outer aggregate AND the
+// most-recent-tier subquery filter on this bound. Pass 0 for an
+// unbounded ("all-time") view.
+//
+// Limit defaults to 500 if zero (mirrors FilterEvents).
+type DedupOpts struct {
+	SinceNs int64
+	Limit   int
+	Offset  int
+}
+
+// dedupRowsSQL: one GROUP BY pass over observations within the SinceNs
+// window computes total_count + 4 per-tier SUM(CASE WHEN tier='X' THEN 1
+// ELSE 0 END) counters + MAX(ts_unix_ns) as last_seen_ns. The
+// most-recent-tier projection is a correlated subquery against the same
+// index (idx_observations_dedup); the ORDER BY ts_unix_ns DESC, id DESC
+// LIMIT 1 inside the subquery is the D-10 tiebreak (highest id wins on
+// shared ts_unix_ns). Sort outer by last_seen DESC, total_count DESC,
+// source_ip ASC (D-11). A window function (ROW_NUMBER OVER PARTITION BY)
+// was rejected because it inhibits subquery flattening and may not emit
+// the COVERING qualifier; see 09-RESEARCH.md RQ-1 + 09-03 plan ADR-1.
+//
+// The `(? = 0 OR col >= ?)` shim mirrors the FilterEvents idiom: each
+// SinceNs placeholder appears twice (once for the empty-check, once for
+// the >= comparison). The subquery and outer WHERE each have one such
+// pair, so SinceNs is bound 4 times total.
+const dedupRowsSQL = `
+SELECT
+  o1.source_ip,
+  o1.user,
+  COUNT(*)                                                 AS total_count,
+  SUM(CASE WHEN o1.tier = 'success'   THEN 1 ELSE 0 END)   AS success_count,
+  SUM(CASE WHEN o1.tier = 'targeted'  THEN 1 ELSE 0 END)   AS targeted_count,
+  SUM(CASE WHEN o1.tier = 'noise'     THEN 1 ELSE 0 END)   AS noise_count,
+  SUM(CASE WHEN o1.tier = 'unmatched' THEN 1 ELSE 0 END)   AS unmatched_count,
+  MAX(o1.ts_unix_ns)                                       AS last_seen_ns,
+  (SELECT o2.tier FROM observations o2
+     WHERE o2.source_ip  = o1.source_ip
+       AND o2.user       = o1.user
+       AND (? = 0 OR o2.ts_unix_ns >= ?)
+   ORDER BY o2.ts_unix_ns DESC, o2.id DESC
+   LIMIT 1)                                                AS most_recent_tier
+FROM observations o1
+WHERE (? = 0 OR o1.ts_unix_ns >= ?)
+GROUP BY o1.source_ip, o1.user
+ORDER BY last_seen_ns DESC, total_count DESC, o1.source_ip ASC
+LIMIT ? OFFSET ?;
+`
+
+// DedupRows returns one row per (source_ip, user) pair in the active
+// window with per-tier counters and most-recent-tier classification.
+// See dedupRowsSQL above for the shape; D-07/D-09/D-10/D-11 for the
+// product semantics; LOG-07/LOG-09 for the requirements; the ADRs in
+// 09-03's plan for the design notes.
+func (q *Queries) DedupRows(ctx context.Context, opts DedupOpts) ([]DedupRow, error) {
+	if opts.Limit == 0 {
+		opts.Limit = 500
+	}
+	rows, err := q.r.QueryContext(ctx, dedupRowsSQL,
+		opts.SinceNs, opts.SinceNs, // subquery window bound (`(? = 0 OR ts >= ?)` shim)
+		opts.SinceNs, opts.SinceNs, // outer window bound (same shim)
+		opts.Limit, opts.Offset,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("queries.DedupRows: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []DedupRow
+	for rows.Next() {
+		var r DedupRow
+		// most_recent_tier may be NULL only for groups that have rows
+		// matching the GROUP BY but not the subquery's window predicate.
+		// Given both predicates use the same SinceNs, this should never
+		// happen in practice; defensively scan into a NullString.
+		var mrt sql.NullString
+		if err := rows.Scan(
+			&r.SourceIP, &r.User,
+			&r.TotalCount,
+			&r.SuccessCount, &r.TargetedCount, &r.NoiseCount, &r.UnmatchedCount,
+			&r.LastSeenNs,
+			&mrt,
+		); err != nil {
+			return nil, fmt.Errorf("queries.DedupRows scan: %w", err)
+		}
+		if mrt.Valid {
+			r.MostRecentTier = mrt.String
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("queries.DedupRows rows.Err: %w", err)
+	}
+	return out, nil
+}

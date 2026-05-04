@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -467,4 +468,182 @@ func TestRebuildUserIPs_idempotent_repeat_call(t *testing.T) {
 	ips, err := q.UserIPs(context.Background(), "alice")
 	require.NoError(t, err)
 	require.Len(t, ips, 1)
+}
+
+// ------ Phase 9 plan 09-03: DedupRows + EventsForPair (LOG-07/LOG-08/LOG-09) ------
+
+// seedDedupCorpus seeds 3 (ip, user) buckets with deterministic ts increments.
+// Returns the runID for the inserted rows.
+//
+// Signature is widened to testing.TB in Task 4 (helper-widening commit) so
+// the benchmark's seeder can reuse it; for now it takes *testing.T because
+// the existing helper signatures in this file (insertRun / insertObservation)
+// haven't been widened yet.
+func seedDedupCorpus(t *testing.T, db *sql.DB) int64 {
+	t.Helper()
+	runID := insertRun(t, db, "success", int64(1_700_000_000_000_000_000))
+	base := int64(1_700_000_000_000_000_000)
+	// bucket A: (alice, 203.0.113.7) - 3x noise
+	insertObservation(t, db, runID, base+1, "noise", "alice", "203.0.113.7", "auth_pwd_fail")
+	insertObservation(t, db, runID, base+2, "noise", "alice", "203.0.113.7", "auth_pwd_fail")
+	insertObservation(t, db, runID, base+3, "noise", "alice", "203.0.113.7", "auth_pwd_fail")
+	// bucket B: (alice, 203.0.113.8) - 1x success (most recent overall)
+	insertObservation(t, db, runID, base+10, "success", "alice", "203.0.113.8", "auth_pubkey_ok")
+	// bucket C: (bob, 203.0.113.7) - 2x targeted
+	insertObservation(t, db, runID, base+5, "targeted", "bob", "203.0.113.7", "invalid_user")
+	insertObservation(t, db, runID, base+6, "targeted", "bob", "203.0.113.7", "invalid_user")
+	return runID
+}
+
+// getQueryPlan runs `EXPLAIN QUERY PLAN <sql>` and returns the joined
+// `detail` rows. First occurrence of EQP testing in this repo (ADR-3 in
+// 09-03 plan).
+//
+// EQP returns a 4-column result: (id INT, parent INT, notused INT, detail TEXT).
+// We only care about `detail` for substring matching; the join with newlines
+// preserves the multi-row plan structure for assert error messages.
+func getQueryPlan(t *testing.T, db *sql.DB, query string, args ...any) string {
+	t.Helper()
+	rows, err := db.Query("EXPLAIN QUERY PLAN "+query, args...)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+	var lines []string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		require.NoError(t, rows.Scan(&id, &parent, &notused, &detail))
+		lines = append(lines, detail)
+	}
+	require.NoError(t, rows.Err())
+	return strings.Join(lines, "\n")
+}
+
+func TestQueries_DedupRows_three_buckets(t *testing.T) {
+	s, q := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+	// ANALYZE so the planner deterministically prefers idx_observations_dedup
+	// over the older idx_observations_ip in case both are candidates.
+	_, err := s.W.Exec(`ANALYZE observations`)
+	require.NoError(t, err)
+
+	rows, err := q.DedupRows(context.Background(), store.DedupOpts{SinceNs: 0})
+	require.NoError(t, err)
+	require.Len(t, rows, 3)
+
+	// Sort: last_seen DESC, total_count DESC, source_ip ASC.
+	// bucket B last_seen = base+10 -> first.
+	require.Equal(t, "alice", rows[0].User)
+	require.Equal(t, "203.0.113.8", rows[0].SourceIP)
+	require.Equal(t, int64(1), rows[0].TotalCount)
+	require.Equal(t, int64(1), rows[0].SuccessCount)
+	require.Equal(t, "success", rows[0].MostRecentTier)
+	// bucket C last_seen = base+6, total=2 -> second.
+	require.Equal(t, "bob", rows[1].User)
+	require.Equal(t, int64(2), rows[1].TotalCount)
+	require.Equal(t, int64(2), rows[1].TargetedCount)
+	require.Equal(t, "targeted", rows[1].MostRecentTier)
+	// bucket A last_seen = base+3, total=3 -> third.
+	require.Equal(t, "alice", rows[2].User)
+	require.Equal(t, "203.0.113.7", rows[2].SourceIP)
+	require.Equal(t, int64(3), rows[2].TotalCount)
+	require.Equal(t, int64(3), rows[2].NoiseCount)
+	require.Equal(t, "noise", rows[2].MostRecentTier)
+}
+
+func TestQueries_DedupRows_window_filter_excludes_old_rows(t *testing.T) {
+	s, q := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+	_, _ = s.W.Exec(`ANALYZE observations`)
+
+	// SinceNs above bucket-A latest ts; bucket A (last=base+3) is excluded.
+	rows, err := q.DedupRows(context.Background(), store.DedupOpts{
+		SinceNs: int64(1_700_000_000_000_000_000) + 4,
+	})
+	require.NoError(t, err)
+	// Buckets remaining: B (alice, 203.0.113.8 - last=base+10) and C
+	// (bob, 203.0.113.7 - last=base+6). Bucket A (alice, 203.0.113.7 -
+	// last=base+3) is filtered out by the SinceNs bound.
+	require.Len(t, rows, 2)
+	for _, r := range rows {
+		// The filtered-out bucket is (alice, 203.0.113.7); bucket C also
+		// uses 203.0.113.7 but with user='bob', so we must not naively
+		// assert on SourceIP alone. Assert that no row matches the (ip, user)
+		// pair of bucket A.
+		isBucketA := r.SourceIP == "203.0.113.7" && r.User == "alice"
+		require.False(t, isBucketA, "bucket A (alice@203.0.113.7) must be filtered out by window")
+	}
+}
+
+// TestQueries_DedupRows_tiebreak_highest_id_wins pins D-10: when two rows
+// for the same (source_ip, user) share ts_unix_ns, the higher id row's
+// tier wins for MostRecentTier.
+func TestQueries_DedupRows_tiebreak_highest_id_wins(t *testing.T) {
+	s, q := newSeededDB(t)
+	runID := insertRun(t, s.W, "success", int64(1_700_000_000_000_000_000))
+	sameTs := int64(1_700_000_000_000_000_500)
+	// insertObservation returns the inserted id; SQLite AUTOINCREMENT gives monotonic ids.
+	idLow := insertObservation(t, s.W, runID, sameTs, "noise", "alice", "203.0.113.7", "auth_pwd_fail")
+	idHigh := insertObservation(t, s.W, runID, sameTs, "success", "alice", "203.0.113.7", "auth_pubkey_ok")
+	require.Greater(t, idHigh, idLow, "monotonic ids expected")
+	_, _ = s.W.Exec(`ANALYZE observations`)
+
+	rows, err := q.DedupRows(context.Background(), store.DedupOpts{SinceNs: 0})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "success", rows[0].MostRecentTier,
+		"higher-id row's tier (success) must win on shared ts_unix_ns (D-10)")
+}
+
+// TestQueries_DedupRows_includes_empty_username_bucket pins ADR-5 for
+// 09-03: rows with user='' surface as a (source_ip, '') bucket whose
+// most-recent-tier is typically 'unmatched' (yellow per LOG-09).
+func TestQueries_DedupRows_includes_empty_username_bucket(t *testing.T) {
+	s, q := newSeededDB(t)
+	runID := insertRun(t, s.W, "success", int64(1_700_000_000_000_000_000))
+	base := int64(1_700_000_000_000_000_000)
+	insertObservation(t, s.W, runID, base+1, "unmatched", "", "203.0.113.99", "unmatched")
+	insertObservation(t, s.W, runID, base+2, "unmatched", "", "203.0.113.99", "unmatched")
+	_, _ = s.W.Exec(`ANALYZE observations`)
+
+	rows, err := q.DedupRows(context.Background(), store.DedupOpts{SinceNs: 0})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "203.0.113.99", rows[0].SourceIP)
+	require.Equal(t, "", rows[0].User, "empty-username bucket must be included (ADR-5)")
+	require.Equal(t, int64(2), rows[0].TotalCount)
+	require.Equal(t, int64(2), rows[0].UnmatchedCount)
+	require.Equal(t, "unmatched", rows[0].MostRecentTier)
+}
+
+func TestQueries_DedupRows_default_limit_is_500(t *testing.T) {
+	// Only check that opts.Limit==0 is normalized to 500. With seedDedupCorpus
+	// we have 3 buckets which is well below the 500 default, so the assertion
+	// is that no error fires and len(rows) <= 500.
+	s, q := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+	rows, err := q.DedupRows(context.Background(), store.DedupOpts{}) // Limit=0
+	require.NoError(t, err)
+	require.LessOrEqual(t, len(rows), 500)
+	require.Len(t, rows, 3, "seedDedupCorpus has 3 distinct (ip, user) buckets")
+}
+
+// TestQueries_DedupRows_uses_covering_index pins D-18: the dedup query's
+// EQP plan contains "USING COVERING INDEX idx_observations_dedup". This
+// is a first-occurrence test idiom in the repo (ADR-3).
+//
+// Substring match (NOT full-line equality) per sqlite.org/eqp.html: the
+// EQP format is documented as "subject to change between releases".
+func TestQueries_DedupRows_uses_covering_index(t *testing.T) {
+	s, _ := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+	_, _ = s.W.Exec(`ANALYZE observations`)
+
+	// Use a non-zero SinceNs so the WHERE clause exercises the index.
+	plan := getQueryPlan(t, s.R, store.DedupRowsSQL,
+		int64(1), int64(1), // subquery SinceNs pair
+		int64(1), int64(1), // outer SinceNs pair
+		500, 0, // limit, offset
+	)
+	require.Contains(t, plan, "USING COVERING INDEX idx_observations_dedup",
+		"dedup query must use the new covering index per D-18; got plan:\n%s", plan)
 }
