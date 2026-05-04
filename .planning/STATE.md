@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: - First-Run + Daily-Driver UX
-status: executing
+status: ready_to_plan
 last_updated: "2026-05-04T00:50:00.000Z"
 last_activity: 2026-05-04 -- Phase 09 all 3 plans complete; ready to verify
 progress:
   total_phases: 9
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 7
   completed_plans: 7
-  percent: 100
+  percent: 22
 ---
 
 # STATE: sftp-jailer
@@ -23,14 +23,14 @@ See `.planning/PROJECT.md` (updated 2026-05-03 - v1.3 Current Milestone block + 
 
 **What this is:** Interactive TUI for Linux sysadmins managing a chrooted SFTP server on Ubuntu 24.04 - one supervised flow from "fresh box" to "per-user IP-locked-down SFTP" with observation-driven intel.
 **Core value:** One TUI takes a fresh Ubuntu 24.04 box from "no SFTP" to "hardened chrooted SFTP with per-user IP lockdown" - safely, interactively, with observable traffic intel driving every decision.
-**Current focus:** Phase 09 - data-layer
+**Current focus:** Phase 09 complete; build order continues at Phase 10 (Migrate) per locked v1.3 build sequence 8 -> 9 -> 10 -> 11 -> 13 -> 12 -> 14
 
 ## Current Position
 
-Phase: 09 (data-layer) - VERIFYING
-Plan: All 3 plans complete (Wave 1: 09-01 + 09-02; Wave 2: 09-03)
-Status: All plans merged + green; verify_phase_goal next
-Last activity: 2026-05-04 -- D-19 benchmark gate widened 50ms -> 1000ms
+Phase: 999.1
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-04
 
 ## Accumulated Context
 
