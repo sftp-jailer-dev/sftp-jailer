@@ -647,3 +647,127 @@ func TestQueries_DedupRows_uses_covering_index(t *testing.T) {
 	require.Contains(t, plan, "USING COVERING INDEX idx_observations_dedup",
 		"dedup query must use the new covering index per D-18; got plan:\n%s", plan)
 }
+
+// ------ EventsForPair (LOG-08 drill-down) ------
+
+func TestQueries_EventsForPair_returns_only_matching_pair(t *testing.T) {
+	s, q := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+
+	rows, err := q.EventsForPair(context.Background(), store.EventsForPairOpts{
+		SourceIP: "203.0.113.7",
+		User:     "alice",
+		SinceNs:  0,
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 3, "alice@203.0.113.7 has 3 events in seedDedupCorpus")
+	for _, r := range rows {
+		require.Equal(t, "alice", r.User)
+		require.Equal(t, "203.0.113.7", r.SourceIP)
+		require.Equal(t, "noise", r.Tier)
+	}
+	// Sort: ts_unix_ns DESC.
+	require.Greater(t, rows[0].TsUnixNs, rows[1].TsUnixNs)
+	require.Greater(t, rows[1].TsUnixNs, rows[2].TsUnixNs)
+}
+
+func TestQueries_EventsForPair_empty_pair_returns_empty(t *testing.T) {
+	s, q := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+
+	rows, err := q.EventsForPair(context.Background(), store.EventsForPairOpts{
+		SourceIP: "10.0.0.99",
+		User:     "ghost",
+	})
+	require.NoError(t, err)
+	require.Empty(t, rows)
+}
+
+// TestQueries_EventsForPair_swapped_args_returns_empty pins that the WHERE
+// clause is column-correct: a user value passed as SourceIP (and vice versa)
+// must NOT match any rows. Cheap regression guard for accidental column
+// swaps in eventsForPairSQL.
+func TestQueries_EventsForPair_swapped_args_returns_empty(t *testing.T) {
+	s, q := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+
+	rows, err := q.EventsForPair(context.Background(), store.EventsForPairOpts{
+		SourceIP: "alice",       // intentional swap
+		User:     "203.0.113.7", // intentional swap
+	})
+	require.NoError(t, err)
+	require.Empty(t, rows, "swapped args must not match anything")
+}
+
+// TestQueries_EventsForPair_since_ns_excludes_old_rows pins the SinceNs
+// window filter: rows older than the bound are excluded.
+func TestQueries_EventsForPair_since_ns_excludes_old_rows(t *testing.T) {
+	s, q := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+
+	rows, err := q.EventsForPair(context.Background(), store.EventsForPairOpts{
+		SourceIP: "203.0.113.7",
+		User:     "alice",
+		SinceNs:  int64(1_700_000_000_000_000_000) + 2, // excludes base+1
+	})
+	require.NoError(t, err)
+	require.Len(t, rows, 2, "should exclude the oldest of the 3 alice@203.0.113.7 events")
+}
+
+// TestQueries_EventsForPair_uses_index pins ADR-4: drill-down query uses
+// idx_observations_dedup but COVERING is NOT achievable due to raw_message
+// + raw_json projections.
+func TestQueries_EventsForPair_uses_index(t *testing.T) {
+	s, _ := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+	_, _ = s.W.Exec(`ANALYZE observations`)
+
+	plan := getQueryPlan(t, s.R, store.EventsForPairSQL,
+		"203.0.113.7", "alice",
+		int64(1), int64(1),
+		500, 0,
+	)
+	require.Contains(t, plan, "USING INDEX idx_observations_dedup",
+		"drill-down query must use idx_observations_dedup (covering NOT expected per ADR-4); got plan:\n%s", plan)
+}
+
+// TestQueries_DedupRows_parameterized_no_injection mirrors the existing
+// FilterEvents injection regression (T-OBS-01 threat model). DedupOpts has
+// no string fields so injection isn't possible by shape; the test
+// documents the discipline AND confirms the observations row count is
+// unchanged after a query against a numeric-only payload.
+func TestQueries_DedupRows_parameterized_no_injection(t *testing.T) {
+	s, q := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+
+	// SinceNs has no string injection vector; numeric-only opts. The
+	// regression's job is to confirm the observations table is
+	// untouched after the query runs.
+	rows, err := q.DedupRows(context.Background(), store.DedupOpts{SinceNs: 0})
+	require.NoError(t, err)
+	require.NotEmpty(t, rows)
+
+	var n int
+	require.NoError(t, s.R.QueryRow(`SELECT COUNT(*) FROM observations`).Scan(&n))
+	require.Equal(t, 6, n, "observations table must NOT have been dropped")
+}
+
+// TestQueries_EventsForPair_parameterized_no_injection pins T-OBS-01 for
+// EventsForPair: a malicious User string MUST be parameterized, NOT
+// formatted into the SQL.
+func TestQueries_EventsForPair_parameterized_no_injection(t *testing.T) {
+	s, q := newSeededDB(t)
+	seedDedupCorpus(t, s.W)
+
+	payload := `'; DROP TABLE observations; --`
+	rows, err := q.EventsForPair(context.Background(), store.EventsForPairOpts{
+		SourceIP: payload,
+		User:     payload,
+	})
+	require.NoError(t, err)
+	require.Empty(t, rows)
+
+	var n int
+	require.NoError(t, s.R.QueryRow(`SELECT COUNT(*) FROM observations`).Scan(&n))
+	require.Equal(t, 6, n, "observations table must NOT have been dropped")
+}

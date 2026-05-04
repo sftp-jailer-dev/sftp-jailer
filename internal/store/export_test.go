@@ -13,4 +13,10 @@ package store
 
 // DedupRowsSQL exports dedupRowsSQL for the EQP regression test in
 // TestQueries_DedupRows_uses_covering_index.
-var DedupRowsSQL = dedupRowsSQL
+//
+// EventsForPairSQL exports eventsForPairSQL for the EQP regression test
+// in TestQueries_EventsForPair_uses_index.
+var (
+	DedupRowsSQL     = dedupRowsSQL
+	EventsForPairSQL = eventsForPairSQL
+)

@@ -651,3 +651,71 @@ func (q *Queries) DedupRows(ctx context.Context, opts DedupOpts) ([]DedupRow, er
 	}
 	return out, nil
 }
+
+// EventsForPairOpts is the LOG-08 drill-down filter.
+//
+// SourceIP and User are REQUIRED inputs (the WHERE clause is exact-match
+// prefix lookup against idx_observations_dedup). SinceNs uses the same
+// window as DedupOpts.SinceNs so the dedup view and the drill-down agree
+// (D-08). Limit defaults to 500 (mirrors FilterEvents).
+//
+// Discipline: every field maps to a `?` placeholder in eventsForPairSQL.
+// Caller-provided strings are parameterized; no fmt.Sprintf into the SQL
+// string (T-OBS-01 threat model).
+type EventsForPairOpts struct {
+	SourceIP string
+	User     string
+	SinceNs  int64
+	Limit    int
+	Offset   int
+}
+
+// eventsForPairSQL: per-pair drill-down. WHERE source_ip = ? AND user = ?
+// matches the leading 2 columns of idx_observations_dedup; ORDER BY
+// ts_unix_ns DESC matches the 3rd column. Covering form NOT achievable:
+// raw_message and raw_json are not in the index. EQP regression test
+// asserts USING INDEX (without COVERING) per ADR-4 in 09-03 plan.
+const eventsForPairSQL = `
+SELECT id, ts_unix_ns, tier, user, source_ip, event_type, raw_message, raw_json
+FROM observations
+WHERE source_ip = ?
+  AND user = ?
+  AND (? = 0 OR ts_unix_ns >= ?)
+ORDER BY ts_unix_ns DESC
+LIMIT ? OFFSET ?;
+`
+
+// EventsForPair returns the per-(source_ip, user) event history within
+// the active window (D-13). Returns the full Event shape (matches
+// FilterEvents return type per D-13 "two queries, two regression tests,
+// one shared Event type").
+func (q *Queries) EventsForPair(ctx context.Context, opts EventsForPairOpts) ([]Event, error) {
+	if opts.Limit == 0 {
+		opts.Limit = 500
+	}
+	rows, err := q.r.QueryContext(ctx, eventsForPairSQL,
+		opts.SourceIP,
+		opts.User,
+		opts.SinceNs, opts.SinceNs,
+		opts.Limit, opts.Offset,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("queries.EventsForPair: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Event
+	for rows.Next() {
+		var e Event
+		if err := rows.Scan(
+			&e.ID, &e.TsUnixNs, &e.Tier, &e.User,
+			&e.SourceIP, &e.EventType, &e.RawMessage, &e.RawJSON,
+		); err != nil {
+			return nil, fmt.Errorf("queries.EventsForPair scan: %w", err)
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("queries.EventsForPair rows.Err: %w", err)
+	}
+	return out, nil
+}
