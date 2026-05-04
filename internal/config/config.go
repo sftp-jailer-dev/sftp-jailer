@@ -59,6 +59,16 @@ type Settings struct {
 	// "how long do we keep raw rows?", the other is "how far back do we
 	// look when proposing an allowlist?"). Default 90; range [1, 3650].
 	LockdownProposalWindowDays int `koanf:"lockdown.proposal_window_days"`
+
+	// LogsDedupWindowDays (Phase 9 / D-08) - LOG-07 dedup view window.
+	// Operator tunable; defines how far back the (source_ip, user)
+	// deduplication query looks for events to bucket. Mirrors
+	// LockdownProposalWindowDays in shape and semantics; INDEPENDENT in
+	// value (one is "what's been actively active recently?", the other
+	// is "what should we propose to lock down?"). Default 90; range
+	// [1, 3650]. Phase 9 ships the data + plumbing only; the S-SETTINGS
+	// UI row that exposes this knob lands in Phase 13 or 14.
+	LogsDedupWindowDays int `koanf:"logs.dedup_window_days"`
 }
 
 // Defaults returns the canonical default Settings. Used when the config
@@ -78,6 +88,7 @@ func Defaults() Settings {
 		PasswordAgingDays:          180,
 		PasswordStaleDays:          365,
 		LockdownProposalWindowDays: 90,
+		LogsDedupWindowDays:        90,
 	}
 }
 
@@ -112,6 +123,13 @@ func Load(ctx context.Context, ops sysops.SystemOps, path string) (Settings, err
 	// fallback (90).
 	if v := k.Int("lockdown.proposal_window_days"); v != 0 {
 		s.LockdownProposalWindowDays = v
+	}
+	// Same dotted-path read pattern for the Phase 9 / D-08 logs.* knob.
+	// The YAML lives under a `logs:` block so future logs.* keys can be
+	// grouped together; koanf's flat tag-mapping doesn't walk nested
+	// keys, so we read the dotted path explicitly via k.Int.
+	if v := k.Int("logs.dedup_window_days"); v != 0 {
+		s.LogsDedupWindowDays = v
 	}
 	return overlayDefaults(s, defaults), nil
 }
@@ -186,6 +204,13 @@ func Validate(s Settings) []error {
 	if s.LockdownProposalWindowDays < 1 || s.LockdownProposalWindowDays > 3650 {
 		errs = append(errs, fmt.Errorf("lockdown.proposal_window_days must be a positive integer between 1 and 3650 (got %d)", s.LockdownProposalWindowDays))
 	}
+	// LogsDedupWindowDays (Phase 9 / D-08): independent koanf knob;
+	// range [1, 3650] mirrors lockdown.proposal_window_days. The 10-year
+	// cap bounds T-OBS-01 "absurd-input" SQL DoS - admins reading the
+	// rules hint will recognise the shape.
+	if s.LogsDedupWindowDays < 1 || s.LogsDedupWindowDays > 3650 {
+		errs = append(errs, fmt.Errorf("logs.dedup_window_days must be a positive integer between 1 and 3650 (got %d)", s.LogsDedupWindowDays))
+	}
 	return errs
 }
 
@@ -211,6 +236,9 @@ func overlayDefaults(s, d Settings) Settings {
 	}
 	if s.LockdownProposalWindowDays == 0 {
 		s.LockdownProposalWindowDays = d.LockdownProposalWindowDays
+	}
+	if s.LogsDedupWindowDays == 0 {
+		s.LogsDedupWindowDays = d.LogsDedupWindowDays
 	}
 	return s
 }

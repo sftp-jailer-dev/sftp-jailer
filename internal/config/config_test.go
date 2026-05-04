@@ -4,6 +4,7 @@ package config_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -392,6 +393,97 @@ func TestConfig_LockdownProposalWindowDays_load_explicit_value(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 30, got.LockdownProposalWindowDays,
 		"explicit lockdown.proposal_window_days must be read back faithfully")
+}
+
+// TestConfig_LogsDedupWindowDays_default_90: D-08 sets the dedup-window
+// default to 90 days (independent from LockdownProposalWindowDays). Defaults()
+// MUST populate the field, and a Validate-clean Defaults() MUST remain
+// Validate-clean after the new field is added.
+func TestConfig_LogsDedupWindowDays_default_90(t *testing.T) {
+	d := config.Defaults()
+	require.Equal(t, 90, d.LogsDedupWindowDays,
+		"Defaults().LogsDedupWindowDays must be 90 (D-08)")
+
+	require.Empty(t, config.Validate(d),
+		"Defaults() must remain Validate-clean after the new knob lands")
+}
+
+// TestConfig_LogsDedupWindowDays_validate_range: range is [1, 3650]
+// (10-year cap mirrors LockdownProposalWindowDays / detail_retention_days
+// to bound T-OBS-01 "absurd-input" SQL DoS). 0 / -1 / 3651 fail; 1 / 90 /
+// 3650 pass. Mirrors TestConfig_LockdownProposalWindowDays_validate_range.
+func TestConfig_LogsDedupWindowDays_validate_range(t *testing.T) {
+	for _, bad := range []int{0, -1, 3651, 999999} {
+		s := config.Defaults()
+		s.LogsDedupWindowDays = bad
+		errs := config.Validate(s)
+		require.NotEmpty(t, errs, "LogsDedupWindowDays=%d must fail", bad)
+	}
+	for _, good := range []int{1, 30, 90, 365, 3650} {
+		s := config.Defaults()
+		s.LogsDedupWindowDays = good
+		errs := config.Validate(s)
+		require.Empty(t, errs, "LogsDedupWindowDays=%d must pass: %v", good, errs)
+	}
+}
+
+// TestConfig_LogsDedupWindowDays_validate_zero_message pins the EXACT
+// error string format so future refactors don't accidentally rename it
+// (operators may grep for it). Mirrors the strict-message pattern from
+// the PasswordAging family.
+func TestConfig_LogsDedupWindowDays_validate_zero_message(t *testing.T) {
+	s := config.Defaults()
+	s.LogsDedupWindowDays = 0
+	errs := config.Validate(s)
+	require.NotEmpty(t, errs)
+	require.Contains(t, fmt.Sprint(errs),
+		"logs.dedup_window_days must be a positive integer between 1 and 3650 (got 0)",
+		"validate error message format must match the lockdown.proposal_window_days analog")
+}
+
+// TestConfig_LogsDedupWindowDays_load_overlays_default: a config file that
+// omits logs.dedup_window_days must overlay the default 90 (mirrors
+// TestConfig_LockdownProposalWindowDays_load_overlays_default). Drives
+// overlayDefaults indirectly through Load (overlayDefaults is unexported).
+func TestConfig_LogsDedupWindowDays_load_overlays_default(t *testing.T) {
+	f := sysops.NewFake()
+	f.Files[settingsPath] = []byte("detail_retention_days: 60\n")
+	got, err := config.Load(context.Background(), f, settingsPath)
+	require.NoError(t, err)
+	require.Equal(t, 90, got.LogsDedupWindowDays,
+		"absent logs.dedup_window_days must overlay to 90")
+}
+
+// TestConfig_LogsDedupWindowDays_load_explicit_value: when the config
+// file sets the koanf-nested key explicitly, Load must read it back
+// faithfully. The koanf tag is `logs.dedup_window_days`, which marshals
+// as a nested YAML block:
+//
+//	logs:
+//	  dedup_window_days: 30
+//
+// Mirrors TestConfig_LockdownProposalWindowDays_load_explicit_value.
+func TestConfig_LogsDedupWindowDays_load_explicit_value(t *testing.T) {
+	f := sysops.NewFake()
+	f.Files[settingsPath] = []byte("logs:\n  dedup_window_days: 30\n")
+	got, err := config.Load(context.Background(), f, settingsPath)
+	require.NoError(t, err)
+	require.Equal(t, 30, got.LogsDedupWindowDays,
+		"explicit logs.dedup_window_days must be read back faithfully")
+}
+
+// TestConfig_LogsDedupWindowDays_independent_from_lockdown_window pins
+// D-08's "independent in value" promise: setting one must not mutate
+// the other. Both are koanf-nested under different parent keys (logs.*
+// vs lockdown.*) so the YAML grouping naturally enforces this; the test
+// confirms the Go struct fields stay independent.
+func TestConfig_LogsDedupWindowDays_independent_from_lockdown_window(t *testing.T) {
+	f := sysops.NewFake()
+	f.Files[settingsPath] = []byte("logs:\n  dedup_window_days: 7\nlockdown:\n  proposal_window_days: 365\n")
+	got, err := config.Load(context.Background(), f, settingsPath)
+	require.NoError(t, err)
+	require.Equal(t, 7, got.LogsDedupWindowDays)
+	require.Equal(t, 365, got.LockdownProposalWindowDays)
 }
 
 // TestValidate_returns_all_errors_not_just_first: every failing rule
